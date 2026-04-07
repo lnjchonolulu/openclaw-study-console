@@ -52,6 +52,26 @@ function extractAssistantText(payload: unknown) {
     }
   }
 
+  const payloads = candidate.payloads;
+  if (Array.isArray(payloads)) {
+    const fragments = payloads
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+
+        const text = (item as Record<string, unknown>).text;
+        return typeof text === "string" ? text : null;
+      })
+      .filter((text): text is string => Boolean(text))
+      .join("\n")
+      .trim();
+
+    if (fragments) {
+      return fragments;
+    }
+  }
+
   return null;
 }
 
