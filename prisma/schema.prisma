@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PARTICIPANT
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum FileVisibility {
+  PRIVATE
+  TEAM
+}
+
+enum RoomType {
+  PERSONAL
+  TEAM
+}
+
+enum MessageRole {
+  USER
+  AGENT
+  SYSTEM
+}
+
+model User {
+  id           String      @id @default(cuid())
+  username     String      @unique
+  passwordHash String
+  displayName  String
+  role         UserRole    @default(PARTICIPANT)
+  status       UserStatus  @default(ACTIVE)
+  teamId       String?
+  agentId      String?     @unique
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  team         Team?       @relation(fields: [teamId], references: [id])
+  agent        Agent?
+  files        FileRecord[]
+  messages     Message[]
+  sessions     Session[]
+  room         Room?
+}
+
+model Team {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  users     User[]
+  files     FileRecord[]
+  rooms     Room[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Agent {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  openclawAgentId String   @unique
+  displayName     String
+  workspacePath   String
+  soulConfigJson  Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model FileRecord {
+  id          String         @id @default(cuid())
+  ownerUserId String?
+  teamId      String?
+  filename    String
+  storageKey  String
+  mimeType    String?
+  visibility  FileVisibility @default(PRIVATE)
+  sourceType  String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  owner       User?          @relation(fields: [ownerUserId], references: [id])
+  team        Team?          @relation(fields: [teamId], references: [id])
+}
+
+model Room {
+  id          String    @id @default(cuid())
+  type        RoomType
+  teamId      String?
+  ownerUserId String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  team        Team?     @relation(fields: [teamId], references: [id])
+  owner       User?     @relation(fields: [ownerUserId], references: [id])
+  messages    Message[]
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  roomId    String
+  userId    String?
+  agentId   String?
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now())
+  room      Room        @relation(fields: [roomId], references: [id])
+  user      User?       @relation(fields: [userId], references: [id])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
