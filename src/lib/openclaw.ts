@@ -123,12 +123,13 @@ export async function runAgentTurn({
     },
   );
 
-  const parsed = parseCliJson(stdout);
+  const rawOutput = stdout.trim() ? stdout : stderr;
+  const parsed = parseCliJson(rawOutput);
   const assistantText = extractAssistantText(parsed);
   const finalText =
     typeof assistantText === "string" && assistantText.trim()
       ? assistantText.trim()
-      : stdout.trim();
+      : rawOutput.trim();
 
   console.log("[openclaw] agent turn", {
     agentId,
@@ -137,6 +138,7 @@ export async function runAgentTurn({
     finalText,
     stderr,
     stdoutPreview: stdout.slice(0, 600),
+    rawOutputPreview: rawOutput.slice(0, 600),
   });
 
   return {
