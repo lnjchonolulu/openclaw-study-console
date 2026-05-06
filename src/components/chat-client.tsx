@@ -144,9 +144,9 @@ export function ChatClient({
             <p>{entry.content}</p>
           </div>
         ))}
-        {isSending ? (
+        {isSending && recipientKind === "agent" ? (
           <div className="message-row message-row-agent message-row-pending">
-            <p>{recipientKind === "agent" ? "Writing..." : "Sending..."}</p>
+            <p>Writing...</p>
           </div>
         ) : null}
         <div ref={messageEndRef} />
