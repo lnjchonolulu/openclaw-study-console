@@ -39,7 +39,7 @@ function SelectField<T extends string>({
   return (
     <label className="split-label settings-select-field">
       {label}
-      <span className="team-modal-input-wrap">
+      <span className="settings-select-wrap">
         <select
           className="settings-select"
           onChange={(event) => {
@@ -53,6 +53,21 @@ function SelectField<T extends string>({
             </option>
           ))}
         </select>
+        <svg
+          aria-hidden="true"
+          className="settings-select-icon"
+          fill="none"
+          viewBox="0 0 20 20"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M5.5 7.75 10 12.25l4.5-4.5"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.7"
+          />
+        </svg>
       </span>
     </label>
   );
@@ -212,9 +227,9 @@ export function SettingsClient({
           </div>
           <label className="split-label">
             Nickname
-            <span className="team-modal-input-wrap">
+            <span className="settings-input-wrap">
               <input
-                className="team-modal-input"
+                className="settings-input"
                 onChange={(event) => {
                   setUserDisplayName(event.target.value);
                 }}
@@ -261,9 +276,9 @@ export function SettingsClient({
           >
             <label className="split-label settings-field-span-2">
               Nickname
-              <span className="team-modal-input-wrap">
+              <span className="settings-input-wrap">
                 <input
-                  className="team-modal-input"
+                  className="settings-input"
                   onChange={(event) => {
                     setAgentDisplayName(event.target.value);
                   }}
@@ -275,7 +290,7 @@ export function SettingsClient({
             <label className="split-label settings-field-span-2">
               Persona Summary
               <textarea
-                className="settings-textarea settings-textarea-compact"
+                className="settings-textarea settings-textarea-compact settings-textarea-field"
                 onChange={(event) => {
                   setPersonaSummary(event.target.value);
                 }}
@@ -372,7 +387,7 @@ export function SettingsClient({
             <label className="split-label settings-field-span-2">
               Extra Instructions
               <textarea
-                className="settings-textarea settings-textarea-compact"
+                className="settings-textarea settings-textarea-compact settings-textarea-field"
                 onChange={(event) => {
                   patchDirectLine("extraInstructions", event.target.value);
                 }}
@@ -430,7 +445,7 @@ export function SettingsClient({
             <label className="split-label settings-field-span-2">
               Extra Instructions
               <textarea
-                className="settings-textarea settings-textarea-compact"
+                className="settings-textarea settings-textarea-compact settings-textarea-field"
                 onChange={(event) => {
                   patchSharedSpaces("extraInstructions", event.target.value);
                 }}
