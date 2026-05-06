@@ -600,14 +600,17 @@ export function AppShell({
             {teamModalMode !== "members" ? (
               <label className="split-label">
                 Channel Name
-                <input
-                  className="team-modal-input"
-                  value={teamChannelName}
-                  onChange={(event) => {
-                    setTeamChannelName(event.target.value);
-                  }}
-                  type="text"
-                />
+                <span className="team-modal-input-wrap">
+                  <input
+                    className="team-modal-input"
+                    placeholder="e.g. planning, design review, launch prep"
+                    value={teamChannelName}
+                    onChange={(event) => {
+                      setTeamChannelName(event.target.value);
+                    }}
+                    type="text"
+                  />
+                </span>
               </label>
             ) : null}
             {teamModalMode !== "rename" ? (
