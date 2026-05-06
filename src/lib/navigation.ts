@@ -4,25 +4,28 @@ export type AppNavItem = {
   description: string;
 };
 
-export const appNavItems: AppNavItem[] = [
+export const primaryNavItems: AppNavItem[] = [
   {
     href: "/chat",
-    title: "Chat",
+    title: "DM",
     description: "Talk to your personal agent and assign work.",
+  },
+  {
+    href: "/team",
+    title: "Team Chat",
+    description: "Coordinate with teammates without introducing a team agent.",
   },
   {
     href: "/files",
     title: "Files",
     description: "Upload, download, and share working materials.",
   },
+];
+
+export const secondaryNavItems: AppNavItem[] = [
   {
     href: "/agent",
-    title: "Agent",
+    title: "Setting",
     description: "Tune tone, habits, and future persona settings.",
-  },
-  {
-    href: "/team",
-    title: "Team",
-    description: "Coordinate with teammates without introducing a team agent.",
   },
 ];

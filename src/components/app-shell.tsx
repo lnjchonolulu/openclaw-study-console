@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { appNavItems } from "@/lib/navigation";
+import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 
 export function AppShell({
   children,
-  user,
 }: {
   children: React.ReactNode;
   user: {
@@ -20,12 +19,35 @@ export function AppShell({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-block">
-          <h1 className="brand-title">TBA: Tool Name</h1>
+        <div className="sidebar-main">
+          <div className="brand-row">
+            <h1 className="brand-title">TBA: Tool Name</h1>
+            <form action="/api/auth/logout" method="post">
+              <button className="text-button" type="submit">
+                Sign out
+              </button>
+            </form>
+          </div>
+
+          <nav className="nav-list" aria-label="Primary">
+            {primaryNavItems.map((item) => {
+              const isActive = pathname === item.href;
+
+              return (
+                <Link
+                  key={item.href}
+                  className={`nav-item${isActive ? " nav-item-active" : ""}`}
+                  href={item.href}
+                >
+                  <span className="nav-title">{item.title}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
-        <nav className="nav-list" aria-label="Primary">
-          {appNavItems.map((item) => {
+        <nav className="nav-list sidebar-bottom-nav" aria-label="Secondary">
+          {secondaryNavItems.map((item) => {
             const isActive = pathname === item.href;
 
             return (
@@ -35,22 +57,10 @@ export function AppShell({
                 href={item.href}
               >
                 <span className="nav-title">{item.title}</span>
-                <span className="nav-description">{item.description}</span>
               </Link>
             );
           })}
         </nav>
-
-        <div className="sidebar-card">
-          <span className="pill">{user.displayName}</span>
-          <p>{user.username}</p>
-          <p>{user.teamName ? `Assigned to ${user.teamName}` : "No team assigned yet"}</p>
-          <form action="/api/auth/logout" method="post">
-            <button className="secondary-button" type="submit">
-              Sign out
-            </button>
-          </form>
-        </div>
       </aside>
 
       <main className="app-content">{children}</main>
