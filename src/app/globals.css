@@ -1041,7 +1041,6 @@ button.primary-button {
 }
 
 .profile-avatar {
-  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1055,38 +1054,10 @@ button.primary-button {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
 
-.profile-avatar-head,
-.profile-avatar-body {
-  position: absolute;
-  background: currentColor;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.profile-avatar-head {
-  top: 18%;
-  width: 24%;
-  height: 24%;
-  border-radius: 999px;
-}
-
-.profile-avatar-head-agent {
-  width: 26%;
-  height: 22%;
-  border-radius: 4px;
-}
-
-.profile-avatar-body {
-  bottom: 11%;
-  width: 38%;
-  height: 21%;
-  border-radius: 999px 999px 8px 8px;
-}
-
-.profile-avatar-body-agent {
-  width: 44%;
-  height: 22%;
-  border-radius: 6px 6px 8px 8px;
+.profile-avatar-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .settings-avatar-preview {
