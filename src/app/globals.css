@@ -397,7 +397,7 @@ button.primary-button {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
   padding: 22px;
   overflow-y: auto;
@@ -406,8 +406,8 @@ button.primary-button {
 .message-row {
   width: fit-content;
   max-width: min(680px, 78%);
-  padding: 16px;
-  border-radius: 18px;
+  padding: 10px 13px;
+  border-radius: 14px;
   border: 1px solid rgba(17, 17, 17, 0.08);
   background: rgba(255, 255, 255, 0.7);
 }
@@ -416,7 +416,7 @@ button.primary-button {
   align-self: flex-end;
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
 }
 
 .message-row-user p {
