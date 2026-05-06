@@ -10,22 +10,56 @@ export type AvatarViewModel = {
   kind: ProfileKind;
 };
 
-const USER_PALETTES: ProfileConfig[] = [
-  { bgColor: "#F3E8FF", fgColor: "#5B21B6" },
-  { bgColor: "#E0F2FE", fgColor: "#0F4C81" },
-  { bgColor: "#DCFCE7", fgColor: "#166534" },
-  { bgColor: "#FEE2E2", fgColor: "#991B1B" },
-  { bgColor: "#FEF3C7", fgColor: "#92400E" },
-  { bgColor: "#FCE7F3", fgColor: "#9D174D" },
+const USER_BG_COLORS = [
+  "#FCE7F3",
+  "#F3E8FF",
+  "#E0F2FE",
+  "#ECFCCB",
+  "#FEF3C7",
+  "#FFE4E6",
+  "#E0F7FA",
+  "#FDE68A",
+  "#DBEAFE",
+  "#E9D5FF",
 ];
 
-const AGENT_PALETTES: ProfileConfig[] = [
-  { bgColor: "#E5E7EB", fgColor: "#111827" },
-  { bgColor: "#DBEAFE", fgColor: "#1D4ED8" },
-  { bgColor: "#D1FAE5", fgColor: "#065F46" },
-  { bgColor: "#FDE68A", fgColor: "#92400E" },
-  { bgColor: "#E9D5FF", fgColor: "#6D28D9" },
-  { bgColor: "#FECACA", fgColor: "#B91C1C" },
+const USER_FG_COLORS = [
+  "#7C2D12",
+  "#9D174D",
+  "#5B21B6",
+  "#0F4C81",
+  "#166534",
+  "#92400E",
+  "#B91C1C",
+  "#0F766E",
+  "#1D4ED8",
+  "#4C1D95",
+];
+
+const AGENT_BG_COLORS = [
+  "#E5E7EB",
+  "#DBEAFE",
+  "#D1FAE5",
+  "#FDE68A",
+  "#E9D5FF",
+  "#FECACA",
+  "#E0F2FE",
+  "#F3F4F6",
+  "#FAE8FF",
+  "#FEF3C7",
+];
+
+const AGENT_FG_COLORS = [
+  "#111827",
+  "#1D4ED8",
+  "#065F46",
+  "#92400E",
+  "#6D28D9",
+  "#B91C1C",
+  "#155E75",
+  "#374151",
+  "#701A75",
+  "#7C2D12",
 ];
 
 function hashSeed(seed: string) {
@@ -38,17 +72,25 @@ function hashSeed(seed: string) {
   return hash;
 }
 
-function getPalette(kind: ProfileKind) {
-  return kind === "user" ? USER_PALETTES : AGENT_PALETTES;
+function getColorSets(kind: ProfileKind) {
+  return kind === "user"
+    ? {
+        backgrounds: USER_BG_COLORS,
+        foregrounds: USER_FG_COLORS,
+      }
+    : {
+        backgrounds: AGENT_BG_COLORS,
+        foregrounds: AGENT_FG_COLORS,
+      };
 }
 
 export function getDefaultProfileConfig(seed: string, kind: ProfileKind): ProfileConfig {
-  const palette = getPalette(kind);
-  const selected = palette[hashSeed(seed) % palette.length];
+  const { backgrounds, foregrounds } = getColorSets(kind);
+  const baseHash = hashSeed(seed);
 
   return {
-    bgColor: selected.bgColor,
-    fgColor: selected.fgColor,
+    bgColor: backgrounds[baseHash % backgrounds.length],
+    fgColor: foregrounds[(baseHash * 7 + 3) % foregrounds.length],
   };
 }
 
@@ -57,15 +99,25 @@ export function rotateProfileConfig(
   seed: string,
   kind: ProfileKind,
 ) {
-  const palette = getPalette(kind);
+  const { backgrounds, foregrounds } = getColorSets(kind);
   const fallback = getDefaultProfileConfig(seed, kind);
-  const currentIndex = palette.findIndex(
-    (option) => option.bgColor === (current?.bgColor ?? fallback.bgColor) &&
-      option.fgColor === (current?.fgColor ?? fallback.fgColor),
+  const backgroundIndex = backgrounds.findIndex(
+    (color) => color === (current?.bgColor ?? fallback.bgColor),
   );
-  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % palette.length : 0;
+  const foregroundIndex = foregrounds.findIndex(
+    (color) => color === (current?.fgColor ?? fallback.fgColor),
+  );
+  const nextBackgroundIndex =
+    backgroundIndex >= 0 ? (backgroundIndex + 1) % backgrounds.length : 0;
+  const nextForegroundIndex =
+    foregroundIndex >= 0
+      ? (foregroundIndex + (nextBackgroundIndex % 2 === 0 ? 2 : 3)) % foregrounds.length
+      : 0;
 
-  return palette[nextIndex];
+  return {
+    bgColor: backgrounds[nextBackgroundIndex],
+    fgColor: foregrounds[nextForegroundIndex],
+  };
 }
 
 export function normalizeProfileConfig(
