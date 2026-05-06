@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSession } from "@/lib/auth";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { appUrl } from "@/lib/url";
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   const password = formData.get("password");
 
   if (typeof username !== "string" || typeof password !== "string") {
-    return NextResponse.redirect(new URL("/login?error=invalid", request.url));
+    return NextResponse.redirect(appUrl("/login?error=invalid", request.url));
   }
 
   const user = await prisma.user.findUnique({
@@ -19,16 +20,16 @@ export async function POST(request: Request) {
   });
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login?error=credentials", request.url));
+    return NextResponse.redirect(appUrl("/login?error=credentials", request.url));
   }
 
   const isValid = await verifyPassword(password, user.passwordHash);
 
   if (!isValid) {
-    return NextResponse.redirect(new URL("/login?error=credentials", request.url));
+    return NextResponse.redirect(appUrl("/login?error=credentials", request.url));
   }
 
   await createSession(user.id);
 
-  return NextResponse.redirect(new URL("/chat", request.url));
+  return NextResponse.redirect(appUrl("/chat", request.url));
 }

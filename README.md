@@ -105,6 +105,7 @@ spawning CLI commands for every turn.
 Enable the endpoint in your Gateway config and expose:
 
 ```env
+APP_BASE_URL="http://SERVER_IP:3000"
 OPENCLAW_RESPONSES_URL="http://127.0.0.1:18789/v1/responses"
 OPENCLAW_GATEWAY_TOKEN="..."
 ```
