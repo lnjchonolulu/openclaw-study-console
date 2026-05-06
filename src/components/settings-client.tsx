@@ -122,8 +122,13 @@ export function SettingsClient({
   const [behaviorConfig, setBehaviorConfig] = useState(
     normalizeAgentBehaviorConfig(initialBehaviorConfig),
   );
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
 
   function patchResponseStyle<K extends keyof AgentBehaviorConfig["responseStyle"]>(
     key: K,
@@ -196,49 +201,145 @@ export function SettingsClient({
     router.refresh();
   }
 
+  async function handlePasswordUpdate() {
+    setIsUpdatingPassword(true);
+    setPasswordNotice(null);
+
+    const response = await fetch("/api/settings/password", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        confirmPassword,
+        currentPassword,
+        nextPassword,
+      }),
+    });
+
+    const payload = (await response.json()) as { error?: string };
+
+    if (!response.ok) {
+      setPasswordNotice(payload.error ?? "Password could not be updated.");
+      setIsUpdatingPassword(false);
+      return;
+    }
+
+    setCurrentPassword("");
+    setNextPassword("");
+    setConfirmPassword("");
+    setPasswordNotice("Password updated.");
+    setIsUpdatingPassword(false);
+  }
+
   return (
     <section className="settings-page">
       <div className="settings-grid">
-        <article className="content-card settings-card settings-card-user">
-          <div className="settings-card-header">
-            <div>
-              <span className="context-label">You</span>
-              <h2>Profile</h2>
+        <div className="settings-user-column">
+          <article className="content-card settings-card settings-card-user">
+            <div className="settings-card-header">
+              <div>
+                <span className="context-label">You</span>
+                <h2>Profile</h2>
+              </div>
             </div>
-          </div>
-          <div className="settings-avatar-row">
-            <ProfileAvatar
-              avatar={{ kind: "user", config: userProfile }}
-              className="settings-avatar-preview"
-            />
-            <div className="settings-avatar-copy">
-              <strong>{userDisplayName || username}</strong>
-              <span>{getUserMeta(username)}</span>
-            </div>
-            <button
-              className="secondary-button"
-              onClick={() => {
-                setUserProfile((current) => rotateProfileConfig(current, username, "user"));
-              }}
-              type="button"
-            >
-              Refresh Colors
-            </button>
-          </div>
-          <label className="split-label">
-            Nickname
-            <span className="settings-input-wrap">
-              <input
-                className="settings-input"
-                onChange={(event) => {
-                  setUserDisplayName(event.target.value);
-                }}
-                value={userDisplayName}
-                type="text"
+            <div className="settings-avatar-row">
+              <ProfileAvatar
+                avatar={{ kind: "user", config: userProfile }}
+                className="settings-avatar-preview"
               />
-            </span>
-          </label>
-        </article>
+              <div className="settings-avatar-copy">
+                <strong>{userDisplayName || username}</strong>
+                <span>{getUserMeta(username)}</span>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setUserProfile((current) => rotateProfileConfig(current, username, "user"));
+                }}
+                type="button"
+              >
+                Refresh Colors
+              </button>
+            </div>
+            <label className="split-label">
+              Nickname
+              <span className="settings-input-wrap">
+                <input
+                  className="settings-input"
+                  onChange={(event) => {
+                    setUserDisplayName(event.target.value);
+                  }}
+                  value={userDisplayName}
+                  type="text"
+                />
+              </span>
+            </label>
+          </article>
+
+          <article className="content-card settings-card settings-card-user">
+            <div className="settings-card-header">
+              <div>
+                <span className="context-label">Account</span>
+                <h2>Password</h2>
+              </div>
+            </div>
+            <div className="settings-fields-grid settings-fields-grid-single">
+              <label className="split-label settings-field-span-2">
+                Current Password
+                <span className="settings-input-wrap">
+                  <input
+                    className="settings-input"
+                    onChange={(event) => {
+                      setCurrentPassword(event.target.value);
+                    }}
+                    type="password"
+                    value={currentPassword}
+                  />
+                </span>
+              </label>
+              <label className="split-label settings-field-span-2">
+                New Password
+                <span className="settings-input-wrap">
+                  <input
+                    className="settings-input"
+                    onChange={(event) => {
+                      setNextPassword(event.target.value);
+                    }}
+                    type="password"
+                    value={nextPassword}
+                  />
+                </span>
+              </label>
+              <label className="split-label settings-field-span-2">
+                Confirm New Password
+                <span className="settings-input-wrap">
+                  <input
+                    className="settings-input"
+                    onChange={(event) => {
+                      setConfirmPassword(event.target.value);
+                    }}
+                    type="password"
+                    value={confirmPassword}
+                  />
+                </span>
+              </label>
+            </div>
+            <div className="settings-inline-actions">
+              {passwordNotice ? <p className="helper-text">{passwordNotice}</p> : <span />}
+              <button
+                className="secondary-button"
+                disabled={isUpdatingPassword}
+                onClick={() => {
+                  void handlePasswordUpdate();
+                }}
+                type="button"
+              >
+                {isUpdatingPassword ? "Updating..." : "Change Password"}
+              </button>
+            </div>
+          </article>
+        </div>
 
         <article className="content-card settings-card settings-card-agent">
           <div className="settings-card-header">

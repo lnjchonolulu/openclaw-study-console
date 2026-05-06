@@ -1163,6 +1163,13 @@ button.primary-button {
   min-height: 0;
 }
 
+.settings-user-column {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+}
+
 .settings-card {
   display: grid;
   gap: 20px;
@@ -1300,6 +1307,10 @@ button.primary-button {
   grid-column: 1 / -1;
 }
 
+.settings-fields-grid-single {
+  grid-template-columns: 1fr;
+}
+
 .settings-select-field {
   min-width: 0;
 }
@@ -1340,6 +1351,13 @@ button.primary-button {
   justify-content: space-between;
   gap: 16px;
   padding-right: 6px;
+}
+
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .helper-text {
@@ -1450,6 +1468,7 @@ button.primary-button {
     grid-column: auto;
   }
 
+  .settings-inline-actions,
   .settings-footer {
     flex-direction: column;
     align-items: stretch;
