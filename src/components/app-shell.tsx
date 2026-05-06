@@ -94,9 +94,7 @@ export function AppShell({
     : `agent:${searchParams.get("agent") ?? user.agentId ?? ""}`;
   const selectedChannel = searchParams.get("channel") ?? "main";
   const [teamChannels, setTeamChannels] = useState([
-    { id: "main", title: user.teamName ?? "Team 03", meta: "Main channel" },
-    { id: "research", title: "Research", meta: "Draft channel" },
-    { id: "outputs", title: "Outputs", meta: "Draft channel" },
+    { id: "main", title: "General", meta: "" },
   ]);
   const displayedDmItems = dmItems.map((item) =>
     pathname === "/chat" && `${item.kind}:${item.id}` === selectedDmKey
@@ -182,7 +180,7 @@ export function AppShell({
     const channel = {
       id: `channel-${Date.now()}`,
       title: `New Channel ${channelNumber}`,
-      meta: "Draft channel",
+      meta: "",
     };
 
     setContextNotice(null);
@@ -341,7 +339,9 @@ export function AppShell({
                     }}
                   >
                     <span className="context-item-title">{channel.title}</span>
-                    <span className="context-item-meta">{channel.meta}</span>
+                    {channel.meta ? (
+                      <span className="context-item-meta">{channel.meta}</span>
+                    ) : null}
                   </Link>
                 );
               })}

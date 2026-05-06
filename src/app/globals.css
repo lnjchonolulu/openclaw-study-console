@@ -737,6 +737,63 @@ button.primary-button {
   padding: 0 24px;
 }
 
+.team-chat-panel {
+  position: relative;
+}
+
+.team-chat-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px 18px 0;
+}
+
+.team-members-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.team-members-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.team-members-popover {
+  position: absolute;
+  top: 52px;
+  left: 18px;
+  z-index: 5;
+  width: min(320px, calc(100vw - 72px));
+  padding: 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.14);
+}
+
+.team-message-block {
+  display: grid;
+  gap: 8px;
+}
+
+.team-message-author {
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .message-error {
   color: var(--accent-strong);
 }
