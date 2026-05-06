@@ -2,18 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
+import type { DmItem } from "@/lib/dm";
 
 type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
-type DmItem = {
-  id: string;
-  kind: "agent" | "person";
-  displayName: string;
-  meta: string;
-  isOwnAgent: boolean;
-};
-
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     dm: (
@@ -105,6 +98,31 @@ export function AppShell({
     { id: "research", title: "Research", meta: "Draft channel" },
     { id: "outputs", title: "Outputs", meta: "Draft channel" },
   ]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function refreshDmSidebar() {
+      const response = await fetch("/api/dm/sidebar");
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { conversations?: DmItem[] };
+
+      if (isMounted && payload.conversations) {
+        setDmItems(payload.conversations);
+      }
+    }
+
+    const intervalId = window.setInterval(refreshDmSidebar, 2000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   function getDmHref(target: DmItem) {
     const paramName = target.kind === "agent" ? "agent" : "user";
@@ -208,6 +226,7 @@ export function AppShell({
               <div className="context-list">
                 {dmItems.map((target) => {
                   const isActive = selectedDmKey === `${target.kind}:${target.id}`;
+                  const unreadCount = isActive ? 0 : target.unreadCount;
 
                   return (
                     <Link
@@ -220,7 +239,14 @@ export function AppShell({
                         setContextNotice(null);
                       }}
                     >
-                      <span className="context-item-title">{target.displayName}</span>
+                      <span className="context-item-topline">
+                        <span className="context-item-title">{target.displayName}</span>
+                        {unreadCount > 0 ? (
+                          <span className="context-unread-badge">
+                            {unreadCount >= 10 ? "10+" : unreadCount}
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="context-item-meta">{target.meta}</span>
                     </Link>
                   );

@@ -306,6 +306,13 @@ button.primary-button {
   text-align: left;
 }
 
+.context-item-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .context-item-active,
 .context-item:hover {
   background: rgba(255, 255, 255, 0.78);
@@ -319,6 +326,20 @@ button.primary-button {
 .context-item-meta {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.context-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #111111;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .context-notice {
@@ -589,6 +610,8 @@ button.primary-button {
 }
 
 .message-row {
+  display: grid;
+  gap: 6px;
   width: fit-content;
   max-width: min(680px, 78%);
   padding: 10px 13px;
@@ -617,11 +640,37 @@ button.primary-button {
   background: rgba(255, 255, 255, 0.48);
 }
 
-.message-meta {
-  margin-bottom: 8px;
+.message-date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 2px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
+}
+
+.message-date-divider::before,
+.message-date-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(17, 17, 17, 0.1);
+}
+
+.message-timestamp {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.message-timestamp-user {
+  justify-self: start;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.message-timestamp-other {
+  justify-self: end;
+  color: #8a8a8a;
 }
 
 .message-composer textarea,

@@ -1,74 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { getOrCreatePersonDmRoom } from "@/lib/dm";
 import { prisma } from "@/lib/prisma";
-
-async function getOrCreatePersonDmRoom(userId: string, recipientId: string) {
-  if (userId === recipientId) {
-    return null;
-  }
-
-  const recipient = await prisma.user.findUnique({
-    where: {
-      id: recipientId,
-    },
-  });
-
-  if (!recipient || recipient.status !== "ACTIVE") {
-    return null;
-  }
-
-  const existingRoom = await prisma.room.findFirst({
-    where: {
-      type: "GROUP",
-      agents: {
-        none: {},
-      },
-      AND: [
-        {
-          members: {
-            some: {
-              userId,
-            },
-          },
-        },
-        {
-          members: {
-            some: {
-              userId: recipientId,
-            },
-          },
-        },
-      ],
-    },
-  });
-
-  if (existingRoom) {
-    return existingRoom;
-  }
-
-  return prisma.room.create({
-    data: {
-      type: "GROUP",
-      name: recipient.displayName,
-      ownerUserId: userId,
-      members: {
-        create: [
-          {
-            userId,
-            role: "OWNER",
-            canManageRoom: true,
-            canShareFiles: true,
-          },
-          {
-            userId: recipientId,
-            role: "MEMBER",
-            canShareFiles: true,
-          },
-        ],
-      },
-    },
-  });
-}
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -92,13 +25,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Recipient is required." }, { status: 400 });
   }
 
-  const room = await getOrCreatePersonDmRoom(user.id, recipientId);
+  const personDm = await getOrCreatePersonDmRoom(user.id, recipientId);
 
-  if (!room) {
+  if (!personDm) {
     return NextResponse.json({ error: "Selected person was not found." }, { status: 404 });
   }
 
-  await prisma.message.create({
+  const room = personDm.room;
+
+  await prisma.typingState.deleteMany({
+    where: {
+      roomId: room.id,
+      userId: user.id,
+    },
+  });
+
+  const createdMessage = await prisma.message.create({
     data: {
       roomId: room.id,
       userId: user.id,
@@ -107,5 +49,20 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true });
+  await prisma.room.update({
+    where: {
+      id: room.id,
+    },
+    data: {},
+  });
+
+  return NextResponse.json({
+    ok: true,
+    roomId: room.id,
+    message: {
+      id: createdMessage.id,
+      content: createdMessage.content,
+      createdAt: createdMessage.createdAt.toISOString(),
+    },
+  });
 }

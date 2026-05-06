@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { markRoomAsRead, serializeChatMessages } from "@/lib/dm";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
         orderBy: {
           createdAt: "asc",
         },
-        take: 50,
+        take: 100,
       },
     },
   });
@@ -39,18 +40,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Room was not found." }, { status: 404 });
   }
 
+  const activeTyping = await prisma.typingState.findMany({
+    where: {
+      roomId,
+      userId: {
+        not: user.id,
+      },
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
+  });
+
+  await markRoomAsRead(room.id, user.id);
+
   return NextResponse.json({
-    messages: room.messages
-      .filter((message) => message.role === "USER" || message.role === "AGENT")
-      .map((message) => ({
-        id: message.id,
-        role:
-          message.role === "AGENT"
-            ? "AGENT"
-            : message.userId === user.id
-              ? "USER"
-              : "OTHER",
-        content: message.content,
-      })),
+    messages: serializeChatMessages(room.messages, user.id),
+    isOtherTyping: activeTyping.length > 0,
   });
 }
