@@ -190,6 +190,10 @@ button.primary-button {
   min-height: 100vh;
 }
 
+.app-shell-with-context {
+  grid-template-columns: 188px 260px minmax(0, 1fr);
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -201,6 +205,82 @@ button.primary-button {
   background: rgba(255, 255, 255, 0.82);
   border-right: 1px solid var(--surface-border);
   backdrop-filter: blur(14px);
+}
+
+.context-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 22px 14px;
+  background: rgba(255, 255, 255, 0.58);
+  border-right: 1px solid var(--surface-border);
+}
+
+.context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.context-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.context-action {
+  appearance: none;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-item {
+  appearance: none;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.context-item-active,
+.context-item:hover {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(17, 17, 17, 0.08);
+}
+
+.context-item-title {
+  font-weight: 700;
+}
+
+.context-item-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .sidebar-main {
@@ -615,6 +695,11 @@ button.primary-button {
   }
 
   .sidebar {
+    position: static;
+    min-height: auto;
+  }
+
+  .context-sidebar {
     position: static;
     min-height: auto;
   }

@@ -64,6 +64,7 @@ function NavIcon({ name }: { name: IconName }) {
 
 export function AppShell({
   children,
+  user,
 }: {
   children: React.ReactNode;
   user: {
@@ -73,9 +74,11 @@ export function AppShell({
   };
 }) {
   const pathname = usePathname();
+  const contextMode =
+    pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${contextMode ? " app-shell-with-context" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-main">
           <nav className="nav-list" aria-label="Primary">
@@ -119,6 +122,56 @@ export function AppShell({
           </form>
         </nav>
       </aside>
+
+      {contextMode ? (
+        <aside className="context-sidebar">
+          {contextMode === "dm" ? (
+            <>
+              <div className="context-header">
+                <span className="context-label">DM</span>
+                <button className="context-action" type="button">
+                  New
+                </button>
+              </div>
+              <div className="context-list">
+                <button className="context-item context-item-active" type="button">
+                  <span className="context-item-title">
+                    {user.displayName}&apos;s Agent
+                  </span>
+                  <span className="context-item-meta">Personal agent</span>
+                </button>
+                <button className="context-item" type="button">
+                  <span className="context-item-title">Jiyeon Agent</span>
+                  <span className="context-item-meta">Available later</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="context-header">
+                <span className="context-label">Team Chat</span>
+                <button className="context-action" type="button">
+                  New
+                </button>
+              </div>
+              <div className="context-list">
+                <button className="context-item context-item-active" type="button">
+                  <span className="context-item-title">Team 03</span>
+                  <span className="context-item-meta">Main channel</span>
+                </button>
+                <button className="context-item" type="button">
+                  <span className="context-item-title">Research</span>
+                  <span className="context-item-meta">Draft channel</span>
+                </button>
+                <button className="context-item" type="button">
+                  <span className="context-item-title">Outputs</span>
+                  <span className="context-item-meta">Draft channel</span>
+                </button>
+              </div>
+            </>
+          )}
+        </aside>
+      ) : null}
 
       <main className="app-content">{children}</main>
     </div>
