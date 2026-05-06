@@ -21,12 +21,7 @@ export function AppShell({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-block">
-          <span className="eyebrow">Study Console</span>
-          <h1 className="brand-title">OpenClaw Study Console</h1>
-          <p>
-            Participants log in with study-only accounts and interact with one personal
-            agent each.
-          </p>
+          <h1 className="brand-title">TBA: Tool Name</h1>
         </div>
 
         <nav className="nav-list" aria-label="Primary">
@@ -45,20 +40,6 @@ export function AppShell({
             );
           })}
         </nav>
-
-        <div className="sidebar-card">
-          <span className="pill">MVP scope</span>
-          <ul>
-            <li>Hetzner single-server deployment</li>
-            <li>OpenClaw gateway on the same host</li>
-            <li>Study-only usernames and passwords</li>
-          </ul>
-        </div>
-
-        <div className="sidebar-card">
-          <span className="pill">Current agent model</span>
-          <p>MiniMax now, Claude later for the user-facing chat layer if needed.</p>
-        </div>
 
         <div className="sidebar-card">
           <span className="pill">{user.displayName}</span>
