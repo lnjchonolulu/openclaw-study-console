@@ -267,7 +267,7 @@ export function AppShell({
     setTeamChannelName(detail.title);
     setTeamInviteIds(
       detail.members
-        .filter((member) => member.id !== user.id)
+        .filter((member) => member.kind !== "agent" && member.id !== user.id)
         .map((member) => member.id),
     );
     setEditingChannelId(channel.id);

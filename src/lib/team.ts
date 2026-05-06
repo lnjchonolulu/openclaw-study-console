@@ -144,6 +144,14 @@ async function syncRoomAgents(roomId: string, memberUserIds: string[]) {
   );
 }
 
+async function clearRoomAgents(roomId: string) {
+  await prisma.roomAgent.deleteMany({
+    where: {
+      roomId,
+    },
+  });
+}
+
 function mergeParticipants(
   userMembers: Array<{
     user: {
@@ -166,6 +174,32 @@ function mergeParticipants(
     ...userMembers.map((member) => mapParticipant(member.user)),
     ...agentMembers.map((member) => mapAgentParticipant(member.agent)),
   ];
+}
+
+function buildChannelParticipants(args: {
+  agentMembers: Array<{
+    agent: {
+      id: string;
+      user: {
+        displayName: string;
+        username: string;
+      };
+    };
+  }>;
+  roomName: string;
+  userMembers: Array<{
+    user: {
+      displayName: string;
+      id: string;
+      username: string;
+    };
+  }>;
+}) {
+  if (args.roomName === "General") {
+    return mergeParticipants(args.userMembers, args.agentMembers);
+  }
+
+  return args.userMembers.map((member) => mapParticipant(member.user));
 }
 
 export async function ensureGeneralTeamChannel(userId: string) {
@@ -379,10 +413,18 @@ export async function getTeamChannelDetail(
       return null;
     }
 
+    if (fallbackRoom.name !== "General" && fallbackRoom.agents.length > 0) {
+      await clearRoomAgents(fallbackRoom.id);
+    }
+
     return {
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
-      members: mergeParticipants(fallbackRoom.members, fallbackRoom.agents),
+      members: buildChannelParticipants({
+        roomName: fallbackRoom.name,
+        userMembers: fallbackRoom.members,
+        agentMembers: fallbackRoom.agents,
+      }),
       messages: fallbackRoom.messages.map((message) => ({
         author: message.user?.displayName ?? "Unknown",
         content: message.content,
@@ -394,10 +436,18 @@ export async function getTeamChannelDetail(
     };
   }
 
+  if (room.name !== "General" && room.agents.length > 0) {
+    await clearRoomAgents(room.id);
+  }
+
   return {
     createdBy: room.ownerUserId,
     id: room.id,
-    members: mergeParticipants(room.members, room.agents),
+    members: buildChannelParticipants({
+      roomName: room.name,
+      userMembers: room.members,
+      agentMembers: room.agents,
+    }),
     messages: room.messages.map((message) => ({
       author: message.user?.displayName ?? "Unknown",
       content: message.content,
@@ -441,8 +491,6 @@ export async function createTeamChannel(
       },
     },
   });
-
-  await syncRoomAgents(created.id, memberIds);
 
   return created;
 }
@@ -527,7 +575,7 @@ export async function updateTeamChannel(
     ),
   );
 
-  await syncRoomAgents(room.id, memberIds);
+  await clearRoomAgents(room.id);
 
   return room;
 }
