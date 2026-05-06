@@ -110,7 +110,7 @@ model FileRecord {
 model Room {
   id           String       @id @default(cuid())
   type         RoomType
-  name         String
+  name         String       @default("Untitled room")
   teamId       String?
   ownerUserId  String?
   createdAt    DateTime     @default(now())
