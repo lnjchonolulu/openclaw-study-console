@@ -23,6 +23,7 @@ export function ChatClient({
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messageEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -35,6 +36,10 @@ export function ChatClient({
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [message]);
+
+  useLayoutEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, isSending, error]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,9 +122,10 @@ export function ChatClient({
         ))}
         {isSending ? (
           <div className="message-row message-row-agent message-row-pending">
-            <p>Writing...</p>
+            <p>{recipientKind === "agent" ? "Writing..." : "Sending..."}</p>
           </div>
         ) : null}
+        <div ref={messageEndRef} />
       </div>
 
       <form className="message-composer" onSubmit={handleSubmit}>
