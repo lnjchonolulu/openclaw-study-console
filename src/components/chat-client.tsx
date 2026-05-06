@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type ChatMessage = {
   id: string;
@@ -21,11 +21,13 @@ export function ChatClient({
   initialMessages,
   recipientId,
   recipientKind,
+  roomId,
 }: {
   agentId: string | null;
   initialMessages: ChatMessage[];
   recipientId: string | null;
   recipientKind: "agent" | "person";
+  roomId: string | null;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [message, setMessage] = useState("");
@@ -48,6 +50,35 @@ export function ChatClient({
   useLayoutEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages, isSending, error]);
+
+  useEffect(() => {
+    if (recipientKind !== "person" || !roomId) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function refreshMessages() {
+      const response = await fetch(`/api/dm/messages?roomId=${encodeURIComponent(roomId!)}`);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { messages?: ChatMessage[] };
+
+      if (isMounted && payload.messages) {
+        setMessages(payload.messages);
+      }
+    }
+
+    const intervalId = window.setInterval(refreshMessages, 2500);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [recipientKind, roomId]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

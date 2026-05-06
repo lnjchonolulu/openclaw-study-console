@@ -244,6 +244,7 @@ export default async function ChatPage({
             ? `person:${personDmRoom.targetUser.id}`
             : `agent:${agentDmRoom?.targetAgent.openclawAgentId ?? "unassigned"}`
         }
+        roomId={room?.id ?? null}
         recipientId={personDmRoom?.targetUser.id ?? null}
         recipientKind={personDmRoom ? "person" : "agent"}
       />
