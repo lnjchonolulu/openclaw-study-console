@@ -616,8 +616,20 @@ button.primary-button {
   max-width: min(680px, 78%);
 }
 
+.message-stack-user {
+  align-self: flex-end;
+  justify-items: end;
+}
+
+.message-stack-other {
+  align-self: flex-start;
+  justify-items: start;
+}
+
 .message-row {
   display: grid;
+  width: fit-content;
+  max-width: 100%;
   padding: 10px 13px;
   border-radius: 14px;
   border: 1px solid rgba(17, 17, 17, 0.08);
@@ -625,8 +637,6 @@ button.primary-button {
 }
 
 .message-row-user {
-  align-self: flex-end;
-  justify-items: end;
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
@@ -637,8 +647,7 @@ button.primary-button {
 }
 
 .message-row-agent {
-  align-self: flex-start;
-  justify-items: start;
+  color: var(--foreground);
 }
 
 .message-row-pending {

@@ -98,6 +98,14 @@ export function AppShell({
     { id: "research", title: "Research", meta: "Draft channel" },
     { id: "outputs", title: "Outputs", meta: "Draft channel" },
   ]);
+  const displayedDmItems = dmItems.map((item) =>
+    pathname === "/chat" && `${item.kind}:${item.id}` === selectedDmKey
+      ? {
+          ...item,
+          unreadCount: 0,
+        }
+      : item,
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -123,6 +131,30 @@ export function AppShell({
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (pathname !== "/chat") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      const response = await fetch("/api/dm/sidebar");
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { conversations?: DmItem[] };
+
+      if (payload.conversations) {
+        setDmItems(payload.conversations);
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [pathname, selectedDmKey]);
 
   function getDmHref(target: DmItem) {
     const paramName = target.kind === "agent" ? "agent" : "user";
@@ -224,7 +256,7 @@ export function AppShell({
                 </button>
               </div>
               <div className="context-list">
-                {dmItems.map((target) => {
+                {displayedDmItems.map((target) => {
                   const isActive = selectedDmKey === `${target.kind}:${target.id}`;
                   const unreadCount = isActive ? 0 : target.unreadCount;
 

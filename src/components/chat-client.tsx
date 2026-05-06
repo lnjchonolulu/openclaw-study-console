@@ -130,6 +130,7 @@ export function ChatClient({
 
     void fetch("/api/dm/read", {
       method: "POST",
+      keepalive: true,
       headers: {
         "Content-Type": "application/json",
       },
@@ -351,11 +352,17 @@ export function ChatClient({
           ) : (
             <div
               className={`message-stack ${
-                row.message.role === "USER" ? "message-row-user" : "message-row-agent"
+                row.message.role === "USER"
+                  ? "message-stack-user"
+                  : "message-stack-other"
               }`}
               key={row.key}
             >
-              <div className="message-row">
+              <div
+                className={`message-row ${
+                  row.message.role === "USER" ? "message-row-user" : "message-row-agent"
+                }`}
+              >
                 <p>{row.message.content}</p>
               </div>
               {row.showTimestamp ? (
