@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 export type TeamParticipant = {
   id: string;
+  kind?: "agent" | "user";
   name: string;
   status: string;
   username: string;
@@ -66,10 +67,105 @@ function mapParticipant(user: {
 }) {
   return {
     id: user.id,
+    kind: "user" as const,
     name: user.displayName,
-    status: "Personal agent active",
+    status: "Participant",
     username: user.username,
   };
+}
+
+function mapAgentParticipant(agent: {
+  id: string;
+  user: {
+    displayName: string;
+    username: string;
+  };
+}) {
+  return {
+    id: agent.id,
+    kind: "agent" as const,
+    name: `${agent.user.displayName}'s agent`,
+    status: "Agent",
+    username: `${agent.user.username}-agent`,
+  };
+}
+
+async function syncRoomAgents(roomId: string, memberUserIds: string[]) {
+  const teamAgents = await prisma.agent.findMany({
+    where: {
+      userId: {
+        in: memberUserIds,
+      },
+      user: {
+        status: "ACTIVE",
+      },
+    },
+    include: {
+      user: true,
+    },
+  });
+
+  const agentIds = teamAgents.map((agent) => agent.id);
+
+  await prisma.roomAgent.deleteMany({
+    where: {
+      roomId,
+      agentId: {
+        notIn: agentIds.length > 0 ? agentIds : ["__none__"],
+      },
+    },
+  });
+
+  await Promise.all(
+    teamAgents.map((agent) =>
+      prisma.roomAgent.upsert({
+        where: {
+          roomId_agentId: {
+            roomId,
+            agentId: agent.id,
+          },
+        },
+        update: {
+          role: "COLLABORATOR",
+          canRespond: true,
+          canUseFiles: true,
+          canBeMentioned: true,
+        },
+        create: {
+          roomId,
+          agentId: agent.id,
+          role: "COLLABORATOR",
+          canRespond: true,
+          canUseFiles: true,
+          canBeMentioned: true,
+        },
+      }),
+    ),
+  );
+}
+
+function mergeParticipants(
+  userMembers: Array<{
+    user: {
+      displayName: string;
+      id: string;
+      username: string;
+    };
+  }>,
+  agentMembers: Array<{
+    agent: {
+      id: string;
+      user: {
+        displayName: string;
+        username: string;
+      };
+    };
+  }>,
+) {
+  return [
+    ...userMembers.map((member) => mapParticipant(member.user)),
+    ...agentMembers.map((member) => mapAgentParticipant(member.agent)),
+  ];
 }
 
 export async function ensureGeneralTeamChannel(userId: string) {
@@ -111,10 +207,15 @@ export async function ensureGeneralTeamChannel(userId: string) {
       ),
     );
 
+    await syncRoomAgents(
+      existing.id,
+      teamUsers.map((teamUser) => teamUser.id),
+    );
+
     return existing;
   }
 
-  return prisma.room.create({
+  const created = await prisma.room.create({
     data: {
       type: "TEAM",
       name: "General",
@@ -130,6 +231,13 @@ export async function ensureGeneralTeamChannel(userId: string) {
       },
     },
   });
+
+  await syncRoomAgents(
+    created.id,
+    context.team.users.map((teamUser) => teamUser.id),
+  );
+
+  return created;
 }
 
 export async function listTeamParticipants(userId: string): Promise<TeamParticipant[]> {
@@ -214,6 +322,15 @@ export async function getTeamChannelDetail(
           user: true,
         },
       },
+      agents: {
+        include: {
+          agent: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      },
       messages: {
         orderBy: {
           createdAt: "asc",
@@ -238,6 +355,15 @@ export async function getTeamChannelDetail(
               user: true,
             },
           },
+          agents: {
+            include: {
+              agent: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          },
           messages: {
             orderBy: {
               createdAt: "asc",
@@ -256,7 +382,7 @@ export async function getTeamChannelDetail(
     return {
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
-      members: fallbackRoom.members.map((member) => mapParticipant(member.user)),
+      members: mergeParticipants(fallbackRoom.members, fallbackRoom.agents),
       messages: fallbackRoom.messages.map((message) => ({
         author: message.user?.displayName ?? "Unknown",
         content: message.content,
@@ -271,7 +397,7 @@ export async function getTeamChannelDetail(
   return {
     createdBy: room.ownerUserId,
     id: room.id,
-    members: room.members.map((member) => mapParticipant(member.user)),
+    members: mergeParticipants(room.members, room.agents),
     messages: room.messages.map((message) => ({
       author: message.user?.displayName ?? "Unknown",
       content: message.content,
@@ -299,7 +425,7 @@ export async function createTeamChannel(
     allowedUserIds.has(id),
   );
 
-  return prisma.room.create({
+  const created = await prisma.room.create({
     data: {
       type: "TEAM",
       name,
@@ -315,6 +441,10 @@ export async function createTeamChannel(
       },
     },
   });
+
+  await syncRoomAgents(created.id, memberIds);
+
+  return created;
 }
 
 export async function updateTeamChannel(
@@ -396,6 +526,8 @@ export async function updateTeamChannel(
       }),
     ),
   );
+
+  await syncRoomAgents(room.id, memberIds);
 
   return room;
 }
