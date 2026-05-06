@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getOrCreateAgentDmRoom } from "@/lib/dm";
+import { getOrCreateAgentDmRoom, markRoomAsReadAt } from "@/lib/dm";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -77,6 +77,8 @@ export async function POST(request: Request) {
       },
       data: {},
     });
+
+    await markRoomAsReadAt(dmRoom.room.id, user.id, replyMessage.createdAt);
 
     return NextResponse.json({
       reply: result.assistantText,

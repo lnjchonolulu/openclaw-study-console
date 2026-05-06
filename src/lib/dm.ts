@@ -206,13 +206,21 @@ export function serializeChatMessages(
 }
 
 export async function markRoomAsRead(roomId: string, userId: string) {
+  await markRoomAsReadAt(roomId, userId, new Date());
+}
+
+export async function markRoomAsReadAt(
+  roomId: string,
+  userId: string,
+  timestamp: Date,
+) {
   await prisma.roomMember.updateMany({
     where: {
       roomId,
       userId,
     },
     data: {
-      lastReadAt: new Date(),
+      lastReadAt: timestamp,
     },
   });
 }
