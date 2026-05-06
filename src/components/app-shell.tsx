@@ -11,8 +11,6 @@ function NavIcon({ name }: { name: IconName }) {
     dm: (
       <>
         <path d="M4.75 5.75h14.5v10.5H9l-4.25 3.5v-14Z" />
-        <path d="M8 9.25h8" />
-        <path d="M8 12.75h5.5" />
       </>
     ),
     team: (

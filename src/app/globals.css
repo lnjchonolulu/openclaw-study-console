@@ -186,7 +186,7 @@ button.primary-button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 188px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -197,7 +197,7 @@ button.primary-button {
   flex-direction: column;
   gap: 18px;
   min-height: 100vh;
-  padding: 28px 22px;
+  padding: 22px 14px;
   background: rgba(255, 255, 255, 0.82);
   border-right: 1px solid var(--surface-border);
   backdrop-filter: blur(14px);
@@ -246,10 +246,10 @@ button.primary-button {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 10px 11px;
+  border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--foreground);
