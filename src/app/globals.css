@@ -848,7 +848,7 @@ button.primary-button {
 
 .team-members-popover {
   position: absolute;
-  top: 44px;
+  top: 50px;
   left: 0;
   z-index: 5;
   width: min(320px, calc(100vw - 72px));
@@ -890,10 +890,10 @@ button.primary-button {
 }
 
 .team-modal {
-  width: min(440px, 100%);
+  width: min(520px, 100%);
   display: grid;
-  gap: 18px;
-  padding: 22px;
+  gap: 20px;
+  padding: 24px;
   border: 1px solid var(--surface-border);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.98);
@@ -905,22 +905,91 @@ button.primary-button {
   letter-spacing: -0.02em;
 }
 
+.team-modal-header {
+  display: grid;
+  gap: 6px;
+}
+
 .team-modal-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .team-invite-list {
   display: grid;
   gap: 10px;
+  max-height: min(48vh, 420px);
+  padding-right: 4px;
+  overflow-y: auto;
 }
 
-.team-invite-item {
-  display: flex;
+.team-modal-input {
+  margin-top: 0;
+}
+
+.team-invite-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
   align-items: center;
-  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--foreground);
   font-size: 0.95rem;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.team-invite-card:hover {
+  border-color: rgba(17, 17, 17, 0.22);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.team-invite-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.team-invite-card-selected {
+  border-color: rgba(17, 17, 17, 0.28);
+  background: rgba(17, 17, 17, 0.04);
+}
+
+.team-invite-check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  border-radius: 999px;
+  background: white;
+  color: var(--foreground);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.team-invite-card-selected .team-invite-check {
+  border-color: rgba(17, 17, 17, 0.8);
+  background: rgba(17, 17, 17, 0.94);
+  color: white;
+}
+
+.team-invite-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.team-invite-copy > span:first-child {
+  color: var(--foreground);
+  font-weight: 600;
 }
 
 .team-modal-actions {

@@ -98,6 +98,7 @@ export function AppShell({
   const [teamInviteKeys, setTeamInviteKeys] = useState<string[]>([]);
   const [channelMenuId, setChannelMenuId] = useState<string | null>(null);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [teamModalMode, setTeamModalMode] = useState<"create" | "members" | "rename">("create");
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
@@ -243,15 +244,20 @@ export function AppShell({
     setTeamChannelName("");
     setTeamInviteKeys([]);
     setEditingChannelId(null);
+    setTeamModalMode("create");
   }
 
   function openCreateTeamChannelModal() {
     setContextNotice(null);
     resetTeamChannelModal();
+    setTeamModalMode("create");
     setIsTeamChannelModalOpen(true);
   }
 
-  async function openEditTeamChannelModal(channel: TeamChannelSummary) {
+  async function openEditTeamChannelModal(
+    channel: TeamChannelSummary,
+    mode: "members" | "rename",
+  ) {
     setChannelMenuId(null);
     setContextNotice(null);
 
@@ -264,6 +270,7 @@ export function AppShell({
 
     const detail = (await response.json()) as TeamChannelDetail;
 
+    setTeamModalMode(mode);
     setTeamChannelName(detail.title);
     setTeamInviteKeys(
       detail.members
@@ -521,11 +528,20 @@ export function AppShell({
                             <button
                               className="context-team-menu-item"
                               onClick={() => {
-                                void openEditTeamChannelModal(channel);
+                                void openEditTeamChannelModal(channel, "rename");
                               }}
                               type="button"
                             >
                               Edit Channel Name
+                            </button>
+                            <button
+                              className="context-team-menu-item"
+                              onClick={() => {
+                                void openEditTeamChannelModal(channel, "members");
+                              }}
+                              type="button"
+                            >
+                              Add Participants
                             </button>
                             {channel.createdBy === user.id ? (
                               <button
@@ -566,47 +582,75 @@ export function AppShell({
             }}
           >
             <div className="team-modal-header">
-              <h2>{editingChannelId ? "Edit channel" : "New channel"}</h2>
+              <h2>
+                {teamModalMode === "create"
+                  ? "New channel"
+                  : teamModalMode === "members"
+                    ? "Add participants"
+                    : "Edit channel name"}
+              </h2>
+              <p className="helper-text">
+                {teamModalMode === "create"
+                  ? "Create a channel and choose exactly who belongs in it."
+                  : teamModalMode === "members"
+                    ? "Update the people and agents who can access this channel."
+                    : "Rename the channel without changing its members."}
+              </p>
             </div>
-            <label className="split-label">
-              Channel Name
-              <input
-                value={teamChannelName}
-                onChange={(event) => {
-                  setTeamChannelName(event.target.value);
-                }}
-                type="text"
-              />
-            </label>
-            <div className="team-modal-section">
-              <span className="context-label">Invite Participants</span>
-              <div className="team-invite-list">
-                {participants
-                  .filter((member) => !(member.kind === "user" && member.id === user.id))
-                  .map((member) => {
-                    const memberKey = `${member.kind ?? "user"}:${member.id}`;
-                    const checked = teamInviteKeys.includes(memberKey);
+            {teamModalMode !== "members" ? (
+              <label className="split-label">
+                Channel Name
+                <input
+                  className="team-modal-input"
+                  value={teamChannelName}
+                  onChange={(event) => {
+                    setTeamChannelName(event.target.value);
+                  }}
+                  type="text"
+                />
+              </label>
+            ) : null}
+            {teamModalMode !== "rename" ? (
+              <div className="team-modal-section">
+                <span className="context-label">Participants</span>
+                <div className="team-invite-list">
+                  {participants
+                    .filter((member) => !(member.kind === "user" && member.id === user.id))
+                    .map((member) => {
+                      const memberKey = `${member.kind ?? "user"}:${member.id}`;
+                      const checked = teamInviteKeys.includes(memberKey);
 
-                    return (
-                      <label className="team-invite-item" key={memberKey}>
-                        <input
-                          checked={checked}
-                          onChange={(event) => {
-                            setTeamInviteKeys((current) =>
-                              event.target.checked
-                                ? [...current, memberKey]
-                                : current.filter((item) => item !== memberKey),
-                            );
-                          }}
-                          type="checkbox"
-                        />
-                        <span>{member.name}</span>
-                        <span className="context-item-meta">{member.status}</span>
-                      </label>
-                    );
-                  })}
+                      return (
+                        <label
+                          className={`team-invite-card${
+                            checked ? " team-invite-card-selected" : ""
+                          }`}
+                          key={memberKey}
+                        >
+                          <input
+                            checked={checked}
+                            onChange={(event) => {
+                              setTeamInviteKeys((current) =>
+                                event.target.checked
+                                  ? [...current, memberKey]
+                                  : current.filter((item) => item !== memberKey),
+                              );
+                            }}
+                            type="checkbox"
+                          />
+                          <span className="team-invite-check" aria-hidden="true">
+                            {checked ? "✓" : ""}
+                          </span>
+                          <span className="team-invite-copy">
+                            <span>{member.name}</span>
+                            <span className="context-item-meta">{member.status}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                </div>
               </div>
-            </div>
+            ) : null}
             <div className="team-modal-actions">
               <button
                 className="secondary-button"
@@ -625,7 +669,11 @@ export function AppShell({
                 }}
                 type="button"
               >
-                {editingChannelId ? "Save" : "Create"}
+                {teamModalMode === "create"
+                  ? "Create"
+                  : teamModalMode === "members"
+                    ? "Save Participants"
+                    : "Save Name"}
               </button>
             </div>
           </div>
