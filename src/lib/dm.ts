@@ -17,6 +17,42 @@ export type DmItem = {
   unreadCount: number;
 };
 
+async function ensureRoomMembership(roomId: string, userId: string) {
+  const room = await prisma.room.findUnique({
+    where: {
+      id: roomId,
+    },
+    select: {
+      id: true,
+      ownerUserId: true,
+    },
+  });
+
+  if (!room) {
+    return;
+  }
+
+  const isOwner = room.ownerUserId === userId;
+
+  await prisma.roomMember.upsert({
+    where: {
+      roomId_userId: {
+        roomId,
+        userId,
+      },
+    },
+    update: {},
+    create: {
+      roomId,
+      userId,
+      role: isOwner ? "OWNER" : "MEMBER",
+      canManageRoom: isOwner,
+      canManageAgents: isOwner,
+      canShareFiles: true,
+    },
+  });
+}
+
 export async function getOrCreateAgentDmRoom(userId: string, targetAgentId: string) {
   const targetAgent = await prisma.agent.findUnique({
     where: {
@@ -41,6 +77,8 @@ export async function getOrCreateAgentDmRoom(userId: string, targetAgentId: stri
   });
 
   if (existingRoom) {
+    await ensureRoomMembership(existingRoom.id, userId);
+
     return {
       room: existingRoom,
       targetAgent,
@@ -61,6 +99,8 @@ export async function getOrCreateAgentDmRoom(userId: string, targetAgentId: stri
       : null;
 
   if (legacyOwnRoom) {
+    await ensureRoomMembership(legacyOwnRoom.id, userId);
+
     await prisma.roomAgent.create({
       data: {
         roomId: legacyOwnRoom.id,
@@ -214,6 +254,8 @@ export async function markRoomAsReadAt(
   userId: string,
   timestamp: Date,
 ) {
+  await ensureRoomMembership(roomId, userId);
+
   await prisma.roomMember.updateMany({
     where: {
       roomId,
@@ -295,6 +337,10 @@ export async function getDmCollections(userId: string) {
       },
     },
   });
+
+  await Promise.all(
+    existingDmRooms.map((room) => ensureRoomMembership(room.id, userId)),
+  );
 
   const unreadCounts = await Promise.all(
     existingDmRooms.map(async (room) => {

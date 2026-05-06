@@ -351,13 +351,18 @@ export function ChatClient({
             </div>
           ) : (
             <div
-              className={`message-stack ${
+              className={`message-line ${
                 row.message.role === "USER"
-                  ? "message-stack-user"
-                  : "message-stack-other"
+                  ? "message-line-user"
+                  : "message-line-other"
               }`}
               key={row.key}
             >
+              {row.showTimestamp && row.message.role === "USER" ? (
+                <span className="message-timestamp message-timestamp-user">
+                  {formatMessageTime(row.message.createdAt)}
+                </span>
+              ) : null}
               <div
                 className={`message-row ${
                   row.message.role === "USER" ? "message-row-user" : "message-row-agent"
@@ -365,14 +370,8 @@ export function ChatClient({
               >
                 <p>{row.message.content}</p>
               </div>
-              {row.showTimestamp ? (
-                <span
-                  className={`message-timestamp ${
-                    row.message.role === "USER"
-                      ? "message-timestamp-user"
-                      : "message-timestamp-other"
-                  }`}
-                >
+              {row.showTimestamp && row.message.role !== "USER" ? (
+                <span className="message-timestamp message-timestamp-other">
                   {formatMessageTime(row.message.createdAt)}
                 </span>
               ) : null}

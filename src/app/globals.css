@@ -609,27 +609,27 @@ button.primary-button {
   overflow-y: auto;
 }
 
-.message-stack {
-  display: grid;
-  gap: 4px;
-  width: fit-content;
-  max-width: min(680px, 78%);
+.message-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
 }
 
-.message-stack-user {
+.message-line-user {
   align-self: flex-end;
-  justify-items: end;
+  justify-content: flex-end;
 }
 
-.message-stack-other {
+.message-line-other {
   align-self: flex-start;
-  justify-items: start;
+  justify-content: flex-start;
 }
 
 .message-row {
   display: grid;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(680px, 78%);
   padding: 10px 13px;
   border-radius: 14px;
   border: 1px solid rgba(17, 17, 17, 0.08);
@@ -676,16 +676,14 @@ button.primary-button {
 .message-timestamp {
   font-size: 0.72rem;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .message-timestamp-user {
-  margin-left: 2px;
   color: #8a8a8a;
 }
 
 .message-timestamp-other {
-  justify-self: end;
-  margin-right: 2px;
   color: #8a8a8a;
 }
 
