@@ -6,6 +6,13 @@ import { useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 
 type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
+type DmItem = {
+  id: string;
+  kind: "agent" | "person";
+  displayName: string;
+  meta: string;
+  isOwnAgent: boolean;
+};
 
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -69,17 +76,9 @@ export function AppShell({
   dmConversations,
   user,
 }: {
-  availableDmTargets: Array<{
-    agentId: string;
-    displayName: string;
-    isOwnAgent: boolean;
-  }>;
+  availableDmTargets: DmItem[];
   children: React.ReactNode;
-  dmConversations: Array<{
-    agentId: string;
-    displayName: string;
-    isOwnAgent: boolean;
-  }>;
+  dmConversations: DmItem[];
   user: {
     agentId: string | null;
     displayName: string;
@@ -97,7 +96,9 @@ export function AppShell({
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
-  const selectedAgentId = searchParams.get("agent") ?? user.agentId;
+  const selectedDmKey = searchParams.get("user")
+    ? `person:${searchParams.get("user")}`
+    : `agent:${searchParams.get("agent") ?? user.agentId ?? ""}`;
   const selectedChannel = searchParams.get("channel") ?? "main";
   const [teamChannels, setTeamChannels] = useState([
     { id: "main", title: user.teamName ?? "Team 03", meta: "Main channel" },
@@ -105,16 +106,24 @@ export function AppShell({
     { id: "outputs", title: "Outputs", meta: "Draft channel" },
   ]);
 
-  function startDm(target: (typeof availableDms)[number]) {
+  function getDmHref(target: DmItem) {
+    const paramName = target.kind === "agent" ? "agent" : "user";
+
+    return `/chat?${paramName}=${encodeURIComponent(target.id)}`;
+  }
+
+  function startDm(target: DmItem) {
     setContextNotice(null);
     setIsNewDmOpen(false);
     setDmItems((current) =>
-      current.some((item) => item.agentId === target.agentId)
+      current.some((item) => item.id === target.id && item.kind === target.kind)
         ? current
         : [...current, target],
     );
     setAvailableDms((current) =>
-      current.filter((item) => item.agentId !== target.agentId),
+      current.filter(
+        (item) => !(item.id === target.id && item.kind === target.kind),
+      ),
     );
   }
 
@@ -198,23 +207,21 @@ export function AppShell({
               </div>
               <div className="context-list">
                 {dmItems.map((target) => {
-                  const isActive = selectedAgentId === target.agentId;
+                  const isActive = selectedDmKey === `${target.kind}:${target.id}`;
 
                   return (
                     <Link
                       className={`context-item${
                         isActive ? " context-item-active" : ""
                       }`}
-                      href={`/chat?agent=${encodeURIComponent(target.agentId)}`}
-                      key={target.agentId}
+                      href={getDmHref(target)}
+                      key={`${target.kind}:${target.id}`}
                       onClick={() => {
                         setContextNotice(null);
                       }}
                     >
                       <span className="context-item-title">{target.displayName}</span>
-                      <span className="context-item-meta">
-                        {target.isOwnAgent ? "Personal agent" : "Shared agent"}
-                      </span>
+                      <span className="context-item-meta">{target.meta}</span>
                     </Link>
                   );
                 })}
@@ -226,8 +233,8 @@ export function AppShell({
                     availableDms.map((target) => (
                       <Link
                         className="context-item"
-                        href={`/chat?agent=${encodeURIComponent(target.agentId)}`}
-                        key={target.agentId}
+                        href={getDmHref(target)}
+                        key={`${target.kind}:${target.id}`}
                         onClick={() => {
                           startDm(target);
                         }}
@@ -235,7 +242,9 @@ export function AppShell({
                         <span className="context-item-title">
                           {target.displayName}
                         </span>
-                        <span className="context-item-meta">Available</span>
+                        <span className="context-item-meta">
+                          {target.kind === "person" ? "Person" : "Agent"}
+                        </span>
                       </Link>
                     ))
                   ) : (

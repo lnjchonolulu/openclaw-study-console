@@ -89,24 +89,110 @@ async function getOrCreateDmRoom(userId: string, targetAgentId: string) {
   };
 }
 
+async function getOrCreatePersonDmRoom(userId: string, targetUserId: string) {
+  if (userId === targetUserId) {
+    return null;
+  }
+
+  const targetUser = await prisma.user.findUnique({
+    where: {
+      id: targetUserId,
+    },
+  });
+
+  if (!targetUser || targetUser.status !== "ACTIVE") {
+    return null;
+  }
+
+  const existingRoom = await prisma.room.findFirst({
+    where: {
+      type: "GROUP",
+      agents: {
+        none: {},
+      },
+      AND: [
+        {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+        {
+          members: {
+            some: {
+              userId: targetUserId,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  if (existingRoom) {
+    return {
+      room: existingRoom,
+      targetUser,
+    };
+  }
+
+  const room = await prisma.room.create({
+    data: {
+      type: "GROUP",
+      name: targetUser.displayName,
+      ownerUserId: userId,
+      members: {
+        create: [
+          {
+            userId,
+            role: "OWNER",
+            canManageRoom: true,
+            canShareFiles: true,
+          },
+          {
+            userId: targetUserId,
+            role: "MEMBER",
+            canShareFiles: true,
+          },
+        ],
+      },
+    },
+  });
+
+  return {
+    room,
+    targetUser,
+  };
+}
+
 export default async function ChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ agent?: string | string[] }>;
+  searchParams: Promise<{ agent?: string | string[]; user?: string | string[] }>;
 }) {
   const user = await requireUser();
-  const selectedAgentParam = (await searchParams).agent;
+  const query = await searchParams;
+  const selectedUserParam = query.user;
+  const selectedUserId =
+    typeof selectedUserParam === "string" ? selectedUserParam : null;
+  const selectedAgentParam = query.agent;
   const selectedAgentId =
-    typeof selectedAgentParam === "string"
+    !selectedUserId && typeof selectedAgentParam === "string"
       ? selectedAgentParam
       : user.agent?.openclawAgentId;
-  const dmRoom =
-    selectedAgentId ? await getOrCreateDmRoom(user.id, selectedAgentId) : null;
+  const personDmRoom = selectedUserId
+    ? await getOrCreatePersonDmRoom(user.id, selectedUserId)
+    : null;
+  const agentDmRoom =
+    !selectedUserId && selectedAgentId
+      ? await getOrCreateDmRoom(user.id, selectedAgentId)
+      : null;
+  const selectedRoom = personDmRoom ?? agentDmRoom;
   const room =
-    dmRoom &&
+    selectedRoom &&
     (await prisma.room.findUnique({
       where: {
-        id: dmRoom.room.id,
+        id: selectedRoom.room.id,
       },
       include: {
         messages: {
@@ -129,14 +215,21 @@ export default async function ChatPage({
       )
       .map((entry) => ({
         id: entry.id,
-        role: entry.role,
+        role:
+          entry.role === "AGENT"
+            ? ("AGENT" as const)
+            : entry.userId === user.id
+              ? ("USER" as const)
+              : ("OTHER" as const),
         content: entry.content,
       })) ?? [
       {
         id: "welcome-agent",
         role: "AGENT" as const,
         content: `Hi. You are now talking with ${
-          dmRoom?.targetAgent.displayName ?? "your agent"
+          personDmRoom?.targetUser.displayName ??
+          agentDmRoom?.targetAgent.displayName ??
+          "your agent"
         }.`,
       },
     ];
@@ -144,9 +237,15 @@ export default async function ChatPage({
   return (
     <section className="chat-page">
       <ChatClient
-        key={dmRoom?.targetAgent.openclawAgentId ?? "unassigned-agent"}
-        agentId={dmRoom?.targetAgent.openclawAgentId ?? null}
+        agentId={agentDmRoom?.targetAgent.openclawAgentId ?? null}
         initialMessages={initialMessages}
+        key={
+          personDmRoom
+            ? `person:${personDmRoom.targetUser.id}`
+            : `agent:${agentDmRoom?.targetAgent.openclawAgentId ?? "unassigned"}`
+        }
+        recipientId={personDmRoom?.targetUser.id ?? null}
+        recipientKind={personDmRoom ? "person" : "agent"}
       />
     </section>
   );

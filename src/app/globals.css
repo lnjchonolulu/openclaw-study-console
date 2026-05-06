@@ -276,6 +276,21 @@ button.primary-button {
   gap: 8px;
 }
 
+.context-new-list {
+  position: absolute;
+  top: 58px;
+  right: 14px;
+  left: 14px;
+  z-index: 4;
+  max-height: min(360px, calc(100vh - 92px));
+  padding: 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.14);
+  overflow-y: auto;
+}
+
 .context-item {
   appearance: none;
   display: grid;

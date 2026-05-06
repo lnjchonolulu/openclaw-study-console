@@ -4,16 +4,20 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 type ChatMessage = {
   id: string;
-  role: "USER" | "AGENT";
+  role: "USER" | "AGENT" | "OTHER";
   content: string;
 };
 
 export function ChatClient({
   agentId,
   initialMessages,
+  recipientId,
+  recipientKind,
 }: {
   agentId: string | null;
   initialMessages: ChatMessage[];
+  recipientId: string | null;
+  recipientKind: "agent" | "person";
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [message, setMessage] = useState("");
@@ -37,7 +41,15 @@ export function ChatClient({
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || isSending || !agentId) {
+    if (!trimmedMessage || isSending) {
+      return;
+    }
+
+    if (recipientKind === "agent" && !agentId) {
+      return;
+    }
+
+    if (recipientKind === "person" && !recipientId) {
       return;
     }
 
@@ -52,7 +64,9 @@ export function ChatClient({
     setMessages((current) => [...current, optimisticMessage]);
     setMessage("");
 
-    const response = await fetch("/api/chat", {
+    const response = await fetch(
+      recipientKind === "agent" ? "/api/chat" : "/api/dm",
+      {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -60,12 +74,14 @@ export function ChatClient({
       body: JSON.stringify({
         agentId,
         message: trimmedMessage,
+        recipientId,
       }),
-    });
+      },
+    );
 
     const payload = (await response.json()) as { error?: string; reply?: string };
 
-    if (!response.ok || !payload.reply) {
+    if (!response.ok) {
       setError(payload.error ?? "The agent could not respond.");
       setIsSending(false);
       return;
@@ -73,14 +89,16 @@ export function ChatClient({
 
     const reply = payload.reply;
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "AGENT",
-        content: reply,
-      },
-    ]);
+    if (reply) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "AGENT",
+          content: reply,
+        },
+      ]);
+    }
     setIsSending(false);
   }
 
@@ -121,7 +139,15 @@ export function ChatClient({
             placeholder="Write a message"
             rows={1}
           />
-          <button className="primary-button" disabled={isSending || !agentId} type="submit">
+          <button
+            className="primary-button"
+            disabled={
+              isSending ||
+              (recipientKind === "agent" && !agentId) ||
+              (recipientKind === "person" && !recipientId)
+            }
+            type="submit"
+          >
             {isSending ? "Sending" : "Send"}
           </button>
         </div>
