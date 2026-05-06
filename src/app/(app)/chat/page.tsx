@@ -5,6 +5,11 @@ import {
   markRoomAsRead,
   serializeChatMessages,
 } from "@/lib/dm";
+import {
+  getAgentMeta,
+  getUserMeta,
+  normalizeProfileConfig,
+} from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import { ChatClient } from "@/components/chat-client";
 
@@ -48,6 +53,14 @@ export default async function ChatPage({
             createdAt: "asc",
           },
           take: 100,
+          include: {
+            agent: {
+              include: {
+                user: true,
+              },
+            },
+            user: true,
+          },
         },
       },
     }));
@@ -72,6 +85,35 @@ export default async function ChatPage({
     <section className="chat-page">
       <ChatClient
         agentId={agentDmRoom?.targetAgent.openclawAgentId ?? null}
+        counterpart={
+          personDmRoom
+            ? {
+                avatar: {
+                  kind: "user" as const,
+                  config: normalizeProfileConfig(
+                    personDmRoom.targetUser.profileConfigJson,
+                    personDmRoom.targetUser.username,
+                    "user",
+                  ),
+                },
+                displayName: personDmRoom.targetUser.displayName,
+                meta: getUserMeta(personDmRoom.targetUser.username),
+              }
+            : agentDmRoom
+              ? {
+                  avatar: {
+                    kind: "agent" as const,
+                    config: normalizeProfileConfig(
+                      agentDmRoom.targetAgent.profileConfigJson,
+                      `${agentDmRoom.targetAgent.user.username}-agent`,
+                      "agent",
+                    ),
+                  },
+                  displayName: agentDmRoom.targetAgent.displayName,
+                  meta: getAgentMeta(agentDmRoom.targetAgent.user.username),
+                }
+              : null
+        }
         initialMessages={initialMessages}
         key={
           personDmRoom

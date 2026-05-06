@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import {
+  getAgentMeta,
+  getUserMeta,
+  normalizeProfileConfig,
+  type AvatarViewModel,
+} from "@/lib/profile";
 
 export type ChatMessage = {
+  authorAvatar?: AvatarViewModel | null;
+  authorName?: string | null;
   id: string;
   role: "USER" | "AGENT" | "OTHER";
   content: string;
@@ -8,6 +16,7 @@ export type ChatMessage = {
 };
 
 export type DmItem = {
+  avatar: AvatarViewModel;
   id: string;
   kind: "agent" | "person";
   displayName: string;
@@ -57,6 +66,9 @@ export async function getOrCreateAgentDmRoom(userId: string, targetAgentId: stri
   const targetAgent = await prisma.agent.findUnique({
     where: {
       openclawAgentId: targetAgentId,
+    },
+    include: {
+      user: true,
     },
   });
 
@@ -222,10 +234,22 @@ export async function getOrCreatePersonDmRoom(userId: string, recipientId: strin
 
 export function serializeChatMessages(
   messages: {
+    agent?: {
+      displayName: string;
+      profileConfigJson: unknown;
+      user: {
+        username: string;
+      } | null;
+    } | null;
     id: string;
     role: "USER" | "AGENT" | "SYSTEM";
     content: string;
     createdAt: Date;
+    user?: {
+      displayName: string;
+      profileConfigJson: unknown;
+      username: string;
+    } | null;
     userId: string | null;
   }[],
   currentUserId: string,
@@ -233,6 +257,30 @@ export function serializeChatMessages(
   return messages
     .filter((message) => message.role === "USER" || message.role === "AGENT")
     .map((message) => ({
+      authorAvatar:
+        message.role === "AGENT"
+          ? {
+              kind: "agent" as const,
+              config: normalizeProfileConfig(
+                message.agent?.profileConfigJson,
+                `${message.agent?.user?.username ?? "agent"}-agent`,
+                "agent",
+              ),
+            }
+          : message.user
+            ? {
+                kind: "user" as const,
+                config: normalizeProfileConfig(
+                  message.user.profileConfigJson,
+                  message.user.username,
+                  "user",
+                ),
+              }
+            : null,
+      authorName:
+        message.role === "AGENT"
+          ? message.agent?.displayName ?? null
+          : message.user?.displayName ?? null,
       id: message.id,
       role:
         message.role === "AGENT"
@@ -278,9 +326,15 @@ export async function getDmCollections(userId: string) {
       displayName: "asc",
     },
     select: {
+      profileConfigJson: true,
       openclawAgentId: true,
       displayName: true,
       userId: true,
+      user: {
+        select: {
+          username: true,
+        },
+      },
     },
   });
 
@@ -297,6 +351,7 @@ export async function getDmCollections(userId: string) {
     select: {
       id: true,
       displayName: true,
+      profileConfigJson: true,
       username: true,
     },
   });
@@ -327,7 +382,11 @@ export async function getDmCollections(userId: string) {
     include: {
       agents: {
         include: {
-          agent: true,
+          agent: {
+            include: {
+              user: true,
+            },
+          },
         },
       },
       members: {
@@ -394,10 +453,18 @@ export async function getDmCollections(userId: string) {
       }
 
       items.push({
+        avatar: {
+          kind: "agent" as const,
+          config: normalizeProfileConfig(
+            roomAgent.profileConfigJson,
+            `${roomAgent.user?.username ?? roomAgent.openclawAgentId}-agent`,
+            "agent",
+          ),
+        },
         id: roomAgent.openclawAgentId,
         kind: "agent",
         displayName: roomAgent.displayName,
-        meta: roomAgent.userId === userId ? "Personal agent" : "Agent",
+        meta: getAgentMeta(roomAgent.user?.username ?? "agent"),
         isOwnAgent: roomAgent.userId === userId,
         roomId: room.id,
         unreadCount: unreadByRoomId.get(room.id) ?? 0,
@@ -413,10 +480,18 @@ export async function getDmCollections(userId: string) {
     }
 
     items.push({
+      avatar: {
+        kind: "user" as const,
+        config: normalizeProfileConfig(
+          counterpart.user.profileConfigJson,
+          counterpart.user.username,
+          "user",
+        ),
+      },
       id: counterpart.user.id,
       kind: "person",
       displayName: counterpart.user.displayName,
-      meta: `@${counterpart.user.username}`,
+      meta: getUserMeta(counterpart.user.username),
       isOwnAgent: false,
       roomId: room.id,
       unreadCount: unreadByRoomId.get(room.id) ?? 0,
@@ -433,10 +508,18 @@ export async function getDmCollections(userId: string) {
     )
       ? [
           {
+            avatar: {
+              kind: "agent" as const,
+              config: normalizeProfileConfig(
+                ownAgent.profileConfigJson,
+                `${ownAgent.user.username}-agent`,
+                "agent",
+              ),
+            },
             id: ownAgent.openclawAgentId,
             kind: "agent" as const,
             displayName: ownAgent.displayName,
-            meta: "Personal agent",
+            meta: getAgentMeta(ownAgent.user.username),
             isOwnAgent: true,
             roomId: null,
             unreadCount: 0,
@@ -449,10 +532,14 @@ export async function getDmCollections(userId: string) {
     ...peopleTargets
       .filter((person) => !existingDmUserIds.has(person.id))
       .map((person) => ({
+        avatar: {
+          kind: "user" as const,
+          config: normalizeProfileConfig(person.profileConfigJson, person.username, "user"),
+        },
         id: person.id,
         kind: "person" as const,
         displayName: person.displayName,
-        meta: `@${person.username}`,
+        meta: getUserMeta(person.username),
         isOwnAgent: false,
         roomId: null,
         unreadCount: 0,
@@ -463,10 +550,18 @@ export async function getDmCollections(userId: string) {
           agent.userId !== userId && !existingDmAgentIds.has(agent.openclawAgentId),
       )
       .map((agent) => ({
+        avatar: {
+          kind: "agent" as const,
+          config: normalizeProfileConfig(
+            agent.profileConfigJson,
+            `${agent.user.username}-agent`,
+            "agent",
+          ),
+        },
         id: agent.openclawAgentId,
         kind: "agent" as const,
         displayName: agent.displayName,
-        meta: "Agent",
+        meta: getAgentMeta(agent.user.username),
         isOwnAgent: false,
         roomId: null,
         unreadCount: 0,

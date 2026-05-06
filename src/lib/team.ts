@@ -1,10 +1,17 @@
 import { prisma } from "@/lib/prisma";
+import {
+  getAgentMeta,
+  getUserMeta,
+  normalizeProfileConfig,
+  type AvatarViewModel,
+} from "@/lib/profile";
 
 export type TeamParticipant = {
+  avatar: AvatarViewModel;
   id: string;
-  kind?: "agent" | "user";
+  kind: "agent" | "user";
+  meta: string;
   name: string;
-  status: string;
   username: string;
 };
 
@@ -64,31 +71,45 @@ async function getTeamContext(userId: string) {
 }
 
 function mapParticipant(user: {
+  profileConfigJson?: unknown;
   displayName: string;
   id: string;
   username: string;
 }) {
   return {
+    avatar: {
+      kind: "user" as const,
+      config: normalizeProfileConfig(user.profileConfigJson, user.username, "user"),
+    },
     id: user.id,
     kind: "user" as const,
     name: user.displayName,
-    status: "Participant",
+    meta: getUserMeta(user.username),
     username: user.username,
   };
 }
 
 function mapAgentParticipant(agent: {
   id: string;
+  displayName?: string | null;
+  profileConfigJson?: unknown;
   user: {
-    displayName: string;
     username: string;
   };
 }) {
   return {
+    avatar: {
+      kind: "agent" as const,
+      config: normalizeProfileConfig(
+        agent.profileConfigJson,
+        `${agent.user.username}-agent`,
+        "agent",
+      ),
+    },
     id: agent.id,
     kind: "agent" as const,
-    name: `${agent.user.displayName}'s agent`,
-    status: "Agent",
+    meta: getAgentMeta(agent.user.username),
+    name: agent.displayName ?? `${agent.user.username}'s agent`,
     username: `${agent.user.username}-agent`,
   };
 }
@@ -181,7 +202,6 @@ function buildChannelParticipants(args: {
       };
     };
   }>;
-  roomName: string;
   userMembers: Array<{
     user: {
       displayName: string;
@@ -278,9 +298,10 @@ export async function listTeamParticipants(userId: string): Promise<TeamParticip
     if (member.agent) {
       participants.push(
         mapAgentParticipant({
+          displayName: member.agent.displayName,
           id: member.agent.id,
+          profileConfigJson: member.agent.profileConfigJson,
           user: {
-            displayName: member.displayName,
             username: member.username,
           },
         }),
@@ -469,7 +490,6 @@ export async function getTeamChannelDetail(
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
       members: buildChannelParticipants({
-        roomName: fallbackRoom.name,
         userMembers: fallbackRoom.members,
         agentMembers: fallbackRoom.agents,
       }),
@@ -488,7 +508,6 @@ export async function getTeamChannelDetail(
     createdBy: room.ownerUserId,
     id: room.id,
     members: buildChannelParticipants({
-      roomName: room.name,
       userMembers: room.members,
       agentMembers: room.agents,
     }),

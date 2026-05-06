@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import type { TeamChannelDetail } from "@/lib/team";
 
 function formatMessageTime(isoString: string) {
@@ -181,6 +182,15 @@ export function TeamChatClient({
     () => buildRenderRows(channel?.messages ?? [], user.id),
     [channel?.messages, user.id],
   );
+  const memberMap = useMemo(
+    () =>
+      new Map(
+        (channel?.members ?? [])
+          .filter((member) => member.kind === "user")
+          .map((member) => [member.id, member]),
+      ),
+    [channel?.members],
+  );
 
   useLayoutEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: "end" });
@@ -251,8 +261,13 @@ export function TeamChatClient({
               <div className="context-list">
                 {(channel?.members ?? []).map((member) => (
                   <div className="context-item" key={member.id}>
-                    <span className="context-item-title">{member.name}</span>
-                    <span className="context-item-meta">{member.status}</span>
+                    <span className="context-item-identity">
+                      <ProfileAvatar avatar={member.avatar} className="context-avatar" />
+                      <span className="context-item-copy">
+                        <span className="context-item-title">{member.name}</span>
+                        <span className="context-item-meta">{member.meta}</span>
+                      </span>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -271,26 +286,49 @@ export function TeamChatClient({
                 </div>
               ) : (
                 <div className="team-message-block" key={row.key}>
-                  {!row.isOwnMessage ? (
-                    <div className="team-message-author">{row.message.author}</div>
-                  ) : null}
                   <div
                     className={`message-line ${
                       row.isOwnMessage ? "message-line-user" : "message-line-other"
                     }`}
                   >
+                    {!row.isOwnMessage ? (
+                      <ProfileAvatar
+                        avatar={
+                          memberMap.get(row.message.userId)?.avatar ?? {
+                            kind: "user",
+                            config: { bgColor: "#EFEFEF", fgColor: "#111111" },
+                          }
+                        }
+                        className="message-avatar"
+                      />
+                    ) : null}
+                    {!row.isOwnMessage ? (
+                      <div className="team-message-stack">
+                        <div className="team-message-author">
+                          {memberMap.get(row.message.userId)?.name ?? row.message.author}
+                        </div>
+                        <div
+                          className={`message-row ${
+                            row.isOwnMessage ? "message-row-user" : "message-row-agent"
+                          }`}
+                        >
+                          <p>{row.message.content}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`message-row ${
+                          row.isOwnMessage ? "message-row-user" : "message-row-agent"
+                        }`}
+                      >
+                        <p>{row.message.content}</p>
+                      </div>
+                    )}
                     {row.showTimestamp && row.isOwnMessage ? (
                       <span className="message-timestamp message-timestamp-user">
                         {formatMessageTime(row.message.createdAt)}
                       </span>
                     ) : null}
-                    <div
-                      className={`message-row ${
-                        row.isOwnMessage ? "message-row-user" : "message-row-agent"
-                      }`}
-                    >
-                      <p>{row.message.content}</p>
-                    </div>
                     {row.showTimestamp && !row.isOwnMessage ? (
                       <span className="message-timestamp message-timestamp-other">
                         {formatMessageTime(row.message.createdAt)}

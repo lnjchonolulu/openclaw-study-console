@@ -711,6 +711,15 @@ button.primary-button {
   background: rgba(255, 255, 255, 0.7);
 }
 
+.message-avatar {
+  flex: 0 0 auto;
+}
+
+.team-message-stack {
+  display: grid;
+  gap: 6px;
+}
+
 .message-row-user {
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
@@ -870,8 +879,9 @@ button.primary-button {
 
 .team-message-author {
   color: var(--foreground);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
+  padding-left: 2px;
 }
 
 .team-empty-state {
@@ -961,7 +971,7 @@ button.primary-button {
 
 .team-invite-card {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto auto 1fr;
   gap: 12px;
   align-items: center;
   padding: 14px 16px;
@@ -1030,6 +1040,79 @@ button.primary-button {
   gap: 10px;
 }
 
+.profile-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--avatar-bg);
+  color: var(--avatar-fg);
+  overflow: hidden;
+}
+
+.profile-avatar-head,
+.profile-avatar-body {
+  position: absolute;
+  background: currentColor;
+}
+
+.profile-avatar-head {
+  top: 7px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.profile-avatar-head-agent {
+  border-radius: 3px;
+}
+
+.profile-avatar-body {
+  bottom: 5px;
+  width: 16px;
+  height: 10px;
+  border-radius: 999px 999px 7px 7px;
+}
+
+.profile-avatar-body-agent {
+  width: 17px;
+  border-radius: 5px 5px 7px 7px;
+}
+
+.settings-avatar-preview {
+  width: 70px;
+  height: 70px;
+}
+
+.context-avatar {
+  width: 30px;
+  height: 30px;
+}
+
+.context-item-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.context-item-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.context-item-copy .context-item-title,
+.context-item-copy .context-item-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-error {
   color: var(--accent-strong);
 }
@@ -1079,6 +1162,60 @@ button.primary-button {
   text-align: center;
 }
 
+.settings-page {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr);
+  gap: 18px;
+}
+
+.settings-card {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-card-header h2 {
+  font-size: 1.18rem;
+  letter-spacing: -0.03em;
+}
+
+.settings-avatar-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-avatar-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-avatar-copy strong {
+  color: var(--foreground);
+  font-size: 1rem;
+}
+
+.settings-avatar-copy span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.settings-textarea {
+  min-height: 180px;
+}
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .helper-text {
   color: var(--muted);
   font-size: 0.9rem;
@@ -1111,6 +1248,7 @@ button.primary-button {
   .hero-card,
   .app-shell,
   .files-grid,
+  .settings-grid,
   .team-grid,
   .stats-row,
   .form-grid {
@@ -1169,5 +1307,15 @@ button.primary-button {
   .page-header,
   .inline-actions {
     flex-direction: column;
+  }
+
+  .settings-avatar-row {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .settings-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import type { ChatMessage } from "@/lib/dm";
+import type { AvatarViewModel } from "@/lib/profile";
 
 function createClientId() {
   if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
@@ -88,12 +90,18 @@ function buildRenderRows(messages: ChatMessage[]): RenderRow[] {
 
 export function ChatClient({
   agentId,
+  counterpart,
   initialMessages,
   recipientId,
   recipientKind,
   roomId,
 }: {
   agentId: string | null;
+  counterpart: {
+    avatar: AvatarViewModel;
+    displayName: string;
+    meta: string;
+  } | null;
   initialMessages: ChatMessage[];
   recipientId: string | null;
   recipientKind: "agent" | "person";
@@ -365,6 +373,9 @@ export function ChatClient({
               }`}
               key={row.key}
             >
+              {row.message.role !== "USER" && counterpart ? (
+                <ProfileAvatar avatar={counterpart.avatar} className="message-avatar" />
+              ) : null}
               {row.showTimestamp && row.message.role === "USER" ? (
                 <span className="message-timestamp message-timestamp-user">
                   {formatMessageTime(row.message.createdAt)}
@@ -386,13 +397,23 @@ export function ChatClient({
           ),
         )}
         {isSending && recipientKind === "agent" ? (
-          <div className="message-row message-row-agent message-row-pending">
-            <p>Writing...</p>
+          <div className="message-line message-line-other">
+            {counterpart ? (
+              <ProfileAvatar avatar={counterpart.avatar} className="message-avatar" />
+            ) : null}
+            <div className="message-row message-row-agent message-row-pending">
+              <p>Writing...</p>
+            </div>
           </div>
         ) : null}
         {!isSending && recipientKind === "person" && isOtherTyping ? (
-          <div className="message-row message-row-agent message-row-pending">
-            <p>Writing...</p>
+          <div className="message-line message-line-other">
+            {counterpart ? (
+              <ProfileAvatar avatar={counterpart.avatar} className="message-avatar" />
+            ) : null}
+            <div className="message-row message-row-agent message-row-pending">
+              <p>Writing...</p>
+            </div>
           </div>
         ) : null}
         <div ref={messageEndRef} />

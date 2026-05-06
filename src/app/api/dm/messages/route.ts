@@ -32,6 +32,14 @@ export async function GET(request: Request) {
           createdAt: "asc",
         },
         take: 100,
+        include: {
+          agent: {
+            include: {
+              user: true,
+            },
+          },
+          user: true,
+        },
       },
     },
   });

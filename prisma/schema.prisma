@@ -51,6 +51,7 @@ model User {
   username     String      @unique
   passwordHash String
   displayName  String
+  profileConfigJson Json?
   role         UserRole    @default(PARTICIPANT)
   status       UserStatus  @default(ACTIVE)
   teamId       String?
@@ -83,6 +84,8 @@ model Agent {
   openclawAgentId String   @unique
   displayName     String
   workspacePath   String
+  profileConfigJson Json?
+  personaSummary  String?
   soulConfigJson  Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

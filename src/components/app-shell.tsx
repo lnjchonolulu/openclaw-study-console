@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
 import type { TeamChannelDetail, TeamChannelSummary, TeamParticipant } from "@/lib/team";
@@ -438,15 +439,20 @@ export function AppShell({
                       setContextNotice(null);
                     }}
                   >
-                    <span className="context-item-topline">
-                      <span className="context-item-title">{target.displayName}</span>
-                      {unreadCount > 0 ? (
-                        <span className="context-unread-badge">
-                          {unreadCount >= 10 ? "10+" : unreadCount}
+                    <span className="context-item-identity">
+                      <ProfileAvatar avatar={target.avatar} className="context-avatar" />
+                      <span className="context-item-copy">
+                        <span className="context-item-topline">
+                          <span className="context-item-title">{target.displayName}</span>
+                          {unreadCount > 0 ? (
+                            <span className="context-unread-badge">
+                              {unreadCount >= 10 ? "10+" : unreadCount}
+                            </span>
+                          ) : null}
                         </span>
-                      ) : null}
+                        <span className="context-item-meta">{target.meta}</span>
+                      </span>
                     </span>
-                    <span className="context-item-meta">{target.meta}</span>
                   </Link>
                 );
               })}
@@ -464,9 +470,12 @@ export function AppShell({
                         startDm(target);
                       }}
                     >
-                      <span className="context-item-title">{target.displayName}</span>
-                      <span className="context-item-meta">
-                        {target.kind === "person" ? "Person" : "Agent"}
+                      <span className="context-item-identity">
+                        <ProfileAvatar avatar={target.avatar} className="context-avatar" />
+                        <span className="context-item-copy">
+                          <span className="context-item-title">{target.displayName}</span>
+                          <span className="context-item-meta">{target.meta}</span>
+                        </span>
                       </span>
                     </Link>
                   ))
@@ -644,9 +653,10 @@ export function AppShell({
                           <span className="team-invite-check" aria-hidden="true">
                             {checked ? "✓" : ""}
                           </span>
+                          <ProfileAvatar avatar={member.avatar} className="context-avatar" />
                           <span className="team-invite-copy">
                             <span>{member.name}</span>
-                            <span className="context-item-meta">{member.status}</span>
+                            <span className="context-item-meta">{member.meta}</span>
                           </span>
                         </label>
                       );
