@@ -13,9 +13,12 @@ export async function POST(request: Request) {
     return NextResponse.redirect(appUrl("/login?error=invalid", request.url));
   }
 
+  const normalizedUsername = username.trim();
+  const normalizedPassword = password.trim();
+
   const user = await prisma.user.findUnique({
     where: {
-      username,
+      username: normalizedUsername,
     },
   });
 
@@ -23,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.redirect(appUrl("/login?error=credentials", request.url));
   }
 
-  const isValid = await verifyPassword(password, user.passwordHash);
+  const isValid = await verifyPassword(normalizedPassword, user.passwordHash);
 
   if (!isValid) {
     return NextResponse.redirect(appUrl("/login?error=credentials", request.url));

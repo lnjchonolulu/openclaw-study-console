@@ -6,6 +6,16 @@ import { prisma } from "@/lib/prisma";
 const SESSION_COOKIE = "study_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 
+function shouldUseSecureCookie() {
+  const appBaseUrl = process.env.APP_BASE_URL?.trim();
+
+  if (appBaseUrl) {
+    return appBaseUrl.startsWith("https://");
+  }
+
+  return process.env.NODE_ENV === "production";
+}
+
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -27,7 +37,7 @@ export async function createSession(userId: string) {
   cookieStore.set(SESSION_COOKIE, rawToken, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     expires: expiresAt,
   });
@@ -48,7 +58,7 @@ export async function destroySession() {
   cookieStore.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     expires: new Date(0),
   });
