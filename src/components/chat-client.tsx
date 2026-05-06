@@ -8,6 +8,14 @@ type ChatMessage = {
   content: string;
 };
 
+function createClientId() {
+  if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function ChatClient({
   agentId,
   initialMessages,
@@ -66,7 +74,7 @@ export function ChatClient({
     }
 
     const optimisticMessage = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       role: "USER" as const,
       content: trimmedMessage,
     };
@@ -106,7 +114,7 @@ export function ChatClient({
         setMessages((current) => [
           ...current,
           {
-            id: crypto.randomUUID(),
+            id: createClientId(),
             role: "AGENT",
             content: reply,
           },
