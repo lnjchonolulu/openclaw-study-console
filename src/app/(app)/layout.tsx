@@ -21,14 +21,40 @@ export default async function AuthenticatedLayout({
       userId: true,
     },
   });
+  const existingDmRooms = await prisma.room.findMany({
+    where: {
+      type: "PERSONAL",
+      ownerUserId: user.id,
+    },
+    include: {
+      agents: {
+        include: {
+          agent: true,
+        },
+      },
+    },
+  });
+  const existingDmAgentIds = new Set(
+    existingDmRooms.flatMap((room) =>
+      room.agents.map((roomAgent) => roomAgent.agent.openclawAgentId),
+    ),
+  );
+  const dmItems = dmTargets.map((agent) => ({
+    agentId: agent.openclawAgentId,
+    displayName: agent.displayName,
+    isOwnAgent: agent.userId === user.id,
+  }));
+  const dmConversations = dmItems.filter(
+    (agent) => agent.isOwnAgent || existingDmAgentIds.has(agent.agentId),
+  );
+  const availableDmTargets = dmItems.filter(
+    (agent) => !agent.isOwnAgent && !existingDmAgentIds.has(agent.agentId),
+  );
 
   return (
     <AppShell
-      dmTargets={dmTargets.map((agent) => ({
-        agentId: agent.openclawAgentId,
-        displayName: agent.displayName,
-        isOwnAgent: agent.userId === user.id,
-      }))}
+      availableDmTargets={availableDmTargets}
+      dmConversations={dmConversations}
       user={{
         displayName: user.displayName,
         username: user.username,

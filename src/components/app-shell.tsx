@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 
@@ -65,12 +64,18 @@ function NavIcon({ name }: { name: IconName }) {
 }
 
 export function AppShell({
+  availableDmTargets,
   children,
-  dmTargets,
+  dmConversations,
   user,
 }: {
+  availableDmTargets: Array<{
+    agentId: string;
+    displayName: string;
+    isOwnAgent: boolean;
+  }>;
   children: React.ReactNode;
-  dmTargets: Array<{
+  dmConversations: Array<{
     agentId: string;
     displayName: string;
     isOwnAgent: boolean;
@@ -83,20 +88,51 @@ export function AppShell({
   };
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const [availableDms, setAvailableDms] = useState(availableDmTargets);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
+  const [dmItems, setDmItems] = useState(dmConversations);
+  const [isNewDmOpen, setIsNewDmOpen] = useState(false);
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
+  const hasContext = Boolean(contextMode);
   const selectedAgentId = searchParams.get("agent") ?? user.agentId;
   const selectedChannel = searchParams.get("channel") ?? "main";
-  const teamChannels = [
+  const [teamChannels, setTeamChannels] = useState([
     { id: "main", title: user.teamName ?? "Team 03", meta: "Main channel" },
     { id: "research", title: "Research", meta: "Draft channel" },
     { id: "outputs", title: "Outputs", meta: "Draft channel" },
-  ];
+  ]);
+
+  function startDm(target: (typeof availableDms)[number]) {
+    setContextNotice(null);
+    setIsNewDmOpen(false);
+    setDmItems((current) =>
+      current.some((item) => item.agentId === target.agentId)
+        ? current
+        : [...current, target],
+    );
+    setAvailableDms((current) =>
+      current.filter((item) => item.agentId !== target.agentId),
+    );
+  }
+
+  function createTeamChannel() {
+    const channelNumber = teamChannels.length + 1;
+    const channel = {
+      id: `channel-${Date.now()}`,
+      title: `New Channel ${channelNumber}`,
+      meta: "Draft channel",
+    };
+
+    setContextNotice(null);
+    setTeamChannels((current) => [...current, channel]);
+    router.push(`/team?channel=${encodeURIComponent(channel.id)}`);
+  }
 
   return (
-    <div className={`app-shell${contextMode ? " app-shell-with-context" : ""}`}>
+    <div className={`app-shell${hasContext ? " app-shell-context-open" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-main">
           <nav className="nav-list" aria-label="Primary">
@@ -141,16 +177,19 @@ export function AppShell({
         </nav>
       </aside>
 
-      {contextMode ? (
-        <aside className="context-sidebar">
-          {contextMode === "dm" ? (
+      <aside
+        aria-hidden={!hasContext}
+        className={`context-sidebar${hasContext ? " context-sidebar-open" : ""}`}
+      >
+        {contextMode === "dm" ? (
             <>
               <div className="context-header">
                 <span className="context-label">DM</span>
                 <button
                   className="context-action"
                   onClick={() => {
-                    setContextNotice("New DM creation is coming next.");
+                    setContextNotice(null);
+                    setIsNewDmOpen((current) => !current);
                   }}
                   type="button"
                 >
@@ -158,7 +197,7 @@ export function AppShell({
                 </button>
               </div>
               <div className="context-list">
-                {dmTargets.map((target) => {
+                {dmItems.map((target) => {
                   const isActive = selectedAgentId === target.agentId;
 
                   return (
@@ -180,47 +219,70 @@ export function AppShell({
                   );
                 })}
               </div>
+              {isNewDmOpen ? (
+                <div className="context-list context-new-list">
+                  <span className="context-label">Start New DM</span>
+                  {availableDms.length > 0 ? (
+                    availableDms.map((target) => (
+                      <Link
+                        className="context-item"
+                        href={`/chat?agent=${encodeURIComponent(target.agentId)}`}
+                        key={target.agentId}
+                        onClick={() => {
+                          startDm(target);
+                        }}
+                      >
+                        <span className="context-item-title">
+                          {target.displayName}
+                        </span>
+                        <span className="context-item-meta">Available</span>
+                      </Link>
+                    ))
+                  ) : (
+                    <p className="context-notice">No new DM targets.</p>
+                  )}
+                </div>
+              ) : null}
             </>
-          ) : (
-            <>
-              <div className="context-header">
-                <span className="context-label">Team Chat</span>
-                <button
-                  className="context-action"
-                  onClick={() => {
-                    setContextNotice("Channel creation is coming next.");
-                  }}
-                  type="button"
-                >
-                  New
-                </button>
-              </div>
-              <div className="context-list">
-                {teamChannels.map((channel) => {
-                  const isActive = selectedChannel === channel.id;
+        ) : contextMode === "team" ? (
+          <>
+            <div className="context-header">
+              <span className="context-label">Team Chat</span>
+              <button
+                className="context-action"
+                onClick={() => {
+                  createTeamChannel();
+                }}
+                type="button"
+              >
+                New
+              </button>
+            </div>
+            <div className="context-list">
+              {teamChannels.map((channel) => {
+                const isActive = selectedChannel === channel.id;
 
-                  return (
-                    <Link
-                      className={`context-item${
-                        isActive ? " context-item-active" : ""
-                      }`}
-                      href={`/team?channel=${encodeURIComponent(channel.id)}`}
-                      key={channel.id}
-                      onClick={() => {
-                        setContextNotice(null);
-                      }}
-                    >
-                      <span className="context-item-title">{channel.title}</span>
-                      <span className="context-item-meta">{channel.meta}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          {contextNotice ? <p className="context-notice">{contextNotice}</p> : null}
-        </aside>
-      ) : null}
+                return (
+                  <Link
+                    className={`context-item${
+                      isActive ? " context-item-active" : ""
+                    }`}
+                    href={`/team?channel=${encodeURIComponent(channel.id)}`}
+                    key={channel.id}
+                    onClick={() => {
+                      setContextNotice(null);
+                    }}
+                  >
+                    <span className="context-item-title">{channel.title}</span>
+                    <span className="context-item-meta">{channel.meta}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+        {contextNotice ? <p className="context-notice">{contextNotice}</p> : null}
+      </aside>
 
       <main className="app-content">{children}</main>
     </div>

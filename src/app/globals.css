@@ -186,11 +186,12 @@ button.primary-button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: 188px 0 minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 220ms ease;
 }
 
-.app-shell-with-context {
+.app-shell-context-open {
   grid-template-columns: 188px 260px minmax(0, 1fr);
 }
 
@@ -202,9 +203,9 @@ button.primary-button {
   gap: 18px;
   min-height: 100vh;
   padding: 22px 14px;
-  background: rgba(255, 255, 255, 0.82);
-  border-right: 1px solid var(--surface-border);
-  backdrop-filter: blur(14px);
+  background: #050505;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: white;
 }
 
 .context-sidebar {
@@ -217,6 +218,28 @@ button.primary-button {
   padding: 22px 14px;
   background: rgba(255, 255, 255, 0.58);
   border-right: 1px solid var(--surface-border);
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateX(-12px);
+  transition:
+    opacity 180ms ease,
+    padding 220ms ease,
+    transform 220ms ease;
+}
+
+.context-sidebar:not(.context-sidebar-open) {
+  border-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  visibility: hidden;
+}
+
+.context-sidebar-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  visibility: visible;
 }
 
 .context-header {
@@ -327,7 +350,7 @@ button.primary-button {
 .sidebar-bottom-nav {
   margin-top: auto;
   padding-top: 18px;
-  border-top: 1px solid var(--surface-border);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .nav-item {
@@ -339,15 +362,20 @@ button.primary-button {
   border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
-  color: var(--foreground);
+  color: currentColor;
   font: inherit;
   text-align: left;
 }
 
 .nav-item-active {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(17, 17, 17, 0.08);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .nav-title {
@@ -366,8 +394,8 @@ button.primary-button {
 }
 
 .nav-button:hover {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(17, 17, 17, 0.08);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .nav-description {
