@@ -350,12 +350,14 @@ export function ChatClient({
             </div>
           ) : (
             <div
-              className={`message-row ${
+              className={`message-stack ${
                 row.message.role === "USER" ? "message-row-user" : "message-row-agent"
               }`}
               key={row.key}
             >
-              <p>{row.message.content}</p>
+              <div className="message-row">
+                <p>{row.message.content}</p>
+              </div>
               {row.showTimestamp ? (
                 <span
                   className={`message-timestamp ${

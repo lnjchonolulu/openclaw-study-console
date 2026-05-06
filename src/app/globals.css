@@ -609,11 +609,15 @@ button.primary-button {
   overflow-y: auto;
 }
 
-.message-row {
+.message-stack {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   width: fit-content;
   max-width: min(680px, 78%);
+}
+
+.message-row {
+  display: grid;
   padding: 10px 13px;
   border-radius: 14px;
   border: 1px solid rgba(17, 17, 17, 0.08);
@@ -622,6 +626,7 @@ button.primary-button {
 
 .message-row-user {
   align-self: flex-end;
+  justify-items: end;
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
@@ -633,6 +638,7 @@ button.primary-button {
 
 .message-row-agent {
   align-self: flex-start;
+  justify-items: start;
 }
 
 .message-row-pending {
@@ -664,12 +670,13 @@ button.primary-button {
 }
 
 .message-timestamp-user {
-  justify-self: start;
-  color: rgba(255, 255, 255, 0.68);
+  margin-left: 2px;
+  color: #8a8a8a;
 }
 
 .message-timestamp-other {
   justify-self: end;
+  margin-right: 2px;
   color: #8a8a8a;
 }
 
