@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 type ChatMessage = {
   id: string;
@@ -17,6 +17,18 @@ export function ChatClient({
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [message]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,7 +96,7 @@ export function ChatClient({
         ))}
         {isSending ? (
           <div className="message-row message-row-agent message-row-pending">
-            <p>답변을 작성하는 중...</p>
+            <p>Writing...</p>
           </div>
         ) : null}
       </div>
@@ -94,6 +106,7 @@ export function ChatClient({
         <div className="composer-bar">
           <textarea
             aria-label="Message"
+            ref={textareaRef}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
@@ -102,11 +115,11 @@ export function ChatClient({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="메시지를 입력하세요"
+            placeholder="Write a message"
             rows={1}
           />
           <button className="primary-button" disabled={isSending} type="submit">
-            {isSending ? "전송 중" : "전송"}
+            {isSending ? "Sending" : "Send"}
           </button>
         </div>
       </form>

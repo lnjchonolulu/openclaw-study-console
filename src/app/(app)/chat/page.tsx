@@ -36,7 +36,7 @@ export default async function ChatPage() {
       {
         id: "welcome-agent",
         role: "AGENT" as const,
-        content: "안녕하세요. 무엇을 도와드릴까요?",
+        content: "Hi. What can I help you with?",
       },
     ];
 

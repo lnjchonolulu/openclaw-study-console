@@ -476,9 +476,10 @@ button.primary-button {
 
 .message-composer textarea {
   min-height: 54px;
-  max-height: 180px;
+  max-height: 190px;
   margin-top: 0;
-  resize: vertical;
+  overflow-y: auto;
+  resize: none;
 }
 
 .message-composer .primary-button {
