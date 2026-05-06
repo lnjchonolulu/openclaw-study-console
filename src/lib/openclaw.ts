@@ -1,8 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
 function extractAssistantText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -52,98 +47,82 @@ function extractAssistantText(payload: unknown) {
     }
   }
 
-  const payloads = candidate.payloads;
-  if (Array.isArray(payloads)) {
-    const fragments = payloads
-      .map((item) => {
-        if (!item || typeof item !== "object") {
-          return null;
-        }
-
-        const text = (item as Record<string, unknown>).text;
-        return typeof text === "string" ? text : null;
-      })
-      .filter((text): text is string => Boolean(text))
-      .join("\n")
-      .trim();
-
-    if (fragments) {
-      return fragments;
-    }
-  }
-
   return null;
 }
 
-function parseCliJson(stdout: string) {
-  const trimmed = stdout.trim();
+function getResponsesEndpoint() {
+  const configuredUrl = process.env.OPENCLAW_RESPONSES_URL?.trim();
 
-  if (!trimmed) {
-    return null;
+  if (configuredUrl) {
+    return configuredUrl;
   }
 
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const lastBrace = trimmed.lastIndexOf("{");
+  const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL?.trim();
 
-    if (lastBrace === -1) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(trimmed.slice(lastBrace));
-    } catch {
-      return null;
-    }
+  if (!gatewayUrl) {
+    throw new Error("Missing OPENCLAW_GATEWAY_URL or OPENCLAW_RESPONSES_URL.");
   }
+
+  if (gatewayUrl.startsWith("ws://")) {
+    return `${gatewayUrl.replace(/^ws:\/\//, "http://")}/v1/responses`;
+  }
+
+  if (gatewayUrl.startsWith("wss://")) {
+    return `${gatewayUrl.replace(/^wss:\/\//, "https://")}/v1/responses`;
+  }
+
+  if (gatewayUrl.startsWith("http://") || gatewayUrl.startsWith("https://")) {
+    return gatewayUrl.endsWith("/v1/responses") ? gatewayUrl : `${gatewayUrl}/v1/responses`;
+  }
+
+  throw new Error("Unsupported OpenClaw gateway URL format.");
 }
 
 export async function runAgentTurn({
   agentId,
   message,
+  conversationKey,
 }: {
   agentId: string;
   message: string;
+  conversationKey: string;
 }) {
-  const { stdout, stderr } = await execFileAsync(
-    "openclaw",
-    [
-      "agent",
-      "--local",
-      "--agent",
-      agentId,
-      "--message",
-      message,
-      "--json",
-    ],
-    {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 120000,
+  const endpoint = getResponsesEndpoint();
+  const token = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-  );
-
-  const rawOutput = stdout.trim() ? stdout : stderr;
-  const parsed = parseCliJson(rawOutput);
-  const assistantText = extractAssistantText(parsed);
-  const finalText =
-    typeof assistantText === "string" && assistantText.trim()
-      ? assistantText.trim()
-      : rawOutput.trim();
-
-  console.log("[openclaw] agent turn", {
-    agentId,
-    message,
-    assistantText,
-    finalText,
-    stderr,
-    stdoutPreview: stdout.slice(0, 600),
-    rawOutputPreview: rawOutput.slice(0, 600),
+    body: JSON.stringify({
+      model: `openclaw:${agentId}`,
+      input: message,
+      user: conversationKey,
+    }),
+    cache: "no-store",
   });
 
+  const payload = (await response.json()) as Record<string, unknown>;
+
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string"
+        ? payload.error
+        : `OpenClaw HTTP API returned ${response.status}.`,
+    );
+  }
+
+  const assistantText = extractAssistantText(payload);
+
+  if (!assistantText) {
+    console.log("[openclaw] empty assistant payload", { agentId, conversationKey, payload });
+    throw new Error("OpenClaw returned an empty assistant response.");
+  }
+
   return {
-    assistantText: finalText,
-    stdout,
-    stderr,
+    assistantText,
+    payload,
   };
 }

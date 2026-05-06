@@ -4,8 +4,9 @@ import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
 async function getOrCreatePersonalRoom(userId: string) {
-  const existingRoom = await prisma.room.findUnique({
+  const existingRoom = await prisma.room.findFirst({
     where: {
+      type: "PERSONAL",
       ownerUserId: userId,
     },
   });
@@ -17,7 +18,17 @@ async function getOrCreatePersonalRoom(userId: string) {
   return prisma.room.create({
     data: {
       type: "PERSONAL",
+      name: "Personal agent chat",
       ownerUserId: userId,
+      members: {
+        create: {
+          userId,
+          role: "OWNER",
+          canManageRoom: true,
+          canManageAgents: true,
+          canShareFiles: true,
+        },
+      },
     },
   });
 }
@@ -58,6 +69,7 @@ export async function POST(request: Request) {
     const result = await runAgentTurn({
       agentId: user.agent.openclawAgentId,
       message,
+      conversationKey: `room:${room.id}`,
     });
 
     await prisma.message.create({

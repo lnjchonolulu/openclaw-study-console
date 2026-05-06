@@ -4,8 +4,9 @@ import { ChatClient } from "@/components/chat-client";
 
 export default async function ChatPage() {
   const user = await requireUser();
-  const room = await prisma.room.findUnique({
+  const room = await prisma.room.findFirst({
     where: {
+      type: "PERSONAL",
       ownerUserId: user.id,
     },
     include: {
