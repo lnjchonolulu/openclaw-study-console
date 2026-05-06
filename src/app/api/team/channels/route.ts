@@ -28,17 +28,19 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
+    invitedAgentIds?: string[];
     invitedUserIds?: string[];
     name?: string;
   };
   const name = body.name?.trim();
+  const invitedAgentIds = Array.isArray(body.invitedAgentIds) ? body.invitedAgentIds : [];
   const invitedUserIds = Array.isArray(body.invitedUserIds) ? body.invitedUserIds : [];
 
   if (!name) {
     return NextResponse.json({ error: "Channel name is required." }, { status: 400 });
   }
 
-  const channel = await createTeamChannel(user.id, name, invitedUserIds);
+  const channel = await createTeamChannel(user.id, name, invitedUserIds, invitedAgentIds);
 
   if (!channel) {
     return NextResponse.json({ error: "Team channel could not be created." }, { status: 400 });

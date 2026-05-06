@@ -14,17 +14,25 @@ export async function PATCH(
 
   const { channelId } = await params;
   const body = (await request.json()) as {
+    invitedAgentIds?: string[];
     invitedUserIds?: string[];
     name?: string;
   };
   const name = body.name?.trim();
+  const invitedAgentIds = Array.isArray(body.invitedAgentIds) ? body.invitedAgentIds : [];
   const invitedUserIds = Array.isArray(body.invitedUserIds) ? body.invitedUserIds : [];
 
   if (!name) {
     return NextResponse.json({ error: "Channel name is required." }, { status: 400 });
   }
 
-  const room = await updateTeamChannel(user.id, channelId, name, invitedUserIds);
+  const room = await updateTeamChannel(
+    user.id,
+    channelId,
+    name,
+    invitedUserIds,
+    invitedAgentIds,
+  );
 
   if (!room) {
     return NextResponse.json({ error: "Channel could not be updated." }, { status: 404 });

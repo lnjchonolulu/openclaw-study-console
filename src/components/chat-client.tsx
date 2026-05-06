@@ -35,6 +35,10 @@ function getMinuteKey(isoString: string) {
   return isoString.slice(0, 16);
 }
 
+function getSenderKey(message: ChatMessage) {
+  return message.role === "USER" ? "USER" : "OTHER";
+}
+
 type RenderRow =
   | {
       type: "date";
@@ -58,7 +62,10 @@ function buildRenderRows(messages: ChatMessage[]): RenderRow[] {
     const previousDateKey = previous ? getDateKey(previous.createdAt) : null;
     const nextMinuteKey = next ? getMinuteKey(next.createdAt) : null;
     const currentMinuteKey = getMinuteKey(message.createdAt);
-    const showTimestamp = nextMinuteKey !== currentMinuteKey;
+    const nextSenderKey = next ? getSenderKey(next) : null;
+    const currentSenderKey = getSenderKey(message);
+    const showTimestamp =
+      nextMinuteKey !== currentMinuteKey || nextSenderKey !== currentSenderKey;
 
     if (dateKey !== previousDateKey) {
       rows.push({

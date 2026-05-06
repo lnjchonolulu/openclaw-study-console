@@ -44,6 +44,9 @@ async function getTeamContext(userId: string) {
             orderBy: {
               displayName: "asc",
             },
+            include: {
+              agent: true,
+            },
           },
         },
       },
@@ -144,14 +147,6 @@ async function syncRoomAgents(roomId: string, memberUserIds: string[]) {
   );
 }
 
-async function clearRoomAgents(roomId: string) {
-  await prisma.roomAgent.deleteMany({
-    where: {
-      roomId,
-    },
-  });
-}
-
 function mergeParticipants(
   userMembers: Array<{
     user: {
@@ -195,11 +190,7 @@ function buildChannelParticipants(args: {
     };
   }>;
 }) {
-  if (args.roomName === "General") {
-    return mergeParticipants(args.userMembers, args.agentMembers);
-  }
-
-  return args.userMembers.map((member) => mapParticipant(member.user));
+  return mergeParticipants(args.userMembers, args.agentMembers);
 }
 
 export async function ensureGeneralTeamChannel(userId: string) {
@@ -281,7 +272,23 @@ export async function listTeamParticipants(userId: string): Promise<TeamParticip
     return [];
   }
 
-  return context.team.users.map(mapParticipant);
+  return context.team.users.flatMap((member) => {
+    const participants: TeamParticipant[] = [mapParticipant(member)];
+
+    if (member.agent) {
+      participants.push(
+        mapAgentParticipant({
+          id: member.agent.id,
+          user: {
+            displayName: member.displayName,
+            username: member.username,
+          },
+        }),
+      );
+    }
+
+    return participants;
+  });
 }
 
 export async function listTeamChannels(userId: string): Promise<TeamChannelSummary[]> {
@@ -295,13 +302,35 @@ export async function listTeamChannels(userId: string): Promise<TeamChannelSumma
 
   const rooms = await prisma.room.findMany({
     where: {
-      type: "TEAM",
-      teamId: context.team.id,
-      members: {
-        some: {
-          userId,
+      AND: [
+        {
+          type: "TEAM",
+          teamId: context.team.id,
         },
-      },
+        {
+          OR: [
+            {
+              ownerUserId: userId,
+            },
+            {
+              members: {
+                some: {
+                  userId,
+                },
+              },
+            },
+            {
+              agents: {
+                some: {
+                  agent: {
+                    userId,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
     },
     orderBy: [
       {
@@ -310,13 +339,14 @@ export async function listTeamChannels(userId: string): Promise<TeamChannelSumma
     ],
     include: {
       members: true,
+      agents: true,
     },
   });
 
   return rooms.map((room) => ({
     createdBy: room.ownerUserId,
     id: room.id,
-    memberCount: room.members.length,
+    memberCount: room.members.length + room.agents.length,
     title: room.name,
   }));
 }
@@ -341,14 +371,36 @@ export async function getTeamChannelDetail(
 
   const room = await prisma.room.findFirst({
     where: {
-      id: targetRoomId,
-      type: "TEAM",
-      teamId: context.team.id,
-      members: {
-        some: {
-          userId,
+      AND: [
+        {
+          id: targetRoomId,
+          type: "TEAM",
+          teamId: context.team.id,
         },
-      },
+        {
+          OR: [
+            {
+              ownerUserId: userId,
+            },
+            {
+              members: {
+                some: {
+                  userId,
+                },
+              },
+            },
+            {
+              agents: {
+                some: {
+                  agent: {
+                    userId,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
     },
     include: {
       members: {
@@ -413,10 +465,6 @@ export async function getTeamChannelDetail(
       return null;
     }
 
-    if (fallbackRoom.name !== "General" && fallbackRoom.agents.length > 0) {
-      await clearRoomAgents(fallbackRoom.id);
-    }
-
     return {
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
@@ -434,10 +482,6 @@ export async function getTeamChannelDetail(
       })),
       title: fallbackRoom.name,
     };
-  }
-
-  if (room.name !== "General" && room.agents.length > 0) {
-    await clearRoomAgents(room.id);
   }
 
   return {
@@ -463,6 +507,7 @@ export async function createTeamChannel(
   userId: string,
   name: string,
   invitedUserIds: string[],
+  invitedAgentIds: string[],
 ) {
   const context = await getTeamContext(userId);
 
@@ -474,6 +519,12 @@ export async function createTeamChannel(
   const memberIds = Array.from(new Set([userId, ...invitedUserIds])).filter((id) =>
     allowedUserIds.has(id),
   );
+  const allowedAgentIds = new Set(
+    context.team.users
+      .map((member) => member.agent?.id ?? null)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const agentIds = Array.from(new Set(invitedAgentIds)).filter((id) => allowedAgentIds.has(id));
 
   const created = await prisma.room.create({
     data: {
@@ -489,6 +540,15 @@ export async function createTeamChannel(
           canShareFiles: true,
         })),
       },
+      agents: {
+        create: agentIds.map((agentId) => ({
+          agentId,
+          role: "COLLABORATOR",
+          canRespond: true,
+          canUseFiles: true,
+          canBeMentioned: true,
+        })),
+      },
     },
   });
 
@@ -500,6 +560,7 @@ export async function updateTeamChannel(
   roomId: string,
   name: string,
   invitedUserIds: string[],
+  invitedAgentIds: string[],
 ) {
   const context = await getTeamContext(userId);
 
@@ -531,6 +592,12 @@ export async function updateTeamChannel(
   const memberIds = Array.from(new Set([room.ownerUserId ?? userId, ...invitedUserIds])).filter(
     (id) => allowedUserIds.has(id),
   );
+  const allowedAgentIds = new Set(
+    context.team.users
+      .map((member) => member.agent?.id ?? null)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const agentIds = Array.from(new Set(invitedAgentIds)).filter((id) => allowedAgentIds.has(id));
 
   await prisma.room.update({
     where: {
@@ -575,7 +642,41 @@ export async function updateTeamChannel(
     ),
   );
 
-  await clearRoomAgents(room.id);
+  await prisma.roomAgent.deleteMany({
+    where: {
+      roomId: room.id,
+      agentId: {
+        notIn: agentIds.length > 0 ? agentIds : ["__none__"],
+      },
+    },
+  });
+
+  await Promise.all(
+    agentIds.map((agentId) =>
+      prisma.roomAgent.upsert({
+        where: {
+          roomId_agentId: {
+            roomId: room.id,
+            agentId,
+          },
+        },
+        update: {
+          role: "COLLABORATOR",
+          canRespond: true,
+          canUseFiles: true,
+          canBeMentioned: true,
+        },
+        create: {
+          roomId: room.id,
+          agentId,
+          role: "COLLABORATOR",
+          canRespond: true,
+          canUseFiles: true,
+          canBeMentioned: true,
+        },
+      }),
+    ),
+  );
 
   return room;
 }
@@ -605,13 +706,35 @@ export async function deleteTeamChannel(userId: string, roomId: string) {
 export async function createTeamMessage(userId: string, roomId: string, content: string) {
   const room = await prisma.room.findFirst({
     where: {
-      id: roomId,
-      type: "TEAM",
-      members: {
-        some: {
-          userId,
+      AND: [
+        {
+          id: roomId,
+          type: "TEAM",
         },
-      },
+        {
+          OR: [
+            {
+              ownerUserId: userId,
+            },
+            {
+              members: {
+                some: {
+                  userId,
+                },
+              },
+            },
+            {
+              agents: {
+                some: {
+                  agent: {
+                    userId,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
     },
   });
 

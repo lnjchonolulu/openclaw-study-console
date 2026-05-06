@@ -28,6 +28,10 @@ function getMinuteKey(isoString: string) {
   return isoString.slice(0, 16);
 }
 
+function getSenderKey(message: TeamChannelDetail["messages"][number]) {
+  return message.userId;
+}
+
 type RenderRow =
   | {
       type: "date";
@@ -55,6 +59,8 @@ function buildRenderRows(
     const previousDateKey = previous ? getDateKey(previous.createdAt) : null;
     const nextMinuteKey = next ? getMinuteKey(next.createdAt) : null;
     const currentMinuteKey = getMinuteKey(message.createdAt);
+    const nextSenderKey = next ? getSenderKey(next) : null;
+    const currentSenderKey = getSenderKey(message);
 
     if (dateKey !== previousDateKey) {
       rows.push({
@@ -68,7 +74,8 @@ function buildRenderRows(
       type: "message",
       key: message.id,
       message,
-      showTimestamp: nextMinuteKey !== currentMinuteKey,
+      showTimestamp:
+        nextMinuteKey !== currentMinuteKey || nextSenderKey !== currentSenderKey,
       isOwnMessage: message.userId === currentUserId,
     });
   });

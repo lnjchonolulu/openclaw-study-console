@@ -95,7 +95,7 @@ export function AppShell({
   const [isNewDmOpen, setIsNewDmOpen] = useState(false);
   const [isTeamChannelModalOpen, setIsTeamChannelModalOpen] = useState(false);
   const [teamChannelName, setTeamChannelName] = useState("");
-  const [teamInviteIds, setTeamInviteIds] = useState<string[]>([]);
+  const [teamInviteKeys, setTeamInviteKeys] = useState<string[]>([]);
   const [channelMenuId, setChannelMenuId] = useState<string | null>(null);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const contextMode =
@@ -241,7 +241,7 @@ export function AppShell({
 
   function resetTeamChannelModal() {
     setTeamChannelName("");
-    setTeamInviteIds([]);
+    setTeamInviteKeys([]);
     setEditingChannelId(null);
   }
 
@@ -265,10 +265,10 @@ export function AppShell({
     const detail = (await response.json()) as TeamChannelDetail;
 
     setTeamChannelName(detail.title);
-    setTeamInviteIds(
+    setTeamInviteKeys(
       detail.members
-        .filter((member) => member.kind !== "agent" && member.id !== user.id)
-        .map((member) => member.id),
+        .filter((member) => !(member.kind === "user" && member.id === user.id))
+        .map((member) => `${member.kind ?? "user"}:${member.id}`),
     );
     setEditingChannelId(channel.id);
     setIsTeamChannelModalOpen(true);
@@ -282,6 +282,13 @@ export function AppShell({
       return;
     }
 
+    const invitedUserIds = teamInviteKeys
+      .filter((key) => key.startsWith("user:"))
+      .map((key) => key.slice(5));
+    const invitedAgentIds = teamInviteKeys
+      .filter((key) => key.startsWith("agent:"))
+      .map((key) => key.slice(6));
+
     const response = await fetch(
       editingChannelId
         ? `/api/team/channels/${encodeURIComponent(editingChannelId)}`
@@ -292,7 +299,8 @@ export function AppShell({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          invitedUserIds: teamInviteIds,
+          invitedAgentIds,
+          invitedUserIds,
           name: trimmedName,
         }),
       },
@@ -574,24 +582,26 @@ export function AppShell({
               <span className="context-label">Invite Participants</span>
               <div className="team-invite-list">
                 {participants
-                  .filter((member) => member.id !== user.id)
+                  .filter((member) => !(member.kind === "user" && member.id === user.id))
                   .map((member) => {
-                    const checked = teamInviteIds.includes(member.id);
+                    const memberKey = `${member.kind ?? "user"}:${member.id}`;
+                    const checked = teamInviteKeys.includes(memberKey);
 
                     return (
-                      <label className="team-invite-item" key={member.id}>
+                      <label className="team-invite-item" key={memberKey}>
                         <input
                           checked={checked}
                           onChange={(event) => {
-                            setTeamInviteIds((current) =>
+                            setTeamInviteKeys((current) =>
                               event.target.checked
-                                ? [...current, member.id]
-                                : current.filter((item) => item !== member.id),
+                                ? [...current, memberKey]
+                                : current.filter((item) => item !== memberKey),
                             );
                           }}
                           type="checkbox"
                         />
                         <span>{member.name}</span>
+                        <span className="context-item-meta">{member.status}</span>
                       </label>
                     );
                   })}
