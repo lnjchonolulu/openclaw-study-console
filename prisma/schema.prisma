@@ -136,7 +136,7 @@ model Message {
   createdAt DateTime    @default(now())
   room      Room        @relation(fields: [roomId], references: [id])
   user      User?       @relation(fields: [userId], references: [id])
-  agent     Agent?      @relation(fields: [agentId], references: [id])
+  agent     Agent?      @relation(fields: [agentId], references: [openclawAgentId])
 }
 
 model RoomMember {
