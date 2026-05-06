@@ -5,22 +5,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
-import {
-  createTeamChannelId,
-  DEFAULT_TEAM_MEMBERS,
-  loadTeamChannels,
-  saveTeamChannels,
-  TEAM_CHAT_EVENT,
-  type TeamChannel,
-} from "@/lib/team-chat";
+import type { TeamChannelDetail, TeamChannelSummary, TeamParticipant } from "@/lib/team";
 
 type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
+
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     dm: (
-      <>
-        <path d="M4.75 5.75h14.5v10.5H9l-4.25 3.5v-14Z" />
-      </>
+      <path d="M4.75 5.75h14.5v10.5H9l-4.25 3.5v-14Z" />
     ),
     team: (
       <>
@@ -75,14 +67,19 @@ export function AppShell({
   availableDmTargets,
   children,
   dmConversations,
+  initialTeamChannels,
+  teamParticipants,
   user,
 }: {
   availableDmTargets: DmItem[];
   children: React.ReactNode;
   dmConversations: DmItem[];
+  initialTeamChannels: TeamChannelSummary[];
+  teamParticipants: TeamParticipant[];
   user: {
     agentId: string | null;
     displayName: string;
+    id: string;
     username: string;
     teamName: string | null;
   };
@@ -93,6 +90,8 @@ export function AppShell({
   const [availableDms, setAvailableDms] = useState(availableDmTargets);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const [dmItems, setDmItems] = useState(dmConversations);
+  const [teamChannels, setTeamChannels] = useState(initialTeamChannels);
+  const [participants, setParticipants] = useState(teamParticipants);
   const [isNewDmOpen, setIsNewDmOpen] = useState(false);
   const [isTeamChannelModalOpen, setIsTeamChannelModalOpen] = useState(false);
   const [teamChannelName, setTeamChannelName] = useState("");
@@ -102,13 +101,18 @@ export function AppShell({
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
+  const generalChannelId =
+    teamChannels.find((channel) => channel.title === "General")?.id ??
+    initialTeamChannels.find((channel) => channel.title === "General")?.id ??
+    "";
   const selectedDmKey = searchParams.get("user")
     ? `person:${searchParams.get("user")}`
     : `agent:${searchParams.get("agent") ?? user.agentId ?? ""}`;
-  const selectedChannel = searchParams.get("channel") ?? "main";
-  const [teamChannels, setTeamChannels] = useState<TeamChannel[]>(() =>
-    loadTeamChannels(),
-  );
+  const rawSelectedChannel = searchParams.get("channel");
+  const selectedChannel =
+    !rawSelectedChannel || rawSelectedChannel === "main"
+      ? generalChannelId
+      : rawSelectedChannel;
   const displayedDmItems = dmItems.map((item) =>
     pathname === "/chat" && `${item.kind}:${item.id}` === selectedDmKey
       ? {
@@ -117,6 +121,14 @@ export function AppShell({
         }
       : item,
   );
+
+  useEffect(() => {
+    setTeamChannels(initialTeamChannels);
+  }, [initialTeamChannels]);
+
+  useEffect(() => {
+    setParticipants(teamParticipants);
+  }, [teamParticipants]);
 
   useEffect(() => {
     let isMounted = true;
@@ -144,20 +156,6 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
-    function syncTeamChannels() {
-      setTeamChannels(loadTeamChannels());
-    }
-
-    window.addEventListener(TEAM_CHAT_EVENT, syncTeamChannels);
-    window.addEventListener("storage", syncTeamChannels);
-
-    return () => {
-      window.removeEventListener(TEAM_CHAT_EVENT, syncTeamChannels);
-      window.removeEventListener("storage", syncTeamChannels);
-    };
-  }, []);
-
-  useEffect(() => {
     if (pathname !== "/chat") {
       return;
     }
@@ -180,6 +178,45 @@ export function AppShell({
       window.clearTimeout(timeoutId);
     };
   }, [pathname, selectedDmKey]);
+
+  useEffect(() => {
+    if (pathname !== "/team") {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function refreshTeamSidebar() {
+      const response = await fetch("/api/team/channels");
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        channels?: TeamChannelSummary[];
+        participants?: TeamParticipant[];
+      };
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (payload.channels) {
+        setTeamChannels(payload.channels);
+      }
+
+      if (payload.participants) {
+        setParticipants(payload.participants);
+      }
+    }
+
+    void refreshTeamSidebar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname]);
 
   function getDmHref(target: DmItem) {
     const paramName = target.kind === "agent" ? "agent" : "user";
@@ -214,19 +251,30 @@ export function AppShell({
     setIsTeamChannelModalOpen(true);
   }
 
-  function openEditTeamChannelModal(channel: TeamChannel) {
+  async function openEditTeamChannelModal(channel: TeamChannelSummary) {
     setChannelMenuId(null);
-    setTeamChannelName(channel.title);
+    setContextNotice(null);
+
+    const response = await fetch(`/api/team/messages?roomId=${encodeURIComponent(channel.id)}`);
+
+    if (!response.ok) {
+      setContextNotice("Channel details could not be loaded.");
+      return;
+    }
+
+    const detail = (await response.json()) as TeamChannelDetail;
+
+    setTeamChannelName(detail.title);
     setTeamInviteIds(
-      channel.members
-        .filter((member) => member.id !== user.username)
+      detail.members
+        .filter((member) => member.id !== user.id)
         .map((member) => member.id),
     );
     setEditingChannelId(channel.id);
     setIsTeamChannelModalOpen(true);
   }
 
-  function submitTeamChannelModal() {
+  async function submitTeamChannelModal() {
     const trimmedName = teamChannelName.trim();
 
     if (!trimmedName) {
@@ -234,59 +282,66 @@ export function AppShell({
       return;
     }
 
-    const invitedMembers = DEFAULT_TEAM_MEMBERS.filter(
-      (member) =>
-        member.id === user.username || teamInviteIds.includes(member.id),
+    const response = await fetch(
+      editingChannelId
+        ? `/api/team/channels/${encodeURIComponent(editingChannelId)}`
+        : "/api/team/channels",
+      {
+        method: editingChannelId ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          invitedUserIds: teamInviteIds,
+          name: trimmedName,
+        }),
+      },
     );
 
-    const nextChannels =
-      editingChannelId
-        ? teamChannels.map((channel) =>
-            channel.id === editingChannelId
-              ? {
-                  ...channel,
-                  title: trimmedName,
-                  members: invitedMembers,
-                }
-              : channel,
-          )
-        : [
-            ...teamChannels,
-            {
-              id: createTeamChannelId(),
-              title: trimmedName,
-              createdBy: user.username,
-              members: invitedMembers,
-              messages: [],
-            },
-          ];
+    const payload = (await response.json()) as {
+      channelId?: string;
+      error?: string;
+    };
 
-    const nextSelectedChannel =
-      editingChannelId ??
-      nextChannels[nextChannels.length - 1]?.id ??
-      selectedChannel;
-
-    setTeamChannels(nextChannels);
-    saveTeamChannels(nextChannels);
-    setIsTeamChannelModalOpen(false);
-    resetTeamChannelModal();
-    router.push(`/team?channel=${encodeURIComponent(nextSelectedChannel)}`);
-  }
-
-  function deleteTeamChannel(channel: TeamChannel) {
-    if (channel.createdBy !== user.username) {
+    if (!response.ok) {
+      setContextNotice(payload.error ?? "Channel could not be saved.");
       return;
     }
 
-    const nextChannels = teamChannels.filter((item) => item.id !== channel.id);
+    setIsTeamChannelModalOpen(false);
+    resetTeamChannelModal();
 
+    if (editingChannelId) {
+      router.refresh();
+      return;
+    }
+
+    router.push(
+      `/team?channel=${encodeURIComponent(payload.channelId ?? generalChannelId)}`,
+    );
+    router.refresh();
+  }
+
+  async function deleteTeamChannel(channel: TeamChannelSummary) {
     setChannelMenuId(null);
-    setTeamChannels(nextChannels);
-    saveTeamChannels(nextChannels);
+
+    const response = await fetch(
+      `/api/team/channels/${encodeURIComponent(channel.id)}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    if (!response.ok) {
+      setContextNotice("Channel could not be deleted.");
+      return;
+    }
 
     if (selectedChannel === channel.id) {
-      router.push("/team?channel=main");
+      router.push(`/team?channel=${encodeURIComponent(generalChannelId)}`);
     }
+
+    router.refresh();
   }
 
   return (
@@ -340,76 +395,72 @@ export function AppShell({
         className={`context-sidebar${hasContext ? " context-sidebar-open" : ""}`}
       >
         {contextMode === "dm" ? (
-            <>
-              <div className="context-header">
-                <span className="context-label">DM</span>
-                <button
-                  className="context-action"
-                  onClick={() => {
-                    setContextNotice(null);
-                    setIsNewDmOpen((current) => !current);
-                  }}
-                  type="button"
-                >
-                  New
-                </button>
-              </div>
-              <div className="context-list">
-                {displayedDmItems.map((target) => {
-                  const isActive = selectedDmKey === `${target.kind}:${target.id}`;
-                  const unreadCount = isActive ? 0 : target.unreadCount;
+          <>
+            <div className="context-header">
+              <span className="context-label">DM</span>
+              <button
+                className="context-action"
+                onClick={() => {
+                  setContextNotice(null);
+                  setIsNewDmOpen((current) => !current);
+                }}
+                type="button"
+              >
+                New
+              </button>
+            </div>
+            <div className="context-list">
+              {displayedDmItems.map((target) => {
+                const isActive = selectedDmKey === `${target.kind}:${target.id}`;
+                const unreadCount = isActive ? 0 : target.unreadCount;
 
-                  return (
+                return (
+                  <Link
+                    className={`context-item${isActive ? " context-item-active" : ""}`}
+                    href={getDmHref(target)}
+                    key={`${target.kind}:${target.id}`}
+                    onClick={() => {
+                      setContextNotice(null);
+                    }}
+                  >
+                    <span className="context-item-topline">
+                      <span className="context-item-title">{target.displayName}</span>
+                      {unreadCount > 0 ? (
+                        <span className="context-unread-badge">
+                          {unreadCount >= 10 ? "10+" : unreadCount}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="context-item-meta">{target.meta}</span>
+                  </Link>
+                );
+              })}
+            </div>
+            {isNewDmOpen ? (
+              <div className="context-list context-new-list">
+                <span className="context-label">Start New DM</span>
+                {availableDms.length > 0 ? (
+                  availableDms.map((target) => (
                     <Link
-                      className={`context-item${
-                        isActive ? " context-item-active" : ""
-                      }`}
+                      className="context-item"
                       href={getDmHref(target)}
                       key={`${target.kind}:${target.id}`}
                       onClick={() => {
-                        setContextNotice(null);
+                        startDm(target);
                       }}
                     >
-                      <span className="context-item-topline">
-                        <span className="context-item-title">{target.displayName}</span>
-                        {unreadCount > 0 ? (
-                          <span className="context-unread-badge">
-                            {unreadCount >= 10 ? "10+" : unreadCount}
-                          </span>
-                        ) : null}
+                      <span className="context-item-title">{target.displayName}</span>
+                      <span className="context-item-meta">
+                        {target.kind === "person" ? "Person" : "Agent"}
                       </span>
-                      <span className="context-item-meta">{target.meta}</span>
                     </Link>
-                  );
-                })}
+                  ))
+                ) : (
+                  <p className="context-notice">No new DM targets.</p>
+                )}
               </div>
-              {isNewDmOpen ? (
-                <div className="context-list context-new-list">
-                  <span className="context-label">Start New DM</span>
-                  {availableDms.length > 0 ? (
-                    availableDms.map((target) => (
-                      <Link
-                        className="context-item"
-                        href={getDmHref(target)}
-                        key={`${target.kind}:${target.id}`}
-                        onClick={() => {
-                          startDm(target);
-                        }}
-                      >
-                        <span className="context-item-title">
-                          {target.displayName}
-                        </span>
-                        <span className="context-item-meta">
-                          {target.kind === "person" ? "Person" : "Agent"}
-                        </span>
-                      </Link>
-                    ))
-                  ) : (
-                    <p className="context-notice">No new DM targets.</p>
-                  )}
-                </div>
-              ) : null}
-            </>
+            ) : null}
+          </>
         ) : contextMode === "team" ? (
           <>
             <div className="context-header">
@@ -430,15 +481,11 @@ export function AppShell({
 
                 return (
                   <div
-                    className={`context-team-row${
-                      isActive ? " context-team-row-active" : ""
-                    }`}
+                    className={`context-team-row${isActive ? " context-team-row-active" : ""}`}
                     key={channel.id}
                   >
                     <Link
-                      className={`context-item${
-                        isActive ? " context-item-active" : ""
-                      }`}
+                      className={`context-item${isActive ? " context-item-active" : ""}`}
                       href={`/team?channel=${encodeURIComponent(channel.id)}`}
                       onClick={() => {
                         setContextNotice(null);
@@ -446,7 +493,7 @@ export function AppShell({
                     >
                       <span className="context-item-title">{channel.title}</span>
                     </Link>
-                    {channel.id !== "main" ? (
+                    {channel.title !== "General" ? (
                       <div className="context-team-actions">
                         <button
                           className="context-team-menu-button"
@@ -466,17 +513,17 @@ export function AppShell({
                             <button
                               className="context-team-menu-item"
                               onClick={() => {
-                                openEditTeamChannelModal(channel);
+                                void openEditTeamChannelModal(channel);
                               }}
                               type="button"
                             >
                               Edit Channel Name
                             </button>
-                            {channel.createdBy === user.username ? (
+                            {channel.createdBy === user.id ? (
                               <button
                                 className="context-team-menu-item context-team-menu-danger"
                                 onClick={() => {
-                                  deleteTeamChannel(channel);
+                                  void deleteTeamChannel(channel);
                                 }}
                                 type="button"
                               >
@@ -526,28 +573,28 @@ export function AppShell({
             <div className="team-modal-section">
               <span className="context-label">Invite Participants</span>
               <div className="team-invite-list">
-                {DEFAULT_TEAM_MEMBERS.filter(
-                  (member) => member.id !== user.username,
-                ).map((member) => {
-                  const checked = teamInviteIds.includes(member.id);
+                {participants
+                  .filter((member) => member.id !== user.id)
+                  .map((member) => {
+                    const checked = teamInviteIds.includes(member.id);
 
-                  return (
-                    <label className="team-invite-item" key={member.id}>
-                      <input
-                        checked={checked}
-                        onChange={(event) => {
-                          setTeamInviteIds((current) =>
-                            event.target.checked
-                              ? [...current, member.id]
-                              : current.filter((item) => item !== member.id),
-                          );
-                        }}
-                        type="checkbox"
-                      />
-                      <span>{member.name}</span>
-                    </label>
-                  );
-                })}
+                    return (
+                      <label className="team-invite-item" key={member.id}>
+                        <input
+                          checked={checked}
+                          onChange={(event) => {
+                            setTeamInviteIds((current) =>
+                              event.target.checked
+                                ? [...current, member.id]
+                                : current.filter((item) => item !== member.id),
+                            );
+                          }}
+                          type="checkbox"
+                        />
+                        <span>{member.name}</span>
+                      </label>
+                    );
+                  })}
               </div>
             </div>
             <div className="team-modal-actions">
@@ -564,7 +611,7 @@ export function AppShell({
               <button
                 className="primary-button"
                 onClick={() => {
-                  submitTeamChannelModal();
+                  void submitTeamChannelModal();
                 }}
                 type="button"
               >

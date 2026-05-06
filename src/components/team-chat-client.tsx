@@ -1,15 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import {
-  createTeamMessageId,
-  DEFAULT_TEAM_MEMBERS,
-  loadTeamChannels,
-  saveTeamChannels,
-  TEAM_CHAT_EVENT,
-  type TeamChannelMessage,
-} from "@/lib/team-chat";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { TeamChannelDetail } from "@/lib/team";
 
 function formatMessageTime(isoString: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -44,12 +37,15 @@ type RenderRow =
   | {
       type: "message";
       key: string;
-      message: TeamChannelMessage;
+      message: TeamChannelDetail["messages"][number];
       showTimestamp: boolean;
       isOwnMessage: boolean;
     };
 
-function buildRenderRows(messages: TeamChannelMessage[], currentUserId: string): RenderRow[] {
+function buildRenderRows(
+  messages: TeamChannelDetail["messages"],
+  currentUserId: string,
+): RenderRow[] {
   const rows: RenderRow[] = [];
 
   messages.forEach((message, index) => {
@@ -105,34 +101,63 @@ function TeamMembersIcon() {
 }
 
 export function TeamChatClient({
+  initialChannel,
   user,
 }: {
+  initialChannel: TeamChannelDetail | null;
   user: {
     displayName: string;
+    id: string;
     username: string;
   };
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedChannelId = searchParams.get("channel") ?? "main";
-  const [channels, setChannels] = useState(loadTeamChannels);
+  const rawSelectedChannelId = searchParams.get("channel");
+  const selectedChannelId =
+    !rawSelectedChannelId || rawSelectedChannelId === "main"
+      ? initialChannel?.id ?? null
+      : rawSelectedChannelId;
+  const [channel, setChannel] = useState(initialChannel);
   const [isRosterOpen, setIsRosterOpen] = useState(false);
   const [message, setMessage] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    function syncChannels() {
-      setChannels(loadTeamChannels());
+    setChannel(initialChannel);
+  }, [initialChannel]);
+
+  useEffect(() => {
+    if (!selectedChannelId) {
+      return;
     }
 
-    window.addEventListener(TEAM_CHAT_EVENT, syncChannels);
-    window.addEventListener("storage", syncChannels);
+    const currentChannelId = selectedChannelId;
+    let isMounted = true;
+
+    async function refreshChannel() {
+      const response = await fetch(
+        `/api/team/messages?roomId=${encodeURIComponent(currentChannelId)}`,
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as TeamChannelDetail;
+
+      if (isMounted) {
+        setChannel(payload);
+      }
+    }
+
+    void refreshChannel();
 
     return () => {
-      window.removeEventListener(TEAM_CHAT_EVENT, syncChannels);
-      window.removeEventListener("storage", syncChannels);
+      isMounted = false;
     };
-  }, []);
+  }, [selectedChannelId]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -145,14 +170,9 @@ export function TeamChatClient({
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [message]);
 
-  const activeChannel =
-    channels.find((channel) => channel.id === selectedChannelId) ?? channels[0] ?? null;
   const renderRows = useMemo(
-    () =>
-      activeChannel
-        ? buildRenderRows(activeChannel.messages, user.username)
-        : [],
-    [activeChannel, user.username],
+    () => buildRenderRows(channel?.messages ?? [], user.id),
+    [channel?.messages, user.id],
   );
 
   useLayoutEffect(() => {
@@ -162,7 +182,7 @@ export function TeamChatClient({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!activeChannel) {
+    if (!channel) {
       return;
     }
 
@@ -172,30 +192,37 @@ export function TeamChatClient({
       return;
     }
 
-    const nextChannels = channels.map((channel) =>
-      channel.id === activeChannel.id
+    const response = await fetch("/api/team/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: trimmedMessage,
+        roomId: channel.id,
+      }),
+    });
+
+    const payload = (await response.json()) as {
+      error?: string;
+      message?: TeamChannelDetail["messages"][number];
+    };
+
+    if (!response.ok || !payload.message) {
+      return;
+    }
+
+    setChannel((current) =>
+      current
         ? {
-            ...channel,
-            messages: [
-              ...channel.messages,
-              {
-                id: createTeamMessageId(),
-                author: user.displayName,
-                content: trimmedMessage,
-                createdAt: new Date().toISOString(),
-                userId: user.username,
-              },
-            ],
+            ...current,
+            messages: [...current.messages, payload.message!],
           }
-        : channel,
+        : current,
     );
-
-    setChannels(nextChannels);
-    saveTeamChannels(nextChannels);
     setMessage("");
+    router.refresh();
   }
-
-  const members = activeChannel?.members ?? DEFAULT_TEAM_MEMBERS;
 
   return (
     <section className="chat-page">
@@ -209,13 +236,13 @@ export function TeamChatClient({
             type="button"
           >
             <TeamMembersIcon />
-            <span>{members.length}</span>
+            <span>{channel?.members.length ?? 0}</span>
           </button>
           {isRosterOpen ? (
             <div className="team-members-popover">
               <span className="context-label">Participants</span>
               <div className="context-list">
-                {members.map((member) => (
+                {(channel?.members ?? []).map((member) => (
                   <div className="context-item" key={member.id}>
                     <span className="context-item-title">{member.name}</span>
                     <span className="context-item-meta">{member.status}</span>
