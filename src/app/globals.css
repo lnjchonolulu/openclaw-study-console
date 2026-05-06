@@ -283,6 +283,13 @@ button.primary-button {
   font-size: 0.82rem;
 }
 
+.context-notice {
+  margin: 0 4px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .sidebar-main {
   display: grid;
   gap: 28px;

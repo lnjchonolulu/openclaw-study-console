@@ -9,8 +9,10 @@ type ChatMessage = {
 };
 
 export function ChatClient({
+  agentId,
   initialMessages,
 }: {
+  agentId: string | null;
   initialMessages: ChatMessage[];
 }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -35,7 +37,7 @@ export function ChatClient({
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || isSending) {
+    if (!trimmedMessage || isSending || !agentId) {
       return;
     }
 
@@ -56,6 +58,7 @@ export function ChatClient({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        agentId,
         message: trimmedMessage,
       }),
     });
@@ -118,7 +121,7 @@ export function ChatClient({
             placeholder="Write a message"
             rows={1}
           />
-          <button className="primary-button" disabled={isSending} type="submit">
+          <button className="primary-button" disabled={isSending || !agentId} type="submit">
             {isSending ? "Sending" : "Send"}
           </button>
         </div>

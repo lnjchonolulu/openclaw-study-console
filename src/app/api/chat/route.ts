@@ -3,22 +3,68 @@ import { getCurrentUser } from "@/lib/auth";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
-async function getOrCreatePersonalRoom(userId: string) {
+async function getOrCreateDmRoom(userId: string, targetAgentId: string) {
+  const targetAgent = await prisma.agent.findUnique({
+    where: {
+      openclawAgentId: targetAgentId,
+    },
+  });
+
+  if (!targetAgent) {
+    return null;
+  }
+
   const existingRoom = await prisma.room.findFirst({
     where: {
       type: "PERSONAL",
       ownerUserId: userId,
+      agents: {
+        some: {
+          agentId: targetAgent.id,
+        },
+      },
     },
   });
 
   if (existingRoom) {
-    return existingRoom;
+    return {
+      room: existingRoom,
+      targetAgent,
+    };
   }
 
-  return prisma.room.create({
+  const legacyOwnRoom =
+    targetAgent.userId === userId
+      ? await prisma.room.findFirst({
+          where: {
+            type: "PERSONAL",
+            ownerUserId: userId,
+            agents: {
+              none: {},
+            },
+          },
+        })
+      : null;
+
+  if (legacyOwnRoom) {
+    await prisma.roomAgent.create({
+      data: {
+        roomId: legacyOwnRoom.id,
+        agentId: targetAgent.id,
+        role: "PRIMARY",
+      },
+    });
+
+    return {
+      room: legacyOwnRoom,
+      targetAgent,
+    };
+  }
+
+  const room = await prisma.room.create({
     data: {
       type: "PERSONAL",
-      name: "Personal agent chat",
+      name: targetAgent.displayName,
       ownerUserId: userId,
       members: {
         create: {
@@ -29,8 +75,19 @@ async function getOrCreatePersonalRoom(userId: string) {
           canShareFiles: true,
         },
       },
+      agents: {
+        create: {
+          agentId: targetAgent.id,
+          role: "PRIMARY",
+        },
+      },
     },
   });
+
+  return {
+    room,
+    targetAgent,
+  };
 }
 
 export async function POST(request: Request) {
@@ -40,25 +97,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as { message?: string };
+  const body = (await request.json()) as { agentId?: string; message?: string };
+  const targetAgentId = body.agentId?.trim() || user.agent?.openclawAgentId;
   const message = body.message?.trim();
 
   if (!message) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
 
-  if (!user.agent?.openclawAgentId) {
+  if (!targetAgentId) {
     return NextResponse.json(
       { error: "This study account is not linked to an OpenClaw agent yet." },
       { status: 400 },
     );
   }
 
-  const room = await getOrCreatePersonalRoom(user.id);
+  const dmRoom = await getOrCreateDmRoom(user.id, targetAgentId);
+
+  if (!dmRoom) {
+    return NextResponse.json({ error: "Selected agent was not found." }, { status: 404 });
+  }
 
   await prisma.message.create({
     data: {
-      roomId: room.id,
+      roomId: dmRoom.room.id,
       userId: user.id,
       role: "USER",
       content: message,
@@ -67,16 +129,16 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAgentTurn({
-      agentId: user.agent.openclawAgentId,
+      agentId: dmRoom.targetAgent.openclawAgentId,
       message,
-      conversationKey: `room:${room.id}`,
+      conversationKey: `room:${dmRoom.room.id}`,
     });
 
     await prisma.message.create({
       data: {
-        roomId: room.id,
+        roomId: dmRoom.room.id,
         role: "AGENT",
-        agentId: user.agent.openclawAgentId,
+        agentId: dmRoom.targetAgent.openclawAgentId,
         content: result.assistantText,
       },
     });

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 
 type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
@@ -64,18 +66,34 @@ function NavIcon({ name }: { name: IconName }) {
 
 export function AppShell({
   children,
+  dmTargets,
   user,
 }: {
   children: React.ReactNode;
+  dmTargets: Array<{
+    agentId: string;
+    displayName: string;
+    isOwnAgent: boolean;
+  }>;
   user: {
+    agentId: string | null;
     displayName: string;
     username: string;
     teamName: string | null;
   };
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
+  const selectedAgentId = searchParams.get("agent") ?? user.agentId;
+  const selectedChannel = searchParams.get("channel") ?? "main";
+  const teamChannels = [
+    { id: "main", title: user.teamName ?? "Team 03", meta: "Main channel" },
+    { id: "research", title: "Research", meta: "Draft channel" },
+    { id: "outputs", title: "Outputs", meta: "Draft channel" },
+  ];
 
   return (
     <div className={`app-shell${contextMode ? " app-shell-with-context" : ""}`}>
@@ -129,47 +147,78 @@ export function AppShell({
             <>
               <div className="context-header">
                 <span className="context-label">DM</span>
-                <button className="context-action" type="button">
+                <button
+                  className="context-action"
+                  onClick={() => {
+                    setContextNotice("New DM creation is coming next.");
+                  }}
+                  type="button"
+                >
                   New
                 </button>
               </div>
               <div className="context-list">
-                <button className="context-item context-item-active" type="button">
-                  <span className="context-item-title">
-                    {user.displayName}&apos;s Agent
-                  </span>
-                  <span className="context-item-meta">Personal agent</span>
-                </button>
-                <button className="context-item" type="button">
-                  <span className="context-item-title">Jiyeon Agent</span>
-                  <span className="context-item-meta">Available later</span>
-                </button>
+                {dmTargets.map((target) => {
+                  const isActive = selectedAgentId === target.agentId;
+
+                  return (
+                    <Link
+                      className={`context-item${
+                        isActive ? " context-item-active" : ""
+                      }`}
+                      href={`/chat?agent=${encodeURIComponent(target.agentId)}`}
+                      key={target.agentId}
+                      onClick={() => {
+                        setContextNotice(null);
+                      }}
+                    >
+                      <span className="context-item-title">{target.displayName}</span>
+                      <span className="context-item-meta">
+                        {target.isOwnAgent ? "Personal agent" : "Shared agent"}
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
             </>
           ) : (
             <>
               <div className="context-header">
                 <span className="context-label">Team Chat</span>
-                <button className="context-action" type="button">
+                <button
+                  className="context-action"
+                  onClick={() => {
+                    setContextNotice("Channel creation is coming next.");
+                  }}
+                  type="button"
+                >
                   New
                 </button>
               </div>
               <div className="context-list">
-                <button className="context-item context-item-active" type="button">
-                  <span className="context-item-title">Team 03</span>
-                  <span className="context-item-meta">Main channel</span>
-                </button>
-                <button className="context-item" type="button">
-                  <span className="context-item-title">Research</span>
-                  <span className="context-item-meta">Draft channel</span>
-                </button>
-                <button className="context-item" type="button">
-                  <span className="context-item-title">Outputs</span>
-                  <span className="context-item-meta">Draft channel</span>
-                </button>
+                {teamChannels.map((channel) => {
+                  const isActive = selectedChannel === channel.id;
+
+                  return (
+                    <Link
+                      className={`context-item${
+                        isActive ? " context-item-active" : ""
+                      }`}
+                      href={`/team?channel=${encodeURIComponent(channel.id)}`}
+                      key={channel.id}
+                      onClick={() => {
+                        setContextNotice(null);
+                      }}
+                    >
+                      <span className="context-item-title">{channel.title}</span>
+                      <span className="context-item-meta">{channel.meta}</span>
+                    </Link>
+                  );
+                })}
               </div>
             </>
           )}
+          {contextNotice ? <p className="context-notice">{contextNotice}</p> : null}
         </aside>
       ) : null}
 
