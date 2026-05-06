@@ -328,6 +328,81 @@ button.primary-button {
   font-size: 0.82rem;
 }
 
+.context-team-row {
+  position: relative;
+}
+
+.context-team-row .context-item {
+  padding-right: 42px;
+}
+
+.context-team-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.context-team-row:hover .context-team-actions,
+.context-team-row-active .context-team-actions,
+.context-team-actions:focus-within {
+  opacity: 1;
+}
+
+.context-team-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  cursor: pointer;
+}
+
+.context-team-menu-button span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.context-team-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 6;
+  width: 188px;
+  padding: 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
+}
+
+.context-team-menu-item {
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.context-team-menu-item:hover {
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.context-team-menu-danger {
+  color: #b42318;
+}
+
 .context-unread-badge {
   display: inline-flex;
   align-items: center;
@@ -746,7 +821,7 @@ button.primary-button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 16px 18px 0;
+  padding: 10px 18px 0;
 }
 
 .team-members-button {
@@ -772,7 +847,7 @@ button.primary-button {
 
 .team-members-popover {
   position: absolute;
-  top: 52px;
+  top: 44px;
   left: 18px;
   z-index: 5;
   width: min(320px, calc(100vw - 72px));
@@ -792,6 +867,61 @@ button.primary-button {
   color: var(--foreground);
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.team-empty-state {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.team-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.team-modal {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--surface-border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
+}
+
+.team-modal-header h2 {
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.team-modal-section {
+  display: grid;
+  gap: 10px;
+}
+
+.team-invite-list {
+  display: grid;
+  gap: 10px;
+}
+
+.team-invite-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--foreground);
+  font-size: 0.95rem;
+}
+
+.team-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .message-error {

@@ -5,6 +5,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
+import {
+  createTeamChannelId,
+  DEFAULT_TEAM_MEMBERS,
+  loadTeamChannels,
+  saveTeamChannels,
+  TEAM_CHAT_EVENT,
+  type TeamChannel,
+} from "@/lib/team-chat";
 
 type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
 function NavIcon({ name }: { name: IconName }) {
@@ -86,6 +94,11 @@ export function AppShell({
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const [dmItems, setDmItems] = useState(dmConversations);
   const [isNewDmOpen, setIsNewDmOpen] = useState(false);
+  const [isTeamChannelModalOpen, setIsTeamChannelModalOpen] = useState(false);
+  const [teamChannelName, setTeamChannelName] = useState("");
+  const [teamInviteIds, setTeamInviteIds] = useState<string[]>([]);
+  const [channelMenuId, setChannelMenuId] = useState<string | null>(null);
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
@@ -93,9 +106,9 @@ export function AppShell({
     ? `person:${searchParams.get("user")}`
     : `agent:${searchParams.get("agent") ?? user.agentId ?? ""}`;
   const selectedChannel = searchParams.get("channel") ?? "main";
-  const [teamChannels, setTeamChannels] = useState([
-    { id: "main", title: "General", meta: "" },
-  ]);
+  const [teamChannels, setTeamChannels] = useState<TeamChannel[]>(() =>
+    loadTeamChannels(),
+  );
   const displayedDmItems = dmItems.map((item) =>
     pathname === "/chat" && `${item.kind}:${item.id}` === selectedDmKey
       ? {
@@ -127,6 +140,20 @@ export function AppShell({
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    function syncTeamChannels() {
+      setTeamChannels(loadTeamChannels());
+    }
+
+    window.addEventListener(TEAM_CHAT_EVENT, syncTeamChannels);
+    window.addEventListener("storage", syncTeamChannels);
+
+    return () => {
+      window.removeEventListener(TEAM_CHAT_EVENT, syncTeamChannels);
+      window.removeEventListener("storage", syncTeamChannels);
     };
   }, []);
 
@@ -175,17 +202,91 @@ export function AppShell({
     );
   }
 
-  function createTeamChannel() {
-    const channelNumber = teamChannels.length + 1;
-    const channel = {
-      id: `channel-${Date.now()}`,
-      title: `New Channel ${channelNumber}`,
-      meta: "",
-    };
+  function resetTeamChannelModal() {
+    setTeamChannelName("");
+    setTeamInviteIds([]);
+    setEditingChannelId(null);
+  }
 
+  function openCreateTeamChannelModal() {
     setContextNotice(null);
-    setTeamChannels((current) => [...current, channel]);
-    router.push(`/team?channel=${encodeURIComponent(channel.id)}`);
+    resetTeamChannelModal();
+    setIsTeamChannelModalOpen(true);
+  }
+
+  function openEditTeamChannelModal(channel: TeamChannel) {
+    setChannelMenuId(null);
+    setTeamChannelName(channel.title);
+    setTeamInviteIds(
+      channel.members
+        .filter((member) => member.id !== user.username)
+        .map((member) => member.id),
+    );
+    setEditingChannelId(channel.id);
+    setIsTeamChannelModalOpen(true);
+  }
+
+  function submitTeamChannelModal() {
+    const trimmedName = teamChannelName.trim();
+
+    if (!trimmedName) {
+      setContextNotice("Channel name is required.");
+      return;
+    }
+
+    const invitedMembers = DEFAULT_TEAM_MEMBERS.filter(
+      (member) =>
+        member.id === user.username || teamInviteIds.includes(member.id),
+    );
+
+    const nextChannels =
+      editingChannelId
+        ? teamChannels.map((channel) =>
+            channel.id === editingChannelId
+              ? {
+                  ...channel,
+                  title: trimmedName,
+                  members: invitedMembers,
+                }
+              : channel,
+          )
+        : [
+            ...teamChannels,
+            {
+              id: createTeamChannelId(),
+              title: trimmedName,
+              createdBy: user.username,
+              members: invitedMembers,
+              messages: [],
+            },
+          ];
+
+    const nextSelectedChannel =
+      editingChannelId ??
+      nextChannels[nextChannels.length - 1]?.id ??
+      selectedChannel;
+
+    setTeamChannels(nextChannels);
+    saveTeamChannels(nextChannels);
+    setIsTeamChannelModalOpen(false);
+    resetTeamChannelModal();
+    router.push(`/team?channel=${encodeURIComponent(nextSelectedChannel)}`);
+  }
+
+  function deleteTeamChannel(channel: TeamChannel) {
+    if (channel.createdBy !== user.username) {
+      return;
+    }
+
+    const nextChannels = teamChannels.filter((item) => item.id !== channel.id);
+
+    setChannelMenuId(null);
+    setTeamChannels(nextChannels);
+    saveTeamChannels(nextChannels);
+
+    if (selectedChannel === channel.id) {
+      router.push("/team?channel=main");
+    }
   }
 
   return (
@@ -316,7 +417,7 @@ export function AppShell({
               <button
                 className="context-action"
                 onClick={() => {
-                  createTeamChannel();
+                  openCreateTeamChannelModal();
                 }}
                 type="button"
               >
@@ -328,21 +429,65 @@ export function AppShell({
                 const isActive = selectedChannel === channel.id;
 
                 return (
-                  <Link
-                    className={`context-item${
-                      isActive ? " context-item-active" : ""
+                  <div
+                    className={`context-team-row${
+                      isActive ? " context-team-row-active" : ""
                     }`}
-                    href={`/team?channel=${encodeURIComponent(channel.id)}`}
                     key={channel.id}
-                    onClick={() => {
-                      setContextNotice(null);
-                    }}
                   >
-                    <span className="context-item-title">{channel.title}</span>
-                    {channel.meta ? (
-                      <span className="context-item-meta">{channel.meta}</span>
+                    <Link
+                      className={`context-item${
+                        isActive ? " context-item-active" : ""
+                      }`}
+                      href={`/team?channel=${encodeURIComponent(channel.id)}`}
+                      onClick={() => {
+                        setContextNotice(null);
+                      }}
+                    >
+                      <span className="context-item-title">{channel.title}</span>
+                    </Link>
+                    {channel.id !== "main" ? (
+                      <div className="context-team-actions">
+                        <button
+                          className="context-team-menu-button"
+                          onClick={() => {
+                            setChannelMenuId((current) =>
+                              current === channel.id ? null : channel.id,
+                            );
+                          }}
+                          type="button"
+                        >
+                          <span />
+                          <span />
+                          <span />
+                        </button>
+                        {channelMenuId === channel.id ? (
+                          <div className="context-team-menu">
+                            <button
+                              className="context-team-menu-item"
+                              onClick={() => {
+                                openEditTeamChannelModal(channel);
+                              }}
+                              type="button"
+                            >
+                              Edit Channel Name
+                            </button>
+                            {channel.createdBy === user.username ? (
+                              <button
+                                className="context-team-menu-item context-team-menu-danger"
+                                onClick={() => {
+                                  deleteTeamChannel(channel);
+                                }}
+                                type="button"
+                              >
+                                Delete Channel
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
-                  </Link>
+                  </div>
                 );
               })}
             </div>
@@ -350,6 +495,85 @@ export function AppShell({
         ) : null}
         {contextNotice ? <p className="context-notice">{contextNotice}</p> : null}
       </aside>
+
+      {isTeamChannelModalOpen ? (
+        <div
+          className="team-modal-backdrop"
+          onClick={() => {
+            setIsTeamChannelModalOpen(false);
+            resetTeamChannelModal();
+          }}
+        >
+          <div
+            className="team-modal"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <div className="team-modal-header">
+              <h2>{editingChannelId ? "Edit channel" : "New channel"}</h2>
+            </div>
+            <label className="split-label">
+              Channel Name
+              <input
+                value={teamChannelName}
+                onChange={(event) => {
+                  setTeamChannelName(event.target.value);
+                }}
+                type="text"
+              />
+            </label>
+            <div className="team-modal-section">
+              <span className="context-label">Invite Participants</span>
+              <div className="team-invite-list">
+                {DEFAULT_TEAM_MEMBERS.filter(
+                  (member) => member.id !== user.username,
+                ).map((member) => {
+                  const checked = teamInviteIds.includes(member.id);
+
+                  return (
+                    <label className="team-invite-item" key={member.id}>
+                      <input
+                        checked={checked}
+                        onChange={(event) => {
+                          setTeamInviteIds((current) =>
+                            event.target.checked
+                              ? [...current, member.id]
+                              : current.filter((item) => item !== member.id),
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                      <span>{member.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="team-modal-actions">
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setIsTeamChannelModalOpen(false);
+                  resetTeamChannelModal();
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  submitTeamChannelModal();
+                }}
+                type="button"
+              >
+                {editingChannelId ? "Save" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main className="app-content">{children}</main>
     </div>
