@@ -70,35 +70,46 @@ export function ChatClient({
   }
 
   return (
-    <>
-      <article className="content-card">
-        <h2>Conversation</h2>
-        <div className="message-list">
-          {messages.map((entry) => (
-            <div className="message-row" key={entry.id}>
-              <div className="message-meta">
-                {entry.role === "USER" ? "Participant" : "Personal agent"}
-              </div>
-              <p>{entry.content}</p>
-            </div>
-          ))}
-        </div>
-      </article>
+    <div className="chat-panel">
+      <div className="message-list" aria-live="polite">
+        {messages.map((entry) => (
+          <div
+            className={`message-row ${
+              entry.role === "USER" ? "message-row-user" : "message-row-agent"
+            }`}
+            key={entry.id}
+          >
+            <p>{entry.content}</p>
+          </div>
+        ))}
+        {isSending ? (
+          <div className="message-row message-row-agent message-row-pending">
+            <p>답변을 작성하는 중...</p>
+          </div>
+        ) : null}
+      </div>
 
       <form className="message-composer" onSubmit={handleSubmit}>
-        <h2>Message composer</h2>
-        <textarea
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Ask your personal agent for a plan, summary, or draft."
-        />
-        {error ? <p className="helper-text">{error}</p> : null}
-        <div className="inline-actions">
+        {error ? <p className="helper-text message-error">{error}</p> : null}
+        <div className="composer-bar">
+          <textarea
+            aria-label="Message"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="메시지를 입력하세요"
+            rows={1}
+          />
           <button className="primary-button" disabled={isSending} type="submit">
-            {isSending ? "Sending..." : "Send to agent"}
+            {isSending ? "전송 중" : "전송"}
           </button>
         </div>
       </form>
-    </>
+    </div>
   );
 }

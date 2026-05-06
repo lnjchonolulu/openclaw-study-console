@@ -274,6 +274,10 @@ button.primary-button {
   padding: 28px;
 }
 
+.chat-page {
+  min-height: calc(100vh - 56px);
+}
+
 .page-panel {
   display: grid;
   gap: 22px;
@@ -306,7 +310,6 @@ button.primary-button {
 }
 
 .stats-row,
-.chat-grid,
 .files-grid,
 .team-grid,
 .form-grid {
@@ -316,10 +319,6 @@ button.primary-button {
 
 .stats-row {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.chat-grid {
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
 }
 
 .files-grid {
@@ -382,16 +381,53 @@ button.primary-button {
   padding-left: 18px;
 }
 
-.message-list {
+.chat-panel {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: calc(100vh - 56px);
+  border: 1px solid var(--surface-border);
+  border-radius: 28px;
+  background: rgba(255, 250, 242, 0.9);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  padding: 22px;
+  overflow-y: auto;
 }
 
 .message-row {
+  width: fit-content;
+  max-width: min(680px, 78%);
   padding: 16px;
   border-radius: 18px;
   border: 1px solid rgba(29, 36, 48, 0.08);
   background: rgba(255, 255, 255, 0.7);
+}
+
+.message-row-user {
+  align-self: flex-end;
+  color: white;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  box-shadow: 0 12px 26px rgba(181, 77, 44, 0.18);
+}
+
+.message-row-user p {
+  color: white;
+}
+
+.message-row-agent {
+  align-self: flex-start;
+}
+
+.message-row-pending {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .message-meta {
@@ -419,6 +455,39 @@ button.primary-button {
 .content-card textarea {
   min-height: 136px;
   resize: vertical;
+}
+
+.message-composer {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 0;
+  border-top: 1px solid rgba(29, 36, 48, 0.08);
+  border-radius: 0;
+  background: rgba(255, 250, 242, 0.96);
+}
+
+.composer-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.message-composer textarea {
+  min-height: 54px;
+  max-height: 180px;
+  margin-top: 0;
+  resize: vertical;
+}
+
+.message-composer .primary-button {
+  min-height: 54px;
+  padding: 0 24px;
+}
+
+.message-error {
+  color: var(--accent-strong);
 }
 
 .inline-actions {
@@ -480,7 +549,6 @@ button.primary-button {
 @media (max-width: 980px) {
   .hero-card,
   .app-shell,
-  .chat-grid,
   .files-grid,
   .team-grid,
   .stats-row,
@@ -507,6 +575,27 @@ button.primary-button {
   .login-card {
     padding: 20px;
     border-radius: 24px;
+  }
+
+  .app-content {
+    padding-top: 12px;
+  }
+
+  .chat-page,
+  .chat-panel {
+    min-height: calc(100vh - 24px);
+  }
+
+  .message-list {
+    padding: 14px;
+  }
+
+  .message-row {
+    max-width: 88%;
+  }
+
+  .composer-bar {
+    grid-template-columns: 1fr;
   }
 
   .hero-actions,

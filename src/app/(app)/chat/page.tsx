@@ -36,54 +36,13 @@ export default async function ChatPage() {
       {
         id: "welcome-agent",
         role: "AGENT" as const,
-        content:
-          "Your OpenClaw-backed personal agent is ready. Ask for a plan, summary, or draft to test the live pipeline.",
+        content: "안녕하세요. 무엇을 도와드릴까요?",
       },
     ];
 
   return (
-    <section className="page-panel">
-      <header className="page-header">
-        <div>
-          <span className="eyebrow">Chat</span>
-          <h1>Your personal agent lives here.</h1>
-          <p>
-            The participant should feel like they are talking to one agent, even if the
-            backend later routes some work to cheaper internal workers.
-          </p>
-        </div>
-        <span className="pill">
-          Agent: {user.agent?.displayName ?? user.agent?.openclawAgentId ?? "Unassigned"}
-        </span>
-      </header>
-
-      <div className="stats-row">
-        <article className="metric-card">
-          <span className="metric-label">Current model path</span>
-          <strong className="metric-value">MiniMax</strong>
-        </article>
-        <article className="metric-card">
-          <span className="metric-label">Session mode</span>
-          <strong className="metric-value">Personal</strong>
-        </article>
-        <article className="metric-card">
-          <span className="metric-label">OpenClaw target</span>
-          <strong className="metric-value">Local CLI</strong>
-        </article>
-      </div>
-
-      <div className="chat-grid">
-        <ChatClient initialMessages={initialMessages} />
-
-        <aside className="content-card">
-          <h2>Implementation notes</h2>
-          <ul>
-            <li>Store chat messages in Postgres.</li>
-            <li>Map the logged-in user to exactly one OpenClaw agent id.</li>
-            <li>For now the backend executes `openclaw agent --local` on the same server.</li>
-          </ul>
-        </aside>
-      </div>
+    <section className="chat-page">
+      <ChatClient initialMessages={initialMessages} />
     </section>
   );
 }
