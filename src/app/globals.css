@@ -1165,7 +1165,8 @@ button.primary-button {
 
 .settings-user-column {
   display: grid;
-  align-content: start;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
   gap: 18px;
   min-height: 0;
 }
@@ -1178,27 +1179,52 @@ button.primary-button {
 
 .settings-card-user {
   align-content: start;
-  align-self: start;
+  align-self: stretch;
   width: min(100%, 360px);
 }
 
+.settings-card-profile {
+  height: 100%;
+}
+
 .settings-card-agent {
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+}
+
+.settings-agent-top {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
+  padding-bottom: 18px;
+  background: var(--surface-strong);
+}
+
+.settings-agent-scroll {
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 12px;
 }
 
 .settings-card-header h2 {
-  font-size: 1.18rem;
+  font-size: 1.28rem;
   letter-spacing: -0.03em;
 }
 
 .settings-avatar-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 16px;
+}
+
+.settings-avatar-stack {
+  position: relative;
+  width: 70px;
+  height: 70px;
 }
 
 .settings-avatar-copy {
@@ -1222,6 +1248,28 @@ button.primary-button {
 
 .settings-textarea-compact {
   min-height: 120px;
+}
+
+.settings-avatar-action {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.1);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.settings-refresh-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .settings-input-wrap,
@@ -1277,18 +1325,13 @@ button.primary-button {
 .settings-section-block {
   display: grid;
   gap: 14px;
-  padding-top: 4px;
+  padding-top: 16px;
   border-top: 1px solid rgba(17, 17, 17, 0.08);
 }
 
 .settings-section-header {
   display: grid;
-  gap: 6px;
-}
-
-.settings-section-header h3 {
-  font-size: 1.02rem;
-  letter-spacing: -0.02em;
+  gap: 10px;
 }
 
 .settings-section-header p {
@@ -1460,6 +1503,10 @@ button.primary-button {
     justify-items: start;
   }
 
+  .settings-avatar-stack {
+    margin-bottom: 6px;
+  }
+
   .settings-fields-grid {
     grid-template-columns: 1fr;
   }
@@ -1488,5 +1535,9 @@ button.primary-button {
   .settings-card-agent {
     overflow: visible;
     padding-right: 20px;
+  }
+
+  .settings-user-column {
+    grid-template-rows: auto auto;
   }
 }
