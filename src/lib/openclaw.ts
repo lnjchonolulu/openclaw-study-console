@@ -80,10 +80,12 @@ function getResponsesEndpoint() {
 
 export async function runAgentTurn({
   agentId,
+  instructions,
   message,
   conversationKey,
 }: {
   agentId: string;
+  instructions?: string;
   message: string;
   conversationKey: string;
 }) {
@@ -98,6 +100,7 @@ export async function runAgentTurn({
     },
     body: JSON.stringify({
       model: `openclaw:${agentId}`,
+      ...(instructions ? { instructions } : {}),
       input: message,
       user: conversationKey,
     }),

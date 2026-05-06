@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom, markRoomAsReadAt } from "@/lib/dm";
+import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -56,8 +57,24 @@ export async function POST(request: Request) {
   });
 
   try {
+    const audience =
+      dmRoom.targetAgent.userId === user.id ? "direct_line" : "shared_spaces";
+    const instructions = buildAgentRuntimeInstructions({
+      agentDisplayName: dmRoom.targetAgent.displayName,
+      audience,
+      behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+      counterpartLabel:
+        audience === "direct_line"
+          ? `${user.displayName} (@${user.username})`
+          : `${user.displayName} (@${user.username}), who is not the owner of this agent`,
+      ownerDisplayName: dmRoom.targetAgent.user.displayName,
+      ownerUsername: dmRoom.targetAgent.user.username,
+      personaSummary: dmRoom.targetAgent.personaSummary,
+    });
+
     const result = await runAgentTurn({
       agentId: dmRoom.targetAgent.openclawAgentId,
+      instructions,
       message,
       conversationKey: `room:${dmRoom.room.id}`,
     });
