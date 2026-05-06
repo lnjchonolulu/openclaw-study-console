@@ -1,15 +1,15 @@
 :root {
-  --background: #f5efe4;
-  --foreground: #1d2430;
-  --muted: #647086;
-  --surface: rgba(255, 250, 242, 0.82);
-  --surface-strong: #fffaf2;
-  --surface-border: rgba(29, 36, 48, 0.1);
-  --accent: #b54d2c;
-  --accent-strong: #8a2f17;
-  --accent-soft: rgba(181, 77, 44, 0.12);
-  --success: #2f7d57;
-  --shadow: 0 24px 60px rgba(58, 39, 18, 0.12);
+  --background: #f4f4f4;
+  --foreground: #111111;
+  --muted: #666666;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-strong: #ffffff;
+  --surface-border: rgba(17, 17, 17, 0.12);
+  --accent: #111111;
+  --accent-strong: #000000;
+  --accent-soft: rgba(17, 17, 17, 0.08);
+  --success: #222222;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.1);
 }
 
 html {
@@ -29,9 +29,9 @@ body {
   color: var(--foreground);
   background: var(--background);
   background-image:
-    radial-gradient(circle at top left, rgba(181, 77, 44, 0.08), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(47, 125, 87, 0.1), transparent 28%),
-    linear-gradient(180deg, #f8f2e8 0%, #f3ecdf 100%);
+    radial-gradient(circle at top left, rgba(0, 0, 0, 0.05), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(0, 0, 0, 0.04), transparent 28%),
+    linear-gradient(180deg, #fafafa 0%, #eeeeee 100%);
   font-family:
     "SF Pro Text",
     "IBM Plex Sans",
@@ -74,7 +74,7 @@ a {
 .hero-panel {
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(29, 36, 48, 0.08);
+  border: 1px solid rgba(17, 17, 17, 0.08);
 }
 
 .hero-copy {
@@ -140,7 +140,7 @@ a {
 .primary-button {
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  box-shadow: 0 16px 28px rgba(181, 77, 44, 0.24);
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.16);
 }
 
 .secondary-button {
@@ -172,7 +172,7 @@ button.primary-button {
   height: 10px;
   border-radius: 999px;
   background: var(--success);
-  box-shadow: 0 0 0 6px rgba(47, 125, 87, 0.12);
+  box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.1);
 }
 
 .hero-list {
@@ -198,7 +198,7 @@ button.primary-button {
   gap: 28px;
   min-height: 100vh;
   padding: 28px 22px;
-  background: rgba(255, 249, 239, 0.82);
+  background: rgba(255, 255, 255, 0.82);
   border-right: 1px solid var(--surface-border);
   backdrop-filter: blur(14px);
 }
@@ -236,8 +236,8 @@ button.primary-button {
 
 .nav-item-active {
   background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(29, 36, 48, 0.08);
-  box-shadow: 0 10px 24px rgba(58, 39, 18, 0.08);
+  border-color: rgba(17, 17, 17, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
 .nav-title {
@@ -341,7 +341,7 @@ button.primary-button {
   padding: 20px;
   border-radius: 22px;
   background: var(--surface-strong);
-  border: 1px solid rgba(29, 36, 48, 0.08);
+  border: 1px solid rgba(17, 17, 17, 0.08);
 }
 
 .metric-card {
@@ -389,7 +389,7 @@ button.primary-button {
   min-height: 0;
   border: 1px solid var(--surface-border);
   border-radius: 28px;
-  background: rgba(255, 250, 242, 0.9);
+  background: rgba(255, 255, 255, 0.9);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -408,7 +408,7 @@ button.primary-button {
   max-width: min(680px, 78%);
   padding: 16px;
   border-radius: 18px;
-  border: 1px solid rgba(29, 36, 48, 0.08);
+  border: 1px solid rgba(17, 17, 17, 0.08);
   background: rgba(255, 255, 255, 0.7);
 }
 
@@ -416,7 +416,7 @@ button.primary-button {
   align-self: flex-end;
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  box-shadow: 0 12px 26px rgba(181, 77, 44, 0.18);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
 }
 
 .message-row-user p {
@@ -446,7 +446,7 @@ button.primary-button {
   width: 100%;
   margin-top: 10px;
   padding: 14px 16px;
-  border: 1px solid rgba(29, 36, 48, 0.12);
+  border: 1px solid rgba(17, 17, 17, 0.12);
   border-radius: 16px;
   background: white;
   color: var(--foreground);
@@ -464,9 +464,9 @@ button.primary-button {
   gap: 10px;
   padding: 16px;
   border: 0;
-  border-top: 1px solid rgba(29, 36, 48, 0.08);
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 0;
-  background: rgba(255, 250, 242, 0.96);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .composer-bar {
