@@ -46,15 +46,22 @@ export function ChatClient({
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || isSending) {
+    if (isSending) {
+      return;
+    }
+
+    if (!trimmedMessage) {
+      setError("Write a message first.");
       return;
     }
 
     if (recipientKind === "agent" && !agentId) {
+      setError("Choose an agent DM before sending.");
       return;
     }
 
     if (recipientKind === "person" && !recipientId) {
+      setError("Choose a person DM before sending.");
       return;
     }
 
@@ -69,42 +76,51 @@ export function ChatClient({
     setMessages((current) => [...current, optimisticMessage]);
     setMessage("");
 
-    const response = await fetch(
-      recipientKind === "agent" ? "/api/chat" : "/api/dm",
-      {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        agentId,
-        message: trimmedMessage,
-        recipientId,
-      }),
-      },
-    );
-
-    const payload = (await response.json()) as { error?: string; reply?: string };
-
-    if (!response.ok) {
-      setError(payload.error ?? "The agent could not respond.");
-      setIsSending(false);
-      return;
-    }
-
-    const reply = payload.reply;
-
-    if (reply) {
-      setMessages((current) => [
-        ...current,
+    try {
+      const response = await fetch(
+        recipientKind === "agent" ? "/api/chat" : "/api/dm",
         {
-          id: crypto.randomUUID(),
-          role: "AGENT",
-          content: reply,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentId,
+            message: trimmedMessage,
+            recipientId,
+          }),
         },
-      ]);
+      );
+
+      const payload = (await response.json()) as { error?: string; reply?: string };
+
+      if (!response.ok) {
+        setError(payload.error ?? "The message could not be sent.");
+        setIsSending(false);
+        return;
+      }
+
+      const reply = payload.reply;
+
+      if (reply) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "AGENT",
+            content: reply,
+          },
+        ]);
+      }
+      setIsSending(false);
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error
+          ? sendError.message
+          : "The message could not be sent.",
+      );
+      setIsSending(false);
     }
-    setIsSending(false);
   }
 
   return (
@@ -147,11 +163,7 @@ export function ChatClient({
           />
           <button
             className="primary-button"
-            disabled={
-              isSending ||
-              (recipientKind === "agent" && !agentId) ||
-              (recipientKind === "person" && !recipientId)
-            }
+            disabled={isSending}
             type="submit"
           >
             {isSending ? "Sending" : "Send"}
