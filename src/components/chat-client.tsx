@@ -95,6 +95,7 @@ export function ChatClient({
   recipientId,
   recipientKind,
   roomId,
+  selfAvatar,
 }: {
   agentId: string | null;
   counterpart: {
@@ -106,6 +107,7 @@ export function ChatClient({
   recipientId: string | null;
   recipientKind: "agent" | "person";
   roomId: string | null;
+  selfAvatar: AvatarViewModel;
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [message, setMessage] = useState("");
@@ -388,6 +390,9 @@ export function ChatClient({
               >
                 <p>{row.message.content}</p>
               </div>
+              {row.message.role === "USER" ? (
+                <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
+              ) : null}
               {row.showTimestamp && row.message.role !== "USER" ? (
                 <span className="message-timestamp message-timestamp-other">
                   {formatMessageTime(row.message.createdAt)}

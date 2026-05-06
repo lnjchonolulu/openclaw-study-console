@@ -110,9 +110,11 @@ function TeamMembersIcon() {
 
 export function TeamChatClient({
   initialChannel,
+  selfAvatar,
   user,
 }: {
   initialChannel: TeamChannelDetail | null;
+  selfAvatar: TeamChannelDetail["members"][number]["avatar"];
   user: {
     displayName: string;
     id: string;
@@ -324,6 +326,9 @@ export function TeamChatClient({
                         <p>{row.message.content}</p>
                       </div>
                     )}
+                    {row.isOwnMessage ? (
+                      <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
+                    ) : null}
                     {row.showTimestamp && row.isOwnMessage ? (
                       <span className="message-timestamp message-timestamp-user">
                         {formatMessageTime(row.message.createdAt)}

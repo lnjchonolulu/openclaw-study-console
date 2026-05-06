@@ -123,6 +123,10 @@ export default async function ChatPage({
         roomId={room?.id ?? null}
         recipientId={personDmRoom?.targetUser.id ?? null}
         recipientKind={personDmRoom ? "person" : "agent"}
+        selfAvatar={{
+          kind: "user" as const,
+          config: normalizeProfileConfig(user.profileConfigJson, user.username, "user"),
+        }}
       />
     </section>
   );

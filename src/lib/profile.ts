@@ -50,15 +50,14 @@ export function getDefaultProfileConfig(seed: string, kind: ProfileKind): Profil
 }
 
 export function rotateProfileConfig(
-  current: ProfileConfig | null | undefined,
-  seed: string,
+  _current: ProfileConfig | null | undefined,
+  _seed: string,
   kind: ProfileKind,
 ) {
-  const fallback = getDefaultProfileConfig(seed, kind);
-  const fingerprint = `${current?.bgColor ?? fallback.bgColor}|${current?.fgColor ?? fallback.fgColor}`;
-  const rotationIndex = (hashSeed(fingerprint) % 23) + 1;
+  const randomSeed = `${Date.now()}-${Math.random()}-${Math.random()}`;
+  const offset = Math.floor(Math.random() * 10_000) + 1;
 
-  return buildGeneratedProfileConfig(seed, kind, rotationIndex);
+  return buildGeneratedProfileConfig(randomSeed, kind, offset);
 }
 
 export function normalizeProfileConfig(
