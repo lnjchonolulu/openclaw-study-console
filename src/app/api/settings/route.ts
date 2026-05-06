@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeProfileConfig } from "@/lib/profile";
@@ -12,6 +13,7 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json()) as {
     agentDisplayName?: string;
+    behaviorConfig?: unknown;
     agentProfileConfig?: unknown;
     personaSummary?: string;
     userDisplayName?: string;
@@ -33,6 +35,7 @@ export async function PATCH(request: Request) {
     `${user.username}-agent`,
     "agent",
   );
+  const nextBehaviorConfig = normalizeAgentBehaviorConfig(body.behaviorConfig);
 
   await prisma.$transaction([
     prisma.user.update({
@@ -52,6 +55,7 @@ export async function PATCH(request: Request) {
         displayName: agentDisplayName,
         personaSummary,
         profileConfigJson: nextAgentProfileConfig,
+        soulConfigJson: nextBehaviorConfig,
       },
     }),
   ]);

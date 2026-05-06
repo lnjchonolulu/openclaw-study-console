@@ -1155,6 +1155,10 @@ button.primary-button {
   gap: 20px;
 }
 
+.settings-card-agent {
+  align-content: start;
+}
+
 .settings-card-header h2 {
   font-size: 1.18rem;
   letter-spacing: -0.03em;
@@ -1184,6 +1188,60 @@ button.primary-button {
 
 .settings-textarea {
   min-height: 180px;
+}
+
+.settings-textarea-compact {
+  min-height: 120px;
+}
+
+.settings-section-block {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.settings-section-header {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-section-header h3 {
+  font-size: 1.02rem;
+  letter-spacing: -0.02em;
+}
+
+.settings-section-header p {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.settings-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 12px;
+}
+
+.settings-field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.settings-select-field {
+  min-width: 0;
+}
+
+.settings-select {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  outline: none;
+}
+
+.settings-select option {
+  color: #111111;
 }
 
 .settings-footer {
@@ -1289,6 +1347,14 @@ button.primary-button {
   .settings-avatar-row {
     grid-template-columns: 1fr;
     justify-items: start;
+  }
+
+  .settings-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-field-span-2 {
+    grid-column: auto;
   }
 
   .settings-footer {

@@ -1,4 +1,5 @@
 import { SettingsClient } from "@/components/settings-client";
+import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
 import { normalizeProfileConfig } from "@/lib/profile";
 
@@ -13,6 +14,7 @@ export default async function AgentPage() {
         `${user.username}-agent`,
         "agent",
       )}
+      initialBehaviorConfig={normalizeAgentBehaviorConfig(user.agent?.soulConfigJson)}
       initialPersonaSummary={user.agent?.personaSummary ?? ""}
       initialUserDisplayName={user.displayName}
       initialUserProfile={normalizeProfileConfig(
