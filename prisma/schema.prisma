@@ -99,9 +99,12 @@ model FileRecord {
   ownerUserId String?
   teamId      String?
   roomId      String?
+  parentId    String?
   filename    String
   storageKey  String
   mimeType    String?
+  isFolder    Boolean        @default(false)
+  sizeBytes   Int?
   visibility  FileVisibility @default(PRIVATE)
   sourceType  String
   createdAt   DateTime       @default(now())
@@ -109,6 +112,10 @@ model FileRecord {
   owner       User?          @relation(fields: [ownerUserId], references: [id])
   team        Team?          @relation(fields: [teamId], references: [id])
   room        Room?          @relation(fields: [roomId], references: [id])
+  parent      FileRecord?    @relation("FileRecordChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children    FileRecord[]   @relation("FileRecordChildren")
+
+  @@index([parentId])
 }
 
 model Room {
