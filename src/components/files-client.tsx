@@ -72,6 +72,38 @@ function FileIcon() {
   );
 }
 
+function EntryMeta({
+  createdByName,
+  createdAt,
+  updatedByName,
+  updatedAt,
+  sizeBytes,
+  mimeType,
+}: {
+  createdByName: string;
+  createdAt: string;
+  updatedByName: string;
+  updatedAt: string;
+  sizeBytes?: number | null;
+  mimeType?: string | null;
+}) {
+  return (
+    <div className="files-item-meta">
+      <span>
+        Created: {createdByName}, {formatTimestamp(createdAt)}
+      </span>
+      <span>
+        Updated: {updatedByName}, {formatTimestamp(updatedAt)}
+      </span>
+      {sizeBytes !== undefined ? (
+        <span>
+          {formatFileSize(sizeBytes)} {mimeType ? `· ${mimeType}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function FilesClient({ initialView }: { initialView: WorkspaceFolderView }) {
   const [view, setView] = useState(initialView);
   const [isDragging, setIsDragging] = useState(false);
@@ -283,16 +315,16 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   }}
                   type="button"
                 >
-                  <FolderIcon />
-                  <div className="files-item-copy">
+                  <div className="files-item-head">
+                    <FolderIcon />
                     <strong>{entry.filename}</strong>
-                    <span>
-                      Created: {entry.createdByName}, {formatTimestamp(entry.createdAt)}
-                    </span>
-                    <span>
-                      Updated: {entry.updatedByName}, {formatTimestamp(entry.updatedAt)}
-                    </span>
                   </div>
+                  <EntryMeta
+                    createdAt={entry.createdAt}
+                    createdByName={entry.createdByName}
+                    updatedAt={entry.updatedAt}
+                    updatedByName={entry.updatedByName}
+                  />
                 </button>
               ))}
               {fileEntries.map((entry) => (
@@ -301,19 +333,18 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   href={`/api/files/${encodeURIComponent(entry.id)}`}
                   key={entry.id}
                 >
-                  <FileIcon />
-                  <div className="files-item-copy">
+                  <div className="files-item-head">
+                    <FileIcon />
                     <strong>{entry.filename}</strong>
-                    <span>
-                      Created: {entry.createdByName}, {formatTimestamp(entry.createdAt)}
-                    </span>
-                    <span>
-                      Updated: {entry.updatedByName}, {formatTimestamp(entry.updatedAt)}
-                    </span>
-                    <span>
-                      {formatFileSize(entry.sizeBytes)} {entry.mimeType ? `· ${entry.mimeType}` : ""}
-                    </span>
                   </div>
+                  <EntryMeta
+                    createdAt={entry.createdAt}
+                    createdByName={entry.createdByName}
+                    mimeType={entry.mimeType}
+                    sizeBytes={entry.sizeBytes}
+                    updatedAt={entry.updatedAt}
+                    updatedByName={entry.updatedByName}
+                  />
                 </a>
               ))}
             </div>

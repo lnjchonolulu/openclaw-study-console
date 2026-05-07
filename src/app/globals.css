@@ -619,11 +619,12 @@ button.primary-button {
   height: calc(100vh - 56px);
 }
 
-.files-panel {
+.chat-panel.files-panel {
   position: relative;
+  display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  padding: 16px 18px 18px;
-  gap: 12px;
+  padding: 12px 18px 18px;
+  gap: 10px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 249, 249, 0.92)),
     repeating-linear-gradient(
@@ -644,7 +645,7 @@ button.primary-button {
 
 .files-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-height: 28px;
 }
@@ -690,7 +691,7 @@ button.primary-button {
 
 .files-desktop {
   min-height: 0;
-  padding: 2px 2px 8px;
+  padding: 0 2px 8px;
   overflow-y: auto;
 }
 
@@ -698,15 +699,15 @@ button.primary-button {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
+  align-content: start;
 }
 
 .files-item {
   display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 14px;
-  min-height: 88px;
-  padding: 14px 16px;
+  gap: 9px;
+  align-content: start;
+  min-height: 104px;
+  padding: 14px 14px 13px;
   border: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.78);
@@ -733,25 +734,32 @@ button.primary-button {
   flex: 0 0 auto;
 }
 
-.files-item-copy {
+.files-item-head {
   display: grid;
-  gap: 4px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
   min-width: 0;
 }
 
-.files-item-copy strong {
+.files-item-head strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.98rem;
 }
 
-.files-item-copy span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.files-item-meta {
+  display: grid;
+  gap: 2px;
+  padding-left: 0;
+}
+
+.files-item-meta span {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .files-empty-state {
