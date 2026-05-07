@@ -620,9 +620,10 @@ button.primary-button {
 }
 
 .files-panel {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  padding: 20px;
-  gap: 16px;
+  position: relative;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 16px 18px 18px;
+  gap: 12px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 249, 249, 0.92)),
     repeating-linear-gradient(
@@ -644,8 +645,8 @@ button.primary-button {
 .files-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
+  min-height: 28px;
 }
 
 .files-breadcrumbs {
@@ -659,10 +660,10 @@ button.primary-button {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: rgba(17, 17, 17, 0.52);
   cursor: pointer;
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
 }
 
 .files-crumb::after {
@@ -680,54 +681,17 @@ button.primary-button {
   font-weight: 700;
 }
 
-.files-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .files-create-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
-}
-
-.files-drop-hint {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px dashed rgba(17, 17, 17, 0.16);
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--muted);
-}
-
-.files-drop-hint strong {
-  color: var(--foreground);
+  max-width: 420px;
 }
 
 .files-desktop {
   min-height: 0;
-  padding: 10px 4px 8px;
+  padding: 2px 2px 8px;
   overflow-y: auto;
-}
-
-.files-section {
-  display: grid;
-  gap: 12px;
-}
-
-.files-section + .files-section {
-  margin-top: 22px;
-}
-
-.files-section-label {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .files-grid-desktop {
@@ -808,6 +772,46 @@ button.primary-button {
 
 .files-empty-state span {
   color: var(--muted);
+}
+
+.files-context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.14);
+}
+
+.files-context-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.files-context-item:hover {
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.files-upload-indicator {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.94);
+  color: white;
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
 }
 
 .team-grid {

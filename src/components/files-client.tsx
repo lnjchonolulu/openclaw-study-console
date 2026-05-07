@@ -5,6 +5,7 @@ import type { WorkspaceFolderView } from "@/lib/files";
 
 function formatTimestamp(isoString: string) {
   return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -78,6 +79,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const folderEntries = useMemo(
@@ -175,6 +177,17 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     <section className="chat-page files-page">
       <div
         className={`chat-panel files-panel${isDragging ? " files-panel-dragging" : ""}`}
+        onClick={() => {
+          setContextMenu(null);
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          setNotice(null);
+        }}
         onDragEnter={(event) => {
           event.preventDefault();
           setIsDragging(true);
@@ -196,7 +209,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
         }}
       >
         <div className="files-toolbar">
-          <div className="files-breadcrumbs">
+          <div className="files-breadcrumbs" role="navigation" aria-label="Current directory">
             {view.breadcrumbs.map((crumb, index) => (
               <button
                 className={`files-crumb${index === view.breadcrumbs.length - 1 ? " files-crumb-active" : ""}`}
@@ -206,43 +219,23 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                 }}
                 type="button"
               >
-                {crumb.label}
+                {index === 0 ? "/home" : crumb.label}
               </button>
             ))}
           </div>
-          <div className="files-toolbar-actions">
-            <button
-              className="secondary-button"
-              onClick={() => {
-                setIsCreatingFolder((current) => !current);
-                setNotice(null);
-              }}
-              type="button"
-            >
-              New Folder
-            </button>
-            <button
-              className="primary-button"
-              onClick={() => {
-                fileInputRef.current?.click();
-              }}
-              type="button"
-            >
-              Upload
-            </button>
-            <input
-              hidden
-              multiple
-              onChange={(event) => {
-                const files = Array.from(event.target.files ?? []);
-                void uploadFiles(files);
-                event.target.value = "";
-              }}
-              ref={fileInputRef}
-              type="file"
-            />
-          </div>
         </div>
+
+        <input
+          hidden
+          multiple
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            void uploadFiles(files);
+            event.target.value = "";
+          }}
+          ref={fileInputRef}
+          type="file"
+        />
 
         {isCreatingFolder ? (
           <div className="files-create-row">
@@ -278,61 +271,52 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
 
         {notice ? <p className="helper-text">{notice}</p> : null}
 
-        <div className="files-drop-hint">
-          <strong>Shared workspace</strong>
-          <span>Drag files anywhere in this panel to upload into the current folder.</span>
-          {isUploading ? <span>Uploading...</span> : null}
-        </div>
-
         <div className="files-desktop">
-          {folderEntries.length > 0 ? (
-            <section className="files-section">
-              <div className="files-section-label">Folders</div>
-              <div className="files-grid-desktop">
-                {folderEntries.map((entry) => (
-                  <button
-                    className="files-item"
-                    key={entry.id}
-                    onDoubleClick={() => {
-                      void refreshFolder(entry.id);
-                    }}
-                    onClick={() => {
-                      setNotice("Double-click a folder to open it.");
-                    }}
-                    type="button"
-                  >
-                    <FolderIcon />
-                    <div className="files-item-copy">
-                      <strong>{entry.filename}</strong>
-                      <span>Updated {formatTimestamp(entry.updatedAt)}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {fileEntries.length > 0 ? (
-            <section className="files-section">
-              <div className="files-section-label">Files</div>
-              <div className="files-grid-desktop">
-                {fileEntries.map((entry) => (
-                  <a
-                    className="files-item"
-                    href={`/api/files/${encodeURIComponent(entry.id)}`}
-                    key={entry.id}
-                  >
-                    <FileIcon />
-                    <div className="files-item-copy">
-                      <strong>{entry.filename}</strong>
-                      <span>
-                        {formatFileSize(entry.sizeBytes)} · {formatTimestamp(entry.updatedAt)}
-                      </span>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </section>
+          {folderEntries.length > 0 || fileEntries.length > 0 ? (
+            <div className="files-grid-desktop">
+              {folderEntries.map((entry) => (
+                <button
+                  className="files-item"
+                  key={entry.id}
+                  onClick={() => {
+                    void refreshFolder(entry.id);
+                  }}
+                  type="button"
+                >
+                  <FolderIcon />
+                  <div className="files-item-copy">
+                    <strong>{entry.filename}</strong>
+                    <span>
+                      Created: {entry.createdByName}, {formatTimestamp(entry.createdAt)}
+                    </span>
+                    <span>
+                      Updated: {entry.updatedByName}, {formatTimestamp(entry.updatedAt)}
+                    </span>
+                  </div>
+                </button>
+              ))}
+              {fileEntries.map((entry) => (
+                <a
+                  className="files-item"
+                  href={`/api/files/${encodeURIComponent(entry.id)}`}
+                  key={entry.id}
+                >
+                  <FileIcon />
+                  <div className="files-item-copy">
+                    <strong>{entry.filename}</strong>
+                    <span>
+                      Created: {entry.createdByName}, {formatTimestamp(entry.createdAt)}
+                    </span>
+                    <span>
+                      Updated: {entry.updatedByName}, {formatTimestamp(entry.updatedAt)}
+                    </span>
+                    <span>
+                      {formatFileSize(entry.sizeBytes)} {entry.mimeType ? `· ${entry.mimeType}` : ""}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
           ) : null}
 
           {!folderEntries.length && !fileEntries.length ? (
@@ -342,6 +326,42 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
             </div>
           ) : null}
         </div>
+
+        {contextMenu ? (
+          <div
+            className="files-context-menu"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+          >
+            <button
+              className="files-context-item"
+              onClick={() => {
+                setIsCreatingFolder(true);
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              New Folder
+            </button>
+            <button
+              className="files-context-item"
+              onClick={() => {
+                fileInputRef.current?.click();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              Upload File
+            </button>
+          </div>
+        ) : null}
+
+        {isUploading ? <div className="files-upload-indicator">Uploading...</div> : null}
       </div>
     </section>
   );

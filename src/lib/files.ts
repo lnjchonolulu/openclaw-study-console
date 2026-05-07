@@ -4,12 +4,15 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
 export type WorkspaceEntry = {
+  createdAt: string;
+  createdByName: string;
   id: string;
   filename: string;
   isFolder: boolean;
   mimeType: string | null;
   sizeBytes: number | null;
   updatedAt: string;
+  updatedByName: string;
 };
 
 export type WorkspaceBreadcrumb = {
@@ -106,10 +109,16 @@ export async function listWorkspaceFolder(parentId: string | null): Promise<Work
       },
       orderBy: [{ isFolder: "desc" }, { filename: "asc" }],
       select: {
+        createdAt: true,
         id: true,
         filename: true,
         isFolder: true,
         mimeType: true,
+        owner: {
+          select: {
+            displayName: true,
+          },
+        },
         sizeBytes: true,
         updatedAt: true,
       },
@@ -118,12 +127,15 @@ export async function listWorkspaceFolder(parentId: string | null): Promise<Work
   ]);
 
   const normalizedEntries: WorkspaceEntry[] = entries.map((entry) => ({
+    createdAt: entry.createdAt.toISOString(),
+    createdByName: entry.owner?.displayName ?? "Unknown",
     id: entry.id,
     filename: entry.filename,
     isFolder: entry.isFolder,
     mimeType: entry.mimeType,
     sizeBytes: entry.sizeBytes,
     updatedAt: entry.updatedAt.toISOString(),
+    updatedByName: entry.owner?.displayName ?? "Unknown",
   }));
 
   return {
@@ -166,18 +178,31 @@ export async function createWorkspaceFolder({
       sourceType: "USER_FOLDER",
     },
     select: {
+      createdAt: true,
       id: true,
       filename: true,
       isFolder: true,
       mimeType: true,
+      owner: {
+        select: {
+          displayName: true,
+        },
+      },
       sizeBytes: true,
       updatedAt: true,
     },
   });
 
   return {
-    ...folder,
+    id: folder.id,
+    filename: folder.filename,
+    isFolder: folder.isFolder,
+    mimeType: folder.mimeType,
+    sizeBytes: folder.sizeBytes,
+    createdAt: folder.createdAt.toISOString(),
+    createdByName: folder.owner?.displayName ?? "Unknown",
     updatedAt: folder.updatedAt.toISOString(),
+    updatedByName: folder.owner?.displayName ?? "Unknown",
   } satisfies WorkspaceEntry;
 }
 
@@ -219,18 +244,31 @@ export async function uploadWorkspaceFiles({
         sourceType: "USER_UPLOAD",
       },
       select: {
+        createdAt: true,
         id: true,
         filename: true,
         isFolder: true,
         mimeType: true,
+        owner: {
+          select: {
+            displayName: true,
+          },
+        },
         sizeBytes: true,
         updatedAt: true,
       },
     });
 
     createdEntries.push({
-      ...created,
+      id: created.id,
+      filename: created.filename,
+      isFolder: created.isFolder,
+      mimeType: created.mimeType,
+      sizeBytes: created.sizeBytes,
+      createdAt: created.createdAt.toISOString(),
+      createdByName: created.owner?.displayName ?? "Unknown",
       updatedAt: created.updatedAt.toISOString(),
+      updatedByName: created.owner?.displayName ?? "Unknown",
     });
   }
 
