@@ -100,6 +100,7 @@ model FileRecord {
   teamId      String?
   roomId      String?
   parentId    String?
+  systemKey   String?        @unique
   filename    String
   storageKey  String
   mimeType    String?
@@ -107,6 +108,7 @@ model FileRecord {
   sizeBytes   Int?
   visibility  FileVisibility @default(PRIVATE)
   sourceType  String
+  accessConfigJson Json?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   owner       User?          @relation(fields: [ownerUserId], references: [id])

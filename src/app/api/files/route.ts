@@ -15,9 +15,19 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const parentId = url.searchParams.get("parentId");
-  const view = await listWorkspaceFolder(parentId);
+  try {
+    const view = await listWorkspaceFolder(parentId, user.id);
 
-  return NextResponse.json(view);
+    return NextResponse.json(view);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Workspace could not be loaded.",
+      },
+      { status: 400 },
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -33,6 +43,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       name?: string;
       parentId?: string | null;
+      participantKeys?: string[];
       type?: string;
     };
 
@@ -45,6 +56,9 @@ export async function POST(request: Request) {
         createdByUserId: user.id,
         name: body.name ?? "",
         parentId: body.parentId?.trim() || null,
+        participantKeys: Array.isArray(body.participantKeys)
+          ? body.participantKeys.filter((value): value is string => typeof value === "string")
+          : undefined,
       });
 
       return NextResponse.json({ entry: folder });
