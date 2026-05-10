@@ -52,6 +52,9 @@ export function ProfileAvatar({
   avatar: AvatarViewModel;
   className?: string;
 }) {
+  const shouldRenderImage =
+    avatar.kind === "user" && typeof avatar.config.imageDataUrl === "string";
+
   return (
     <span
       aria-hidden="true"
@@ -63,7 +66,19 @@ export function ProfileAvatar({
         } as React.CSSProperties
       }
     >
-      {avatar.kind === "agent" ? <AgentSilhouette /> : <UserSilhouette />}
+      {shouldRenderImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          className="profile-avatar-image"
+          draggable={false}
+          src={avatar.config.imageDataUrl ?? undefined}
+        />
+      ) : avatar.kind === "agent" ? (
+        <AgentSilhouette />
+      ) : (
+        <UserSilhouette />
+      )}
     </span>
   );
 }

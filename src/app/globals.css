@@ -1283,6 +1283,14 @@ button.primary-button {
   height: 100%;
 }
 
+.profile-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
 .settings-avatar-preview {
   width: 70px;
   height: 70px;
@@ -1482,9 +1490,18 @@ button.primary-button {
   cursor: pointer;
 }
 
+.settings-avatar-action-left {
+  right: auto;
+  left: -4px;
+}
+
 .settings-refresh-icon {
   width: 14px;
   height: 14px;
+}
+
+.settings-file-input {
+  display: none;
 }
 
 .settings-input-wrap,
@@ -1590,6 +1607,11 @@ button.primary-button {
   color: #111111;
 }
 
+.settings-range {
+  width: 100%;
+  accent-color: #111111;
+}
+
 .settings-select-icon {
   position: absolute;
   right: 16px;
@@ -1626,6 +1648,84 @@ button.primary-button {
   color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.45;
+}
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.settings-modal-card {
+  width: min(540px, 100%);
+  gap: 18px;
+  padding: 24px;
+}
+
+.settings-modal-header {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-modal-header h3 {
+  font-size: 1.16rem;
+  letter-spacing: -0.02em;
+}
+
+.settings-modal-header p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.settings-crop-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-crop-viewport {
+  position: relative;
+  width: 248px;
+  height: 248px;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.22), rgba(0, 0, 0, 0.12)),
+    rgba(17, 17, 17, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42),
+    0 18px 38px rgba(0, 0, 0, 0.14);
+  cursor: grab;
+  touch-action: none;
+}
+
+.settings-crop-viewport:active {
+  cursor: grabbing;
+}
+
+.settings-crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+}
+
+.settings-crop-image {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+}
+
+.settings-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .login-error {
