@@ -7,23 +7,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
-import {
-  autonomyOptions,
-  challengeOptions,
-  commitmentOptions,
-  contextOptions,
-  formalityOptions,
-  levelOptions,
-  normalizeAgentBehaviorConfig,
-  ownerContextOptions,
-  representOptions,
-  toneOptions,
-  type AgentBehaviorConfig,
-  warmthOptions,
-  workStyleOptions,
-} from "@/lib/agent-behavior";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import {
   getAgentMeta,
@@ -48,6 +32,19 @@ type CropState = {
   offsetX: number;
   offsetY: number;
   zoom: number;
+};
+
+type SettingsClientProps = {
+  agentId: string;
+  initialAgentDisplayName: string;
+  initialAgentProfile: ProfileConfig;
+  initialHeartbeatEnabled: boolean;
+  initialIdentityMd: string;
+  initialSoulMd: string;
+  initialUserDisplayName: string;
+  initialUserMd: string;
+  initialUserProfile: ProfileConfig;
+  username: string;
 };
 
 function UploadIcon() {
@@ -81,6 +78,26 @@ function TrashIcon() {
     >
       <path
         d="M7 4.75h6m-7.25 2.5h8.5l-.6 8.03a1 1 0 0 1-1 .92H7.35a1 1 0 0 1-1-.92l-.6-8.03Zm2 0V5.8a1 1 0 0 1 1-1h2.5a1 1 0 0 1 1 1v1.45m-3 3.25v3.5m3-3.5v3.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="settings-refresh-icon"
+      fill="none"
+      viewBox="0 0 20 20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M15.75 6.75V3.5m0 0H12.5m3.25 0-2.1 2.1a6 6 0 1 0 1.27 6.58"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -324,7 +341,6 @@ function AvatarCropModal({ onCancel, onConfirm, source }: CropModalProps) {
             role="presentation"
           >
             <div className="settings-crop-mask" />
-            {/* The cropper needs the raw image element for drag math and canvas export. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt=""
@@ -384,121 +400,94 @@ function AvatarCropModal({ onCancel, onConfirm, source }: CropModalProps) {
   );
 }
 
-function RefreshIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="settings-refresh-icon"
-      fill="none"
-      viewBox="0 0 20 20"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M15.75 6.75V3.5m0 0H12.5m3.25 0-2.1 2.1a6 6 0 1 0 1.27 6.58"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.6"
-      />
-    </svg>
+function extractMarkdownField(source: string, label: string) {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(
+    new RegExp(`- \\*\\*${escapedLabel}:\\*\\*\\s*(.+)$`, "m"),
   );
+  return match?.[1]?.trim() || null;
 }
 
-function SelectField<T extends string>({
+function replaceMarkdownField(source: string, label: string, value: string) {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const normalized = value.trim();
+
+  if (
+    new RegExp(`- \\*\\*${escapedLabel}:\\*\\*\\s*(.+)$`, "m").test(source)
+  ) {
+    return source.replace(
+      new RegExp(`(- \\*\\*${escapedLabel}:\\*\\*\\s*)(.+)$`, "m"),
+      `$1${normalized}`,
+    );
+  }
+
+  const line = `- **${label}:** ${normalized}`;
+  const trimmed = source.trimEnd();
+
+  if (!trimmed) {
+    return `${line}\n`;
+  }
+
+  const firstBreak = trimmed.indexOf("\n");
+
+  if (firstBreak === -1) {
+    return `${trimmed}\n${line}\n`;
+  }
+
+  return `${trimmed.slice(0, firstBreak + 1)}${line}\n${trimmed.slice(firstBreak + 1)}\n`;
+}
+
+function MarkdownEditor({
+  helper,
   label,
   onChange,
-  options,
   value,
 }: {
-  label: string;
-  onChange: (value: T) => void;
-  options: readonly { value: T; label: string }[];
-  value: T;
-}) {
-  return (
-    <label className="split-label settings-select-field">
-      {label}
-      <span className="settings-select-wrap">
-        <select
-          className="settings-select"
-          onChange={(event) => {
-            onChange(event.target.value as T);
-          }}
-          value={value}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <svg
-          aria-hidden="true"
-          className="settings-select-icon"
-          fill="none"
-          viewBox="0 0 20 20"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M5.5 7.75 10 12.25l4.5-4.5"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.7"
-          />
-        </svg>
-      </span>
-    </label>
-  );
-}
-
-function SettingsSection({
-  children,
-  eyebrow,
-  helper,
-}: {
-  children: ReactNode;
-  eyebrow?: string;
   helper?: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
 }) {
   return (
     <section className="settings-section-block">
       <div className="settings-section-header">
-        {eyebrow ? <span className="context-label">{eyebrow}</span> : null}
+        <span className="context-label">{label}</span>
         {helper ? <p>{helper}</p> : null}
       </div>
-      <div className="settings-fields-grid">{children}</div>
+      <textarea
+        className="settings-textarea settings-textarea-field settings-markdown-editor"
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        spellCheck={false}
+        value={value}
+      />
     </section>
   );
 }
 
 export function SettingsClient({
+  agentId,
   initialAgentDisplayName,
   initialAgentProfile,
-  initialBehaviorConfig,
-  initialPersonaSummary,
+  initialHeartbeatEnabled,
+  initialIdentityMd,
+  initialSoulMd,
   initialUserDisplayName,
+  initialUserMd,
   initialUserProfile,
   username,
-}: {
-  initialAgentDisplayName: string;
-  initialAgentProfile: ProfileConfig;
-  initialBehaviorConfig: AgentBehaviorConfig;
-  initialPersonaSummary: string;
-  initialUserDisplayName: string;
-  initialUserProfile: ProfileConfig;
-  username: string;
-}) {
+}: SettingsClientProps) {
   const router = useRouter();
   const userFileInputRef = useRef<HTMLInputElement | null>(null);
   const [userDisplayName, setUserDisplayName] = useState(initialUserDisplayName);
   const [agentDisplayName, setAgentDisplayName] = useState(initialAgentDisplayName);
-  const [personaSummary, setPersonaSummary] = useState(initialPersonaSummary);
+  const [userMd, setUserMd] = useState(initialUserMd);
+  const [identityMd, setIdentityMd] = useState(initialIdentityMd);
+  const [soulMd, setSoulMd] = useState(initialSoulMd);
+  const [heartbeatEnabled, setHeartbeatEnabled] = useState(initialHeartbeatEnabled);
   const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [agentProfile, setAgentProfile] = useState(initialAgentProfile);
-  const [behaviorConfig, setBehaviorConfig] = useState(
-    normalizeAgentBehaviorConfig(initialBehaviorConfig),
-  );
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -507,45 +496,6 @@ export function SettingsClient({
   const [notice, setNotice] = useState<string | null>(null);
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
   const [cropSource, setCropSource] = useState<string | null>(null);
-
-  function patchResponseStyle<K extends keyof AgentBehaviorConfig["responseStyle"]>(
-    key: K,
-    value: AgentBehaviorConfig["responseStyle"][K],
-  ) {
-    setBehaviorConfig((current) => ({
-      ...current,
-      responseStyle: {
-        ...current.responseStyle,
-        [key]: value,
-      },
-    }));
-  }
-
-  function patchDirectLine<K extends keyof AgentBehaviorConfig["directLine"]>(
-    key: K,
-    value: AgentBehaviorConfig["directLine"][K],
-  ) {
-    setBehaviorConfig((current) => ({
-      ...current,
-      directLine: {
-        ...current.directLine,
-        [key]: value,
-      },
-    }));
-  }
-
-  function patchSharedSpaces<K extends keyof AgentBehaviorConfig["sharedSpaces"]>(
-    key: K,
-    value: AgentBehaviorConfig["sharedSpaces"][K],
-  ) {
-    setBehaviorConfig((current) => ({
-      ...current,
-      sharedSpaces: {
-        ...current.sharedSpaces,
-        [key]: value,
-      },
-    }));
-  }
 
   async function handleSave() {
     setIsSaving(true);
@@ -558,10 +508,13 @@ export function SettingsClient({
       },
       body: JSON.stringify({
         agentDisplayName,
+        agentId,
         agentProfileConfig: agentProfile,
-        behaviorConfig,
-        personaSummary,
+        heartbeatEnabled,
+        identityMd,
+        soulMd,
         userDisplayName,
+        userMd,
         userProfileConfig: userProfile,
       }),
     });
@@ -629,6 +582,8 @@ export function SettingsClient({
     }
   }
 
+  const hasUserPhoto = Boolean(userProfile.imageDataUrl || userProfile.imageUrl);
+
   return (
     <section className="settings-page">
       {cropSource ? (
@@ -643,6 +598,7 @@ export function SettingsClient({
             setUserProfile((current) => ({
               ...current,
               imageDataUrl: dataUrl,
+              imageUrl: null,
             }));
             setCropSource(null);
             if (userFileInputRef.current) {
@@ -652,6 +608,7 @@ export function SettingsClient({
           source={cropSource}
         />
       ) : null}
+
       <div className="settings-grid">
         <div className="settings-user-column">
           <article className="content-card settings-card settings-card-user settings-card-profile">
@@ -677,10 +634,10 @@ export function SettingsClient({
                   <UploadIcon />
                 </button>
                 <button
-                  aria-label={userProfile.imageDataUrl ? "Delete profile photo" : "Refresh user colors"}
+                  aria-label={hasUserPhoto ? "Delete profile photo" : "Refresh user colors"}
                   className="settings-avatar-action"
                   onClick={() => {
-                    if (userProfile.imageDataUrl) {
+                    if (hasUserPhoto) {
                       const shouldDelete = window.confirm(
                         "Delete this profile photo and go back to the silhouette avatar?",
                       );
@@ -692,6 +649,7 @@ export function SettingsClient({
                       setUserProfile((current) => ({
                         ...current,
                         imageDataUrl: null,
+                        imageUrl: null,
                       }));
                       return;
                     }
@@ -702,7 +660,7 @@ export function SettingsClient({
                   }}
                   type="button"
                 >
-                  {userProfile.imageDataUrl ? <TrashIcon /> : <RefreshIcon />}
+                  {hasUserPhoto ? <TrashIcon /> : <RefreshIcon />}
                 </button>
                 <input
                   accept="image/jpeg,image/png"
@@ -726,10 +684,14 @@ export function SettingsClient({
                 <input
                   className="settings-input"
                   onChange={(event) => {
-                    setUserDisplayName(event.target.value);
+                    const nextValue = event.target.value;
+                    setUserDisplayName(nextValue);
+                    setUserMd((current) =>
+                      replaceMarkdownField(current, "Name", nextValue || username),
+                    );
                   }}
-                  value={userDisplayName}
                   type="text"
+                  value={userDisplayName}
                 />
               </span>
             </label>
@@ -832,190 +794,65 @@ export function SettingsClient({
           </div>
 
           <div className="settings-agent-scroll">
-            <SettingsSection
-              eyebrow="Core Identity"
-              helper="This is the stable identity layer: how the agent presents itself before channel-specific rules kick in."
-            >
-              <label className="split-label settings-field-span-2">
-                Nickname
-                <span className="settings-input-wrap">
-                  <input
-                    className="settings-input"
-                    onChange={(event) => {
-                      setAgentDisplayName(event.target.value);
-                    }}
-                    value={agentDisplayName}
-                    type="text"
-                  />
-                </span>
-              </label>
-              <label className="split-label settings-field-span-2">
-                Persona Summary
-                <textarea
-                  className="settings-textarea settings-textarea-compact settings-textarea-field"
-                  onChange={(event) => {
-                    setPersonaSummary(event.target.value);
-                  }}
-                  placeholder="A short baseline description of the agent's personality and role."
-                  value={personaSummary}
-                />
-              </label>
-            </SettingsSection>
+            <MarkdownEditor
+              helper="This is the user-facing source file for how the agent understands its human owner."
+              label="USER.md"
+              onChange={(nextValue) => {
+                setUserMd(nextValue);
+                const nextName = extractMarkdownField(nextValue, "Name");
+                if (nextName) {
+                  setUserDisplayName(nextName);
+                }
+              }}
+              value={userMd}
+            />
 
-            <SettingsSection
-              eyebrow="Work Mode"
-              helper="These settings shape the default response style across all conversations."
-            >
-              <SelectField
-                label="Tone"
-                onChange={(value) => {
-                  patchResponseStyle("tone", value);
-                }}
-                options={toneOptions}
-                value={behaviorConfig.responseStyle.tone}
-              />
-              <SelectField
-                label="Initiative"
-                onChange={(value) => {
-                  patchResponseStyle("initiative", value);
-                }}
-                options={levelOptions}
-                value={behaviorConfig.responseStyle.initiative}
-              />
-              <SelectField
-                label="Explanation Depth"
-                onChange={(value) => {
-                  patchResponseStyle("explanationDepth", value);
-                }}
-                options={levelOptions}
-                value={behaviorConfig.responseStyle.explanationDepth}
-              />
-              <SelectField
-                label="Work Style"
-                onChange={(value) => {
-                  patchResponseStyle("workStyle", value);
-                }}
-                options={workStyleOptions}
-                value={behaviorConfig.responseStyle.workStyle}
-              />
-              <SelectField
-                label="Caution Level"
-                onChange={(value) => {
-                  patchResponseStyle("cautionLevel", value);
-                }}
-                options={levelOptions}
-                value={behaviorConfig.responseStyle.cautionLevel}
-              />
-            </SettingsSection>
+            <MarkdownEditor
+              helper="This is the agent's identity layer: name, creature, vibe, and related self-description."
+              label="IDENTITY.md"
+              onChange={(nextValue) => {
+                setIdentityMd(nextValue);
+                const nextName = extractMarkdownField(nextValue, "Name");
+                if (nextName) {
+                  setAgentDisplayName(nextName);
+                }
+              }}
+              value={identityMd}
+            />
 
-            <SettingsSection
-              eyebrow="Personality : When it Talks to You"
-              helper="Use this for one-to-one conversations with the owner of the agent."
-            >
-              <SelectField
-                label="Warmth"
-                onChange={(value) => {
-                  patchDirectLine("warmth", value);
-                }}
-                options={warmthOptions}
-                value={behaviorConfig.directLine.warmth}
-              />
-              <SelectField
-                label="Challenge Level"
-                onChange={(value) => {
-                  patchDirectLine("challengeLevel", value);
-                }}
-                options={challengeOptions}
-                value={behaviorConfig.directLine.challengeLevel}
-              />
-              <SelectField
-                label="Context Assumption"
-                onChange={(value) => {
-                  patchDirectLine("contextAssumption", value);
-                }}
-                options={contextOptions}
-                value={behaviorConfig.directLine.contextAssumption}
-              />
-              <SelectField
-                label="Autonomy"
-                onChange={(value) => {
-                  patchDirectLine("autonomy", value);
-                }}
-                options={autonomyOptions}
-                value={behaviorConfig.directLine.autonomy}
-              />
-              <label className="split-label settings-field-span-2">
-                Extra Instructions
-                <textarea
-                  className="settings-textarea settings-textarea-compact settings-textarea-field"
-                  onChange={(event) => {
-                    patchDirectLine("extraInstructions", event.target.value);
-                  }}
-                  placeholder="Anything special about how this agent should talk with you."
-                  value={behaviorConfig.directLine.extraInstructions}
-                />
-              </label>
-            </SettingsSection>
+            <MarkdownEditor
+              helper="This is the deeper behavioral source file the agent reads when shaping how it works."
+              label="SOUL.md"
+              onChange={setSoulMd}
+              value={soulMd}
+            />
 
-            <SettingsSection
-              eyebrow="Personality : When It Talks Elsewhere"
-              helper="Use this for team channels, public collaboration, and conversations with people other than the owner."
-            >
-              <SelectField
-                label="Formality"
-                onChange={(value) => {
-                  patchSharedSpaces("formality", value);
-                }}
-                options={formalityOptions}
-                value={behaviorConfig.sharedSpaces.formality}
-              />
-              <SelectField
-                label="Represent You"
-                onChange={(value) => {
-                  patchSharedSpaces("representOwner", value);
-                }}
-                options={representOptions}
-                value={behaviorConfig.sharedSpaces.representOwner}
-              />
-              <SelectField
-                label="Reveal Your Context"
-                onChange={(value) => {
-                  patchSharedSpaces("revealOwnerContext", value);
-                }}
-                options={ownerContextOptions}
-                value={behaviorConfig.sharedSpaces.revealOwnerContext}
-              />
-              <SelectField
-                label="Assertiveness"
-                onChange={(value) => {
-                  patchSharedSpaces("assertiveness", value);
-                }}
-                options={levelOptions}
-                value={behaviorConfig.sharedSpaces.assertiveness}
-              />
-              <SelectField
-                label="Make Commitments"
-                onChange={(value) => {
-                  patchSharedSpaces("commitmentPolicy", value);
-                }}
-                options={commitmentOptions}
-                value={behaviorConfig.sharedSpaces.commitmentPolicy}
-              />
-              <label className="split-label settings-field-span-2">
-                Extra Instructions
-                <textarea
-                  className="settings-textarea settings-textarea-compact settings-textarea-field"
-                  onChange={(event) => {
-                    patchSharedSpaces("extraInstructions", event.target.value);
+            <section className="settings-section-block">
+              <div className="settings-section-header">
+                <span className="context-label">HEARTBEAT</span>
+                <p>Keep proactiveness off for now, or let this agent wake up every three hours later when you are ready to test.</p>
+              </div>
+              <div className="settings-toggle-row">
+                <div className="settings-toggle-copy">
+                  <strong>Proactiveness</strong>
+                  <span>{heartbeatEnabled ? "Heartbeat runs every 3 hours." : "Heartbeat is currently off."}</span>
+                </div>
+                <button
+                  aria-pressed={heartbeatEnabled}
+                  className={`settings-toggle ${heartbeatEnabled ? "settings-toggle-on" : ""}`}
+                  onClick={() => {
+                    setHeartbeatEnabled((current) => !current);
                   }}
-                  placeholder="Anything special about how this agent should behave around other people."
-                  value={behaviorConfig.sharedSpaces.extraInstructions}
-                />
-              </label>
-            </SettingsSection>
+                  type="button"
+                >
+                  <span className="settings-toggle-knob" />
+                </button>
+              </div>
+            </section>
           </div>
         </article>
       </div>
+
       <div className="settings-footer">
         {isSaving ? (
           <p className="helper-text helper-text-status">Saving changes...</p>
@@ -1025,9 +862,9 @@ export function SettingsClient({
           <span />
         )}
         <button
+          aria-busy={isSaving}
           className="primary-button"
           disabled={isSaving}
-          aria-busy={isSaving}
           onClick={() => {
             void handleSave();
           }}

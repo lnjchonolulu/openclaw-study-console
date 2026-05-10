@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import {
+  writeAgentMarkdownFile,
+  writeHeartbeatEnabled,
+} from "@/lib/agent-workspace";
 import { getCurrentUser } from "@/lib/auth";
 import { deleteUserAvatarFiles, saveUserAvatarDataUrl } from "@/lib/avatar-storage";
 import { prisma } from "@/lib/prisma";
@@ -13,18 +16,25 @@ export async function PATCH(request: Request) {
   }
 
   const body = (await request.json()) as {
+    agentId?: string;
     agentDisplayName?: string;
-    behaviorConfig?: unknown;
     agentProfileConfig?: unknown;
-    personaSummary?: string;
+    heartbeatEnabled?: boolean;
+    identityMd?: string;
+    soulMd?: string;
     userDisplayName?: string;
+    userMd?: string;
     userProfileConfig?: unknown;
   };
 
   const userDisplayName = body.userDisplayName?.trim() || user.username;
   const agentDisplayName =
     body.agentDisplayName?.trim() || `${user.username}'s agent`;
-  const personaSummary = body.personaSummary?.trim() || null;
+  const agentId = body.agentId?.trim() || user.agent.openclawAgentId;
+  const userMd = typeof body.userMd === "string" ? body.userMd : "";
+  const identityMd = typeof body.identityMd === "string" ? body.identityMd : "";
+  const soulMd = typeof body.soulMd === "string" ? body.soulMd : "";
+  const heartbeatEnabled = Boolean(body.heartbeatEnabled);
   const currentUserProfileConfig = normalizeProfileConfig(
     user.profileConfigJson,
     user.username,
@@ -41,7 +51,6 @@ export async function PATCH(request: Request) {
     `${user.username}-agent`,
     "agent",
   );
-  const nextBehaviorConfig = normalizeAgentBehaviorConfig(body.behaviorConfig);
 
   if (typeof nextUserProfileConfig.imageDataUrl === "string") {
     const imageUrl = await saveUserAvatarDataUrl(
@@ -56,6 +65,17 @@ export async function PATCH(request: Request) {
   } else if (currentUserProfileConfig.imageUrl && !nextUserProfileConfig.imageUrl) {
     await deleteUserAvatarFiles(user.id);
   }
+
+  await Promise.all([
+    writeAgentMarkdownFile(agentId, "USER.md", userMd.endsWith("\n") ? userMd : `${userMd}\n`),
+    writeAgentMarkdownFile(
+      agentId,
+      "IDENTITY.md",
+      identityMd.endsWith("\n") ? identityMd : `${identityMd}\n`,
+    ),
+    writeAgentMarkdownFile(agentId, "SOUL.md", soulMd.endsWith("\n") ? soulMd : `${soulMd}\n`),
+    writeHeartbeatEnabled(agentId, heartbeatEnabled),
+  ]);
 
   await prisma.$transaction([
     prisma.user.update({
@@ -73,9 +93,7 @@ export async function PATCH(request: Request) {
       },
       data: {
         displayName: agentDisplayName,
-        personaSummary,
         profileConfigJson: nextAgentProfileConfig,
-        soulConfigJson: nextBehaviorConfig,
       },
     }),
   ]);
