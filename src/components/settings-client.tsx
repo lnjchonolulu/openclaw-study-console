@@ -1017,10 +1017,17 @@ export function SettingsClient({
         </article>
       </div>
       <div className="settings-footer">
-        {notice ? <p className="helper-text">{notice}</p> : <span />}
+        {isSaving ? (
+          <p className="helper-text helper-text-status">Saving changes...</p>
+        ) : notice ? (
+          <p className="helper-text">{notice}</p>
+        ) : (
+          <span />
+        )}
         <button
           className="primary-button"
           disabled={isSaving}
+          aria-busy={isSaving}
           onClick={() => {
             void handleSave();
           }}
