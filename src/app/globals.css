@@ -140,7 +140,11 @@ a {
 .primary-button {
   color: white;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 10px 18px rgba(0, 0, 0, 0.12),
+    0 20px 34px rgba(0, 0, 0, 0.08);
 }
 
 .secondary-button {
@@ -713,7 +717,9 @@ button.primary-button {
   background: rgba(255, 255, 255, 0.78);
   color: var(--foreground);
   text-align: left;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.68) inset,
+    0 10px 22px rgba(0, 0, 0, 0.045);
   transition:
     transform 140ms ease,
     box-shadow 140ms ease,
@@ -722,9 +728,11 @@ button.primary-button {
 }
 
 .files-item:hover {
-  transform: translateY(-1px);
+  transform: none;
   border-color: rgba(17, 17, 17, 0.14);
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.74) inset,
+    0 14px 28px rgba(0, 0, 0, 0.065);
 }
 
 .files-item-icon {
