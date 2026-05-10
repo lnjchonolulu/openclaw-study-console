@@ -1635,7 +1635,7 @@ button.primary-button {
   outline: none;
 }
 
-.settings-markdown-editor {
+.content-card .settings-markdown-editor {
   min-height: 720px;
   font-family:
     ui-monospace,
