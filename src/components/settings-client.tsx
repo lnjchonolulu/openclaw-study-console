@@ -829,14 +829,14 @@ export function SettingsClient({
 
             <section className="settings-section-block">
               <div className="settings-section-header">
-                <span className="context-label">HEARTBEAT</span>
-                <p>Keep proactiveness off for now, or let this agent wake up every three hours later when you are ready to test.</p>
+                <span className="context-label">Proactiveness</span>
+                <p>
+                  When heartbeat is enabled, this agent wakes up every three
+                  hours and checks on its own whether there is anything it
+                  needs to do.
+                </p>
               </div>
               <div className="settings-toggle-row">
-                <div className="settings-toggle-copy">
-                  <strong>Proactiveness</strong>
-                  <span>{heartbeatEnabled ? "Heartbeat runs every 3 hours." : "Heartbeat is currently off."}</span>
-                </div>
                 <button
                   aria-pressed={heartbeatEnabled}
                   className={`settings-toggle ${heartbeatEnabled ? "settings-toggle-on" : ""}`}
