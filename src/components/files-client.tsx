@@ -5,7 +5,6 @@ import type { WorkspaceFolderView } from "@/lib/files";
 
 function formatTimestamp(isoString: string) {
   return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",
