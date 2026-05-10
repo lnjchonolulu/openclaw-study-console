@@ -1636,7 +1636,7 @@ button.primary-button {
 }
 
 .settings-markdown-editor {
-  min-height: 240px;
+  min-height: 720px;
   font-family:
     ui-monospace,
     SFMono-Regular,
@@ -1647,8 +1647,8 @@ button.primary-button {
     "Liberation Mono",
     "Courier New",
     monospace;
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.8rem;
+  line-height: 1.45;
   white-space: pre-wrap;
 }
 
