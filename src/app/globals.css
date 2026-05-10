@@ -953,6 +953,12 @@ button.primary-button {
   color: white;
 }
 
+.message-row p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .message-row-agent {
   color: var(--foreground);
 }
