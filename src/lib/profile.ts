@@ -3,6 +3,7 @@ export type ProfileKind = "agent" | "user";
 export type ProfileConfig = {
   bgColor: string;
   fgColor: string;
+  imageUrl?: string | null;
   imageDataUrl?: string | null;
 };
 
@@ -43,6 +44,7 @@ function buildGeneratedProfileConfig(seed: string, kind: ProfileKind, offset = 0
   return {
     bgColor: toHsl(hue, bgSaturation + ((baseHash >> 1) % 10), bgLightness - ((baseHash >> 2) % 8)),
     fgColor: toHsl(fgHue, fgSaturation, fgLightness),
+    imageUrl: null,
     imageDataUrl: null,
   };
 }
@@ -82,14 +84,20 @@ export function normalizeProfileConfig(
     return fallback;
   }
 
-  const imageDataUrl = kind === "user" && typeof candidate.imageDataUrl === "string"
-    && candidate.imageDataUrl.startsWith("data:image/")
-    ? candidate.imageDataUrl
+  const imageUrl = kind === "user" && typeof candidate.imageUrl === "string"
+    ? candidate.imageUrl
     : null;
+  const imageDataUrl =
+    kind === "user" &&
+    typeof candidate.imageDataUrl === "string" &&
+    candidate.imageDataUrl.startsWith("data:image/")
+      ? candidate.imageDataUrl
+      : null;
 
   return {
     bgColor: candidate.bgColor,
     fgColor: candidate.fgColor,
+    imageUrl,
     imageDataUrl,
   };
 }

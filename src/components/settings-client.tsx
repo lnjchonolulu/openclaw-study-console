@@ -32,7 +32,7 @@ import {
   type ProfileConfig,
 } from "@/lib/profile";
 
-const AVATAR_CROP_SIZE = 256;
+const AVATAR_CROP_SIZE = 160;
 const AVATAR_VIEWPORT_SIZE = 248;
 
 type CropModalProps = {
@@ -268,7 +268,7 @@ function AvatarCropModal({ onCancel, onConfirm, source }: CropModalProps) {
       renderedHeight * scale,
     );
 
-    onConfirm(canvas.toDataURL("image/jpeg", 0.92));
+    onConfirm(canvas.toDataURL("image/jpeg", 0.82));
     setIsExporting(false);
   }
 

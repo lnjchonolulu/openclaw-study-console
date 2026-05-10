@@ -52,8 +52,9 @@ export function ProfileAvatar({
   avatar: AvatarViewModel;
   className?: string;
 }) {
+  const imageSource = avatar.config.imageDataUrl ?? avatar.config.imageUrl;
   const shouldRenderImage =
-    avatar.kind === "user" && typeof avatar.config.imageDataUrl === "string";
+    avatar.kind === "user" && typeof imageSource === "string";
 
   return (
     <span
@@ -72,7 +73,7 @@ export function ProfileAvatar({
           alt=""
           className="profile-avatar-image"
           draggable={false}
-          src={avatar.config.imageDataUrl ?? undefined}
+          src={imageSource ?? undefined}
         />
       ) : avatar.kind === "agent" ? (
         <AgentSilhouette />
