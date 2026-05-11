@@ -641,6 +641,15 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     });
   }
 
+  function getDraggedEntryId(event: DragEvent<HTMLElement>) {
+    return (
+      event.dataTransfer.getData("application/x-openclaw-folder") ||
+      event.dataTransfer.getData("application/x-openclaw-entry") ||
+      event.dataTransfer.getData("text/plain") ||
+      draggingEntryId
+    );
+  }
+
   function resetDragState() {
     setIsDragging(false);
     setDropFolderId(null);
@@ -714,6 +723,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
         }}
         onDragOver={(event) => {
           event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
         }}
         onDrop={(event) => {
           event.preventDefault();
@@ -726,9 +736,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
             return;
           }
 
-          const draggedEntryId =
-            event.dataTransfer.getData("application/x-openclaw-folder") ||
-            event.dataTransfer.getData("application/x-openclaw-entry");
+          const draggedEntryId = getDraggedEntryId(event);
 
           if (draggedEntryId) {
             void moveEntry(draggedEntryId, destinationFolderId);
@@ -754,6 +762,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                 }}
                 onDragOver={(event) => {
                   event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
                   setDropBreadcrumbId(crumb.id ?? "root");
                   setDropFolderId(null);
                 }}
@@ -761,9 +770,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   event.preventDefault();
                   const crumbId = crumb.id;
                   resetDragState();
-                  const draggedEntryId =
-                    event.dataTransfer.getData("application/x-openclaw-folder") ||
-                    event.dataTransfer.getData("application/x-openclaw-entry");
+                  const draggedEntryId = getDraggedEntryId(event);
 
                   if (draggedEntryId) {
                     void moveEntry(draggedEntryId, crumbId);
@@ -937,6 +944,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     }
 
                     event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
                     setDropFolderId(entry.id);
                     setDropBreadcrumbId(null);
                   }}
@@ -949,6 +957,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-openclaw-folder", entry.id);
                     event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
+                    event.dataTransfer.setData("text/plain", entry.id);
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingEntryId(entry.id);
                     setFolderDragPreview(event, entry.filename);
@@ -959,9 +968,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   onDrop={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    const draggedEntryId =
-                      event.dataTransfer.getData("application/x-openclaw-folder") ||
-                      event.dataTransfer.getData("application/x-openclaw-entry");
+                    const draggedEntryId = getDraggedEntryId(event);
 
                     if (draggedEntryId && draggedEntryId !== entry.id && entry.canAccess) {
                       resetDragState();
@@ -1008,6 +1015,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   draggable
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
+                    event.dataTransfer.setData("text/plain", entry.id);
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingEntryId(entry.id);
                     setFolderDragPreview(event, entry.filename);
