@@ -915,122 +915,130 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
 
         <div className="files-desktop">
           {folderEntries.length > 0 || fileEntries.length > 0 ? (
-            <div className="files-grid-desktop">
-              {folderEntries.map((entry) => (
-                <button
-                  className={`files-item${entry.isLocked ? " files-item-locked" : ""}${dropFolderId === entry.id ? " files-item-drop-target" : ""}${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
-                  draggable={!entry.isSystemManaged && entry.canAccess}
-                  key={entry.id}
-                  onClick={() => {
-                    if (entry.canAccess) {
-                      void refreshFolder(entry.id);
-                    } else {
-                      setNotice("You do not have access to this folder.");
-                    }
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setContextMenu({
-                      entry,
-                      kind: "entry",
-                      x: event.clientX,
-                      y: event.clientY,
-                    });
-                  }}
-                  onDragOver={(event) => {
-                    if (!entry.canAccess) {
-                      return;
-                    }
+            <div className="files-sections">
+              {folderEntries.length > 0 ? (
+                <div className="files-grid-desktop">
+                  {folderEntries.map((entry) => (
+                    <button
+                      className={`files-item${entry.isLocked ? " files-item-locked" : ""}${dropFolderId === entry.id ? " files-item-drop-target" : ""}${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
+                      draggable={!entry.isSystemManaged && entry.canAccess}
+                      key={entry.id}
+                      onClick={() => {
+                        if (entry.canAccess) {
+                          void refreshFolder(entry.id);
+                        } else {
+                          setNotice("You do not have access to this folder.");
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setContextMenu({
+                          entry,
+                          kind: "entry",
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                      onDragOver={(event) => {
+                        if (!entry.canAccess) {
+                          return;
+                        }
 
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    setDropFolderId(entry.id);
-                    setDropBreadcrumbId(null);
-                  }}
-                  onDragLeave={(event) => {
-                    event.preventDefault();
-                    if (dropFolderId === entry.id) {
-                      setDropFolderId(null);
-                    }
-                  }}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/x-openclaw-folder", entry.id);
-                    event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
-                    event.dataTransfer.setData("text/plain", entry.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggingEntryId(entry.id);
-                    setFolderDragPreview(event, entry.filename);
-                  }}
-                  onDragEnd={() => {
-                    resetDragState();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const draggedEntryId = getDraggedEntryId(event);
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setDropFolderId(entry.id);
+                        setDropBreadcrumbId(null);
+                      }}
+                      onDragLeave={(event) => {
+                        event.preventDefault();
+                        if (dropFolderId === entry.id) {
+                          setDropFolderId(null);
+                        }
+                      }}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-openclaw-folder", entry.id);
+                        event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
+                        event.dataTransfer.setData("text/plain", entry.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        setDraggingEntryId(entry.id);
+                        setFolderDragPreview(event, entry.filename);
+                      }}
+                      onDragEnd={() => {
+                        resetDragState();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const draggedEntryId = getDraggedEntryId(event);
 
-                    if (draggedEntryId && draggedEntryId !== entry.id && entry.canAccess) {
-                      resetDragState();
-                      void moveEntry(draggedEntryId, entry.id);
-                    }
-                  }}
-                  type="button"
-                >
-                  {!entry.canAccess ? (
-                    <div className="files-item-status">
-                      <LockIcon />
-                    </div>
-                  ) : null}
-                  <div className="files-item-head">
-                    <FolderIcon />
-                    <strong>{entry.filename}</strong>
-                  </div>
-                  <EntryMeta
-                    createdAt={entry.createdAt}
-                    createdByName={entry.createdByName}
-                    updatedAt={entry.updatedAt}
-                    updatedByName={entry.updatedByName}
-                  />
-                </button>
-              ))}
+                        if (draggedEntryId && draggedEntryId !== entry.id && entry.canAccess) {
+                          resetDragState();
+                          void moveEntry(draggedEntryId, entry.id);
+                        }
+                      }}
+                      type="button"
+                    >
+                      {!entry.canAccess ? (
+                        <div className="files-item-status">
+                          <LockIcon />
+                        </div>
+                      ) : null}
+                      <div className="files-item-head">
+                        <FolderIcon />
+                        <strong>{entry.filename}</strong>
+                      </div>
+                      <EntryMeta
+                        createdAt={entry.createdAt}
+                        createdByName={entry.createdByName}
+                        updatedAt={entry.updatedAt}
+                        updatedByName={entry.updatedByName}
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-              {fileEntries.map((entry) => (
-                <button
-                  className={`files-item files-item-file${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
-                  key={entry.id}
-                  onClick={() => {
-                    window.location.assign(`/api/files/${encodeURIComponent(entry.id)}`);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setContextMenu({
-                      entry,
-                      kind: "entry",
-                      x: event.clientX,
-                      y: event.clientY,
-                    });
-                  }}
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
-                    event.dataTransfer.setData("text/plain", entry.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggingEntryId(entry.id);
-                    setFolderDragPreview(event, entry.filename);
-                  }}
-                  onDragEnd={() => {
-                    resetDragState();
-                  }}
-                  type="button"
-                >
-                  <div className="files-file-badge">.{getExtensionLabel(entry.filename)}</div>
-                  <div className="files-file-copy">
-                    <strong>{entry.filename}</strong>
-                  </div>
-                </button>
-              ))}
+              {fileEntries.length > 0 ? (
+                <div className="files-grid-desktop files-grid-desktop-files">
+                  {fileEntries.map((entry) => (
+                    <button
+                      className={`files-item files-item-file${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
+                      key={entry.id}
+                      onClick={() => {
+                        window.location.assign(`/api/files/${encodeURIComponent(entry.id)}`);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setContextMenu({
+                          entry,
+                          kind: "entry",
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
+                        event.dataTransfer.setData("text/plain", entry.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        setDraggingEntryId(entry.id);
+                        setFolderDragPreview(event, entry.filename);
+                      }}
+                      onDragEnd={() => {
+                        resetDragState();
+                      }}
+                      type="button"
+                    >
+                      <div className="files-file-badge">.{getExtensionLabel(entry.filename)}</div>
+                      <div className="files-file-copy">
+                        <strong>{entry.filename}</strong>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="files-empty-state">
