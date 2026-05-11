@@ -500,33 +500,7 @@ export async function getDmCollections(userId: string) {
     return items;
   }, []);
 
-  const ownAgent = dmTargets.find((agent) => agent.userId === userId);
-  const dmConversations =
-    ownAgent &&
-    !conversationsFromRooms.some(
-      (item) => item.kind === "agent" && item.id === ownAgent.openclawAgentId,
-    )
-      ? [
-          {
-            avatar: {
-              kind: "agent" as const,
-              config: normalizeProfileConfig(
-                ownAgent.profileConfigJson,
-                `${ownAgent.user.username}-agent`,
-                "agent",
-              ),
-            },
-            id: ownAgent.openclawAgentId,
-            kind: "agent" as const,
-            displayName: ownAgent.displayName,
-            meta: getAgentMeta(ownAgent.user.username),
-            isOwnAgent: true,
-            roomId: null,
-            unreadCount: 0,
-          },
-          ...conversationsFromRooms,
-        ]
-      : conversationsFromRooms;
+  const dmConversations = conversationsFromRooms;
 
   const availableDmTargets: DmItem[] = [
     ...peopleTargets

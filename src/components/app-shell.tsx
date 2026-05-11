@@ -232,7 +232,7 @@ export function AppShell({
     setDmItems((current) =>
       current.some((item) => item.id === target.id && item.kind === target.kind)
         ? current
-        : [...current, target],
+        : [target, ...current],
     );
     setAvailableDms((current) =>
       current.filter(
