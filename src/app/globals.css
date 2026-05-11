@@ -633,6 +633,7 @@ button.primary-button {
   grid-template-rows: auto auto minmax(0, 1fr);
   padding: 12px 18px 18px;
   gap: 10px;
+  overflow: visible;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 249, 249, 0.92)),
     repeating-linear-gradient(
@@ -665,6 +666,7 @@ button.primary-button {
   align-items: flex-start;
   justify-content: flex-end;
   min-width: 72px;
+  z-index: 4;
 }
 
 .files-breadcrumbs {
@@ -876,7 +878,7 @@ button.primary-button {
   top: 48px;
   left: auto;
   right: 0;
-  width: min(340px, calc(100vw - 90px));
+  width: min(380px, calc(100vw - 120px));
 }
 
 .files-access-popover-toolbar {
