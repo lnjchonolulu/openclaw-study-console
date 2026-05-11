@@ -643,29 +643,42 @@ export async function updateWorkspaceFolderAccess(
   return mapEntry(updated, context);
 }
 
-export async function renameWorkspaceFolder(userId: string, folderId: string, name: string) {
+export async function renameWorkspaceEntry(userId: string, fileId: string, name: string) {
   const trimmedName = name.trim();
 
   if (!trimmedName) {
-    throw new Error("Folder name is required.");
+    throw new Error("Name is required.");
   }
 
   const context = await getFileWorkspaceContext(userId);
-  const folder = await getFolderOrThrow(folderId);
+  const record = await prisma.fileRecord.findUnique({
+    where: {
+      id: fileId,
+    },
+    select: {
+      accessConfigJson: true,
+      id: true,
+      systemKey: true,
+    },
+  });
 
-  if (folder.systemKey) {
-    throw new Error("This folder name cannot be changed.");
+  if (!record) {
+    throw new Error("Item not found.");
   }
 
-  const accessConfig = parseAccessConfig(folder.accessConfigJson);
+  if (record.systemKey) {
+    throw new Error("This item name cannot be changed.");
+  }
+
+  const accessConfig = parseAccessConfig(record.accessConfigJson);
 
   if (!hasExplicitAccess(accessConfig, context.currentUserKey)) {
-    throw new Error("You do not have access to this folder.");
+    throw new Error("You do not have access to this item.");
   }
 
   const updated = await prisma.fileRecord.update({
     where: {
-      id: folderId,
+      id: fileId,
     },
     data: {
       filename: trimmedName,

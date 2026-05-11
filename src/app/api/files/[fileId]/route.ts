@@ -4,7 +4,7 @@ import {
   deleteWorkspaceFolder,
   getDownloadableFile,
   moveWorkspaceRecord,
-  renameWorkspaceFolder,
+  renameWorkspaceEntry,
   updateWorkspaceFolderAccess,
 } from "@/lib/files";
 
@@ -62,7 +62,7 @@ export async function PATCH(
 
   try {
     if (body.action === "rename") {
-      const entry = await renameWorkspaceFolder(user.id, fileId, body.name ?? "");
+      const entry = await renameWorkspaceEntry(user.id, fileId, body.name ?? "");
       return NextResponse.json({ entry });
     }
 

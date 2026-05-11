@@ -35,25 +35,31 @@ function FolderIcon() {
   );
 }
 
-function FileIcon() {
-  return (
-    <svg aria-hidden="true" className="files-item-icon" fill="none" viewBox="0 0 24 24">
-      <path
-        d="M7.25 4.75h6l3.5 3.5v10a2 2 0 0 1-2 2h-7.5a2 2 0 0 1-2-2v-11.5a2 2 0 0 1 2-2Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-      <path
-        d="M13.25 4.75v3.5h3.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </svg>
-  );
+function formatSize(sizeBytes: number | null) {
+  if (!sizeBytes || sizeBytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = sizeBytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function getExtensionLabel(filename: string) {
+  const parts = filename.split(".");
+  if (parts.length < 2) {
+    return "FILE";
+  }
+
+  const ext = parts.at(-1)?.trim().toUpperCase() ?? "FILE";
+  return ext.slice(0, 6);
 }
 
 function TeamMembersIcon() {
@@ -230,6 +236,11 @@ type FolderModalProps = {
   title: string;
 };
 
+type InfoModalProps = {
+  entry: WorkspaceEntry;
+  onClose: () => void;
+};
+
 function FolderModal({
   allParticipants,
   currentUserKey,
@@ -345,6 +356,49 @@ function FolderModal({
   );
 }
 
+function InfoModal({ entry, onClose }: InfoModalProps) {
+  return (
+    <div className="team-modal-backdrop" onClick={onClose} role="presentation">
+      <div
+        aria-label="File information"
+        aria-modal="true"
+        className="content-card team-modal"
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
+        role="dialog"
+      >
+        <div className="team-modal-header">
+          <h2>File Information</h2>
+        </div>
+        <div className="team-modal-section files-info-grid">
+          <div className="files-info-row">
+            <span className="context-label">Name</span>
+            <strong>{entry.filename}</strong>
+          </div>
+          <div className="files-info-row">
+            <span className="context-label">Type</span>
+            <strong>{getExtensionLabel(entry.filename)}</strong>
+          </div>
+          <div className="files-info-row">
+            <span className="context-label">Size</span>
+            <strong>{formatSize(entry.sizeBytes)}</strong>
+          </div>
+          <div className="files-info-row">
+            <span className="context-label">Uploaded</span>
+            <strong>{formatTimestamp(entry.createdAt)}</strong>
+          </div>
+        </div>
+        <div className="team-modal-actions">
+          <button className="primary-button" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ContextMenuState =
   | { kind: "background"; x: number; y: number }
   | { entry: WorkspaceEntry; kind: "entry"; x: number; y: number };
@@ -375,6 +429,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
   const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
   const [dropBreadcrumbId, setDropBreadcrumbId] = useState<string | null>(null);
   const [dropFolderId, setDropFolderId] = useState<string | null>(null);
+  const [infoEntry, setInfoEntry] = useState<WorkspaceEntry | null>(null);
   const [modalState, setModalState] = useState<{
     entry?: WorkspaceEntry;
     kind: "create" | "rename";
@@ -401,7 +456,6 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     }
 
     setView(payload);
-    setIsCurrentFolderAccessOpen(false);
     setDropBreadcrumbId(null);
     setDropFolderId(null);
   }
@@ -522,6 +576,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
       return;
     }
 
+    setIsCurrentFolderAccessOpen(true);
     await refreshFolder(view.currentFolder.id);
   }
 
@@ -612,7 +667,21 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
             void saveFolderModal(payload);
           }}
           showParticipants={modalState.kind === "create"}
-          title={modalState.kind === "create" ? "Create Folder" : "Rename Folder"}
+          title={
+            modalState.kind === "create"
+              ? "Create Folder"
+              : modalState.entry?.isFolder
+                ? "Rename Folder"
+                : "Rename File"
+          }
+        />
+      ) : null}
+      {infoEntry ? (
+        <InfoModal
+          entry={infoEntry}
+          onClose={() => {
+            setInfoEntry(null);
+          }}
         />
       ) : null}
 
@@ -912,20 +981,24 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
 
               {fileEntries.map((entry) => (
                 <a
-                  className="files-item"
+                  className="files-item files-item-file"
                   href={`/api/files/${encodeURIComponent(entry.id)}`}
                   key={entry.id}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setContextMenu({
+                      entry,
+                      kind: "entry",
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }}
                 >
-                  <div className="files-item-head">
-                    <FileIcon />
+                  <div className="files-file-badge">{getExtensionLabel(entry.filename)}</div>
+                  <div className="files-file-copy">
                     <strong>{entry.filename}</strong>
                   </div>
-                  <EntryMeta
-                    createdAt={entry.createdAt}
-                    createdByName={entry.createdByName}
-                    updatedAt={entry.updatedAt}
-                    updatedByName={entry.updatedByName}
-                  />
                 </a>
               ))}
             </div>
@@ -985,19 +1058,32 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   }}
                   type="button"
                 >
-                  Rename Folder
+                  {contextMenu.entry.isFolder ? "Rename Folder" : "Rename File"}
                 </button>
-                <button
-                  className="files-context-item"
-                  disabled={contextMenu.entry.isSystemManaged}
-                  onClick={() => {
-                    void deleteFolder(contextMenu.entry);
-                    setContextMenu(null);
-                  }}
-                  type="button"
-                >
-                  Delete Folder
-                </button>
+                {contextMenu.entry.isFolder ? (
+                  <button
+                    className="files-context-item"
+                    disabled={contextMenu.entry.isSystemManaged}
+                    onClick={() => {
+                      void deleteFolder(contextMenu.entry);
+                      setContextMenu(null);
+                    }}
+                    type="button"
+                  >
+                    Delete Folder
+                  </button>
+                ) : (
+                  <button
+                    className="files-context-item"
+                    onClick={() => {
+                      setInfoEntry(contextMenu.entry);
+                      setContextMenu(null);
+                    }}
+                    type="button"
+                  >
+                    Information
+                  </button>
+                )}
               </>
             )}
           </div>
