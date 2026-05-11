@@ -989,10 +989,12 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
               ))}
 
               {fileEntries.map((entry) => (
-                <a
+                <button
                   className={`files-item files-item-file${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
-                  href={`/api/files/${encodeURIComponent(entry.id)}`}
                   key={entry.id}
+                  onClick={() => {
+                    window.location.assign(`/api/files/${encodeURIComponent(entry.id)}`);
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -1013,12 +1015,13 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   onDragEnd={() => {
                     resetDragState();
                   }}
+                  type="button"
                 >
                   <div className="files-file-badge">.{getExtensionLabel(entry.filename)}</div>
                   <div className="files-file-copy">
                     <strong>{entry.filename}</strong>
                   </div>
-                </a>
+                </button>
               ))}
             </div>
           ) : (
