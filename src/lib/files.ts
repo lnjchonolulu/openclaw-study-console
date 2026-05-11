@@ -62,6 +62,7 @@ export type WorkspaceFolderView = {
     isSystemManaged: boolean;
     label: string;
   };
+  currentUserKey: string;
   entries: WorkspaceEntry[];
   participants: TeamParticipant[];
 };
@@ -135,8 +136,13 @@ function hasExplicitAccess(config: FileAccessConfig, currentUserKey: string) {
 
 function mapAccessParticipants(
   keys: string[],
+  participants: TeamParticipant[],
   participantsByKey: Map<string, TeamParticipant>,
 ) {
+  if (keys.length === 0) {
+    return participants;
+  }
+
   return keys
     .map((key) => participantsByKey.get(key))
     .filter((participant): participant is TeamParticipant => Boolean(participant));
@@ -342,6 +348,7 @@ function mapEntry(
   const accessConfig = parseAccessConfig(entry.accessConfigJson);
   const accessParticipants = mapAccessParticipants(
     accessConfig.participantKeys,
+    context.participants,
     context.participantsByKey,
   );
   const canAccess = hasExplicitAccess(accessConfig, context.currentUserKey);
@@ -426,6 +433,7 @@ export async function listWorkspaceFolder(
     currentFolder: {
       accessParticipants: mapAccessParticipants(
         currentAccessConfig.participantKeys,
+        context.participants,
         context.participantsByKey,
       ),
       canAccess: parentFolder
@@ -437,6 +445,7 @@ export async function listWorkspaceFolder(
       isSystemManaged: Boolean(parentFolder?.systemKey),
       label: breadcrumbs[breadcrumbs.length - 1]?.label ?? "/home",
     },
+    currentUserKey: context.currentUserKey,
     entries: normalizedEntries,
     participants: context.participants,
   };
@@ -481,9 +490,7 @@ export async function createWorkspaceFolder({
       visibility: "TEAM",
       sourceType: "USER_FOLDER",
       accessConfigJson: serializeAccessConfig({
-        participantKeys: participantKeys ?? context.participants.map(
-          (participant) => `${participant.kind}:${participant.id}`,
-        ),
+        participantKeys: [...new Set([context.currentUserKey, ...(participantKeys ?? [])])],
       }),
     },
     select: {
@@ -608,7 +615,7 @@ export async function updateWorkspaceFolderAccess(
     },
     data: {
       accessConfigJson: serializeAccessConfig({
-        participantKeys,
+        participantKeys: [...new Set([context.currentUserKey, ...participantKeys])],
       }),
     },
     select: {

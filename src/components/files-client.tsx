@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { WorkspaceEntry, WorkspaceFolderView } from "@/lib/files";
 import type { TeamParticipant } from "@/lib/team";
@@ -111,14 +111,16 @@ function LockIcon() {
 }
 
 function ArrowButton({
+  disabled = false,
   direction,
   onClick,
 }: {
+  disabled?: boolean;
   direction: "down" | "up";
   onClick: () => void;
 }) {
   return (
-    <button className="files-access-arrow" onClick={onClick} type="button">
+    <button className="files-access-arrow" disabled={disabled} onClick={onClick} type="button">
       <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
         <path
           d={
@@ -137,16 +139,18 @@ function ArrowButton({
 }
 
 function AccessParticipantRow({
+  canMove = true,
   onMove,
   participant,
   direction,
 }: {
+  canMove?: boolean;
   direction: "down" | "up";
   onMove: () => void;
   participant: TeamParticipant;
 }) {
   return (
-    <div className="context-item">
+    <div className="context-item files-access-row">
       <span className="context-item-identity">
         <ProfileAvatar avatar={participant.avatar} className="context-avatar" />
         <span className="context-item-copy">
@@ -154,8 +158,41 @@ function AccessParticipantRow({
           <span className="context-item-meta">{participant.meta}</span>
         </span>
       </span>
-      <ArrowButton direction={direction} onClick={onMove} />
+      {canMove ? <ArrowButton direction={direction} onClick={onMove} /> : null}
     </div>
+  );
+}
+
+function ParticipantCheckboxRow({
+  checked,
+  disabled = false,
+  onToggle,
+  participant,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+  participant: TeamParticipant;
+}) {
+  return (
+    <label
+      className={`team-invite-card${checked ? " team-invite-card-selected" : ""}${disabled ? " team-invite-card-disabled" : ""}`}
+    >
+      <input
+        checked={checked}
+        disabled={disabled}
+        onChange={() => {
+          onToggle();
+        }}
+        type="checkbox"
+      />
+      <span className="team-invite-check">{checked ? "✓" : ""}</span>
+      <ProfileAvatar avatar={participant.avatar} className="context-avatar" />
+      <span className="team-invite-copy">
+        <span>{participant.name}</span>
+        <span>{participant.meta}</span>
+      </span>
+    </label>
   );
 }
 
@@ -184,6 +221,7 @@ function EntryMeta({
 
 type FolderModalProps = {
   allParticipants: TeamParticipant[];
+  currentUserKey: string;
   initialName: string;
   initialSelectedKeys: string[];
   onCancel: () => void;
@@ -194,6 +232,7 @@ type FolderModalProps = {
 
 function FolderModal({
   allParticipants,
+  currentUserKey,
   initialName,
   initialSelectedKeys,
   onCancel,
@@ -202,13 +241,8 @@ function FolderModal({
   title,
 }: FolderModalProps) {
   const [name, setName] = useState(initialName);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>(initialSelectedKeys);
-
-  const selectedParticipants = allParticipants.filter((participant) =>
-    selectedKeys.includes(`${participant.kind}:${participant.id}`),
-  );
-  const unselectedParticipants = allParticipants.filter(
-    (participant) => !selectedKeys.includes(`${participant.kind}:${participant.id}`),
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(
+    Array.from(new Set([currentUserKey, ...initialSelectedKeys])),
   );
 
   return (
@@ -244,61 +278,52 @@ function FolderModal({
         </div>
 
         {showParticipants ? (
-          <>
-            <div className="team-modal-section">
-              <div className="files-access-header">
-                <span className="context-label">Participants with access</span>
-                <button
-                  className="secondary-button files-select-all"
-                  onClick={() => {
-                    setSelectedKeys(
-                      allParticipants.map(
-                        (participant) => `${participant.kind}:${participant.id}`,
-                      ),
-                    );
-                  }}
-                  type="button"
-                >
-                  Select all
-                </button>
-              </div>
-              <div className="context-list team-invite-list">
-                {selectedParticipants.map((participant) => (
-                  <AccessParticipantRow
-                    direction="down"
-                    key={`${participant.kind}:${participant.id}`}
-                    onMove={() => {
-                      setSelectedKeys((current) =>
-                        current.filter(
-                          (key) => key !== `${participant.kind}:${participant.id}`,
-                        ),
-                      );
-                    }}
-                    participant={participant}
-                  />
-                ))}
-              </div>
+          <div className="team-modal-section">
+            <div className="files-access-header">
+              <span className="context-label">Participants</span>
+              <button
+                className="secondary-button files-select-all"
+                onClick={() => {
+                  setSelectedKeys([
+                    currentUserKey,
+                    ...allParticipants
+                      .map((participant) => `${participant.kind}:${participant.id}`)
+                      .filter((key) => key !== currentUserKey),
+                  ]);
+                }}
+                type="button"
+              >
+                Select all
+              </button>
             </div>
+            <div className="context-list team-invite-list">
+              {allParticipants.map((participant) => {
+                const key = `${participant.kind}:${participant.id}`;
+                const checked = selectedKeys.includes(key);
+                const isCurrentUser = key === currentUserKey;
 
-            <div className="team-modal-section">
-              <span className="context-label">Add participants</span>
-              <div className="context-list team-invite-list">
-                {unselectedParticipants.map((participant) => (
-                  <AccessParticipantRow
-                    direction="up"
-                    key={`${participant.kind}:${participant.id}`}
-                    onMove={() => {
-                      setSelectedKeys((current) => [
-                        ...current,
-                        `${participant.kind}:${participant.id}`,
-                      ]);
+                return (
+                  <ParticipantCheckboxRow
+                    checked={checked}
+                    disabled={isCurrentUser}
+                    key={key}
+                    onToggle={() => {
+                      setSelectedKeys((current) => {
+                        if (isCurrentUser) {
+                          return current;
+                        }
+
+                        return current.includes(key)
+                          ? current.filter((value) => value !== key)
+                          : [...current, key];
+                      });
                     }}
                     participant={participant}
                   />
-                ))}
-              </div>
+                );
+              })}
             </div>
-          </>
+          </div>
         ) : null}
 
         <div className="team-modal-actions">
@@ -346,7 +371,10 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
   const [isUploading, setIsUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [activeAccessEntryId, setActiveAccessEntryId] = useState<string | null>(null);
+  const [isCurrentFolderAccessOpen, setIsCurrentFolderAccessOpen] = useState(false);
+  const [draggingEntryId, setDraggingEntryId] = useState<string | null>(null);
+  const [dropBreadcrumbId, setDropBreadcrumbId] = useState<string | null>(null);
+  const [dropFolderId, setDropFolderId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<{
     entry?: WorkspaceEntry;
     kind: "create" | "rename";
@@ -373,6 +401,9 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     }
 
     setView(payload);
+    setIsCurrentFolderAccessOpen(false);
+    setDropBreadcrumbId(null);
+    setDropFolderId(null);
   }
 
   async function uploadFiles(files: File[]) {
@@ -537,24 +568,39 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     await refreshFolder(view.currentFolder.id);
   }
 
-  const activeAccessEntry = folderEntries.find(
-    (entry) => entry.id === activeAccessEntryId,
+  const accessLists = partitionParticipants(
+    view.participants,
+    view.currentFolder.accessParticipants,
   );
-  const accessLists = activeAccessEntry
-    ? partitionParticipants(view.participants, activeAccessEntry.accessParticipants)
-    : null;
+
+  function setFolderDragPreview(event: DragEvent<HTMLElement>, label: string) {
+    const preview = document.createElement("div");
+    preview.className = "files-drag-preview";
+    preview.textContent = label;
+    document.body.appendChild(preview);
+    event.dataTransfer.setDragImage(preview, 28, 20);
+    window.requestAnimationFrame(() => {
+      preview.remove();
+    });
+  }
+
+  function resetDragState() {
+    setIsDragging(false);
+    setDropFolderId(null);
+    setDropBreadcrumbId(null);
+    setDraggingEntryId(null);
+  }
 
   return (
     <section className="chat-page files-page">
       {modalState ? (
         <FolderModal
           allParticipants={view.participants}
+          currentUserKey={view.currentUserKey}
           initialName={modalState.entry?.filename ?? ""}
           initialSelectedKeys={
             modalState.kind === "create"
-              ? view.participants.map(
-                  (participant) => `${participant.kind}:${participant.id}`,
-                )
+              ? [view.currentUserKey]
               : (modalState.entry?.accessParticipants ?? []).map(
                   (participant) => `${participant.kind}:${participant.id}`,
                 )
@@ -574,7 +620,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
         className={`chat-panel files-panel${isDragging ? " files-panel-dragging" : ""}`}
         onClick={() => {
           setContextMenu(null);
-          setActiveAccessEntryId(null);
+          setIsCurrentFolderAccessOpen(false);
         }}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -592,7 +638,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
         onDragLeave={(event) => {
           event.preventDefault();
           if (event.currentTarget === event.target) {
-            setIsDragging(false);
+            resetDragState();
           }
         }}
         onDragOver={(event) => {
@@ -600,7 +646,8 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
         }}
         onDrop={(event) => {
           event.preventDefault();
-          setIsDragging(false);
+          const destinationFolderId = view.currentFolder.id;
+          resetDragState();
           const droppedFiles = Array.from(event.dataTransfer.files);
 
           if (droppedFiles.length > 0) {
@@ -611,7 +658,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
           const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
 
           if (draggedEntryId) {
-            void moveEntry(draggedEntryId, view.currentFolder.id);
+            void moveEntry(draggedEntryId, destinationFolderId);
           }
         }}
       >
@@ -619,22 +666,32 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
           <div className="files-breadcrumbs" role="navigation" aria-label="Current directory">
             {view.breadcrumbs.map((crumb, index) => (
               <button
-                className={`files-crumb${index === view.breadcrumbs.length - 1 ? " files-crumb-active" : ""}`}
+                className={`files-crumb${index === view.breadcrumbs.length - 1 ? " files-crumb-active" : ""}${dropBreadcrumbId === (crumb.id ?? "root") ? " files-crumb-drop-target" : ""}`}
                 key={crumb.id ?? "root"}
                 onClick={() => {
                   if (!crumb.isLocked) {
                     void refreshFolder(crumb.id);
                   }
                 }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  if (dropBreadcrumbId === (crumb.id ?? "root")) {
+                    setDropBreadcrumbId(null);
+                  }
+                }}
                 onDragOver={(event) => {
                   event.preventDefault();
+                  setDropBreadcrumbId(crumb.id ?? "root");
+                  setDropFolderId(null);
                 }}
                 onDrop={(event) => {
                   event.preventDefault();
+                  const crumbId = crumb.id;
+                  resetDragState();
                   const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
 
                   if (draggedEntryId) {
-                    void moveEntry(draggedEntryId, crumb.id);
+                    void moveEntry(draggedEntryId, crumbId);
                   }
                 }}
                 type="button"
@@ -643,6 +700,121 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
               </button>
             ))}
           </div>
+          {view.currentFolder.id ? (
+            <div className="files-toolbar-actions">
+              <button
+                className="team-members-button files-access-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsCurrentFolderAccessOpen((current) => !current);
+                  setContextMenu(null);
+                }}
+                type="button"
+              >
+                <TeamMembersIcon />
+                <span>{view.currentFolder.accessParticipants.length}</span>
+              </button>
+              {isCurrentFolderAccessOpen ? (
+                <div
+                  className="team-members-popover files-access-popover files-access-popover-toolbar"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                  }}
+                >
+                  <span className="context-label">Participants with access</span>
+                  <div className="context-list">
+                    {accessLists.selectedParticipants.map((participant) => (
+                      <AccessParticipantRow
+                        canMove={!view.currentFolder.isSystemManaged}
+                        direction="down"
+                        key={`${participant.kind}:${participant.id}`}
+                        onMove={() => {
+                          if (!view.currentFolder.isSystemManaged && view.currentFolder.id) {
+                            void updateEntryAccess(
+                              {
+                                accessCount: view.currentFolder.accessParticipants.length,
+                                accessParticipants: view.currentFolder.accessParticipants,
+                                canAccess: view.currentFolder.canAccess,
+                                createdAt: "",
+                                createdByName: "",
+                                filename: view.currentFolder.label,
+                                id: view.currentFolder.id,
+                                isFolder: true,
+                                isLocked: view.currentFolder.isLocked,
+                                isSystemManaged: view.currentFolder.isSystemManaged,
+                                mimeType: null,
+                                sizeBytes: null,
+                                updatedAt: "",
+                                updatedByName: "",
+                              },
+                              accessLists.selectedParticipants
+                                .filter(
+                                  (selectedParticipant) =>
+                                    !(
+                                      selectedParticipant.kind === participant.kind &&
+                                      selectedParticipant.id === participant.id
+                                    ),
+                                )
+                                .map(
+                                  (selectedParticipant) =>
+                                    `${selectedParticipant.kind}:${selectedParticipant.id}`,
+                                ),
+                            );
+                          }
+                        }}
+                        participant={participant}
+                      />
+                    ))}
+                  </div>
+                  {!view.currentFolder.isSystemManaged ? (
+                    <>
+                      <span className="context-label files-access-secondary-label">
+                        Add participants
+                      </span>
+                      <div className="context-list">
+                        {accessLists.unselectedParticipants.map((participant) => (
+                          <AccessParticipantRow
+                            direction="up"
+                            key={`${participant.kind}:${participant.id}`}
+                            onMove={() => {
+                              if (view.currentFolder.id) {
+                                void updateEntryAccess(
+                                  {
+                                    accessCount: view.currentFolder.accessParticipants.length,
+                                    accessParticipants: view.currentFolder.accessParticipants,
+                                    canAccess: view.currentFolder.canAccess,
+                                    createdAt: "",
+                                    createdByName: "",
+                                    filename: view.currentFolder.label,
+                                    id: view.currentFolder.id,
+                                    isFolder: true,
+                                    isLocked: view.currentFolder.isLocked,
+                                    isSystemManaged: view.currentFolder.isSystemManaged,
+                                    mimeType: null,
+                                    sizeBytes: null,
+                                    updatedAt: "",
+                                    updatedByName: "",
+                                  },
+                                  [
+                                    ...view.currentFolder.accessParticipants.map(
+                                      (selectedParticipant) =>
+                                        `${selectedParticipant.kind}:${selectedParticipant.id}`,
+                                    ),
+                                    `${participant.kind}:${participant.id}`,
+                                  ],
+                                );
+                              }
+                            }}
+                            participant={participant}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <input
@@ -664,7 +836,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
             <div className="files-grid-desktop">
               {folderEntries.map((entry) => (
                 <button
-                  className={`files-item${entry.isLocked ? " files-item-locked" : ""}`}
+                  className={`files-item${entry.isLocked ? " files-item-locked" : ""}${dropFolderId === entry.id ? " files-item-drop-target" : ""}${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
                   draggable={!entry.isSystemManaged && entry.canAccess}
                   key={entry.id}
                   onClick={() => {
@@ -690,10 +862,23 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     }
 
                     event.preventDefault();
+                    setDropFolderId(entry.id);
+                    setDropBreadcrumbId(null);
+                  }}
+                  onDragLeave={(event) => {
+                    event.preventDefault();
+                    if (dropFolderId === entry.id) {
+                      setDropFolderId(null);
+                    }
                   }}
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-openclaw-folder", entry.id);
                     event.dataTransfer.effectAllowed = "move";
+                    setDraggingEntryId(entry.id);
+                    setFolderDragPreview(event, entry.filename);
+                  }}
+                  onDragEnd={() => {
+                    resetDragState();
                   }}
                   onDrop={(event) => {
                     event.preventDefault();
@@ -701,30 +886,15 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
 
                     if (draggedEntryId && draggedEntryId !== entry.id && entry.canAccess) {
+                      resetDragState();
                       void moveEntry(draggedEntryId, entry.id);
                     }
                   }}
                   type="button"
                 >
-                  {view.currentFolder.id ? (
-                    <div className="files-item-access-wrap">
-                      {!entry.canAccess ? <LockIcon /> : null}
-                      {entry.filename !== "Personals" ? (
-                        <button
-                          className="team-members-button files-access-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setActiveAccessEntryId((current) =>
-                              current === entry.id ? null : entry.id,
-                            );
-                            setContextMenu(null);
-                          }}
-                          type="button"
-                        >
-                          <TeamMembersIcon />
-                          <span>{entry.accessCount}</span>
-                        </button>
-                      ) : null}
+                  {!entry.canAccess ? (
+                    <div className="files-item-status">
+                      <LockIcon />
                     </div>
                   ) : null}
                   <div className="files-item-head">
@@ -737,69 +907,6 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     updatedAt={entry.updatedAt}
                     updatedByName={entry.updatedByName}
                   />
-                  {activeAccessEntryId === entry.id && accessLists ? (
-                    <div
-                      className="team-members-popover files-access-popover"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                      }}
-                    >
-                      <span className="context-label">Participants with access</span>
-                      <div className="context-list">
-                        {accessLists.selectedParticipants.map((participant) => (
-                          <AccessParticipantRow
-                            direction="down"
-                            key={`${participant.kind}:${participant.id}`}
-                            onMove={() => {
-                              if (!activeAccessEntry?.isSystemManaged) {
-                                void updateEntryAccess(
-                                  entry,
-                                  accessLists.selectedParticipants
-                                    .filter(
-                                      (selectedParticipant) =>
-                                        !(
-                                          selectedParticipant.kind === participant.kind &&
-                                          selectedParticipant.id === participant.id
-                                        ),
-                                    )
-                                    .map(
-                                      (selectedParticipant) =>
-                                        `${selectedParticipant.kind}:${selectedParticipant.id}`,
-                                    ),
-                                );
-                              }
-                            }}
-                            participant={participant}
-                          />
-                        ))}
-                      </div>
-                      {!entry.isSystemManaged && entry.canAccess ? (
-                        <>
-                          <span className="context-label files-access-secondary-label">
-                            Add participants
-                          </span>
-                          <div className="context-list">
-                            {accessLists.unselectedParticipants.map((participant) => (
-                              <AccessParticipantRow
-                                direction="up"
-                                key={`${participant.kind}:${participant.id}`}
-                                onMove={() => {
-                                  void updateEntryAccess(entry, [
-                                    ...entry.accessParticipants.map(
-                                      (selectedParticipant) =>
-                                        `${selectedParticipant.kind}:${selectedParticipant.id}`,
-                                    ),
-                                    `${participant.kind}:${participant.id}`,
-                                  ]);
-                                }}
-                                participant={participant}
-                              />
-                            ))}
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </button>
               ))}
 
