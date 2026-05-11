@@ -876,8 +876,8 @@ button.primary-button {
 
 .files-access-popover {
   top: 48px;
-  left: auto;
-  right: 0;
+  left: 0;
+  right: auto;
   width: min(380px, calc(100vw - 120px));
 }
 
