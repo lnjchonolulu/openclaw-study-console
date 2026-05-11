@@ -386,7 +386,9 @@ function InfoModal({ entry, onClose }: InfoModalProps) {
           </div>
           <div className="files-info-row">
             <span className="context-label">Uploaded</span>
-            <strong>{formatTimestamp(entry.createdAt)}</strong>
+            <strong>
+              {entry.createdByName}, {formatTimestamp(entry.createdAt)}
+            </strong>
           </div>
         </div>
         <div className="team-modal-actions">
@@ -724,7 +726,9 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
             return;
           }
 
-          const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
+          const draggedEntryId =
+            event.dataTransfer.getData("application/x-openclaw-folder") ||
+            event.dataTransfer.getData("application/x-openclaw-entry");
 
           if (draggedEntryId) {
             void moveEntry(draggedEntryId, destinationFolderId);
@@ -757,7 +761,9 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   event.preventDefault();
                   const crumbId = crumb.id;
                   resetDragState();
-                  const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
+                  const draggedEntryId =
+                    event.dataTransfer.getData("application/x-openclaw-folder") ||
+                    event.dataTransfer.getData("application/x-openclaw-entry");
 
                   if (draggedEntryId) {
                     void moveEntry(draggedEntryId, crumbId);
@@ -942,6 +948,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   }}
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-openclaw-folder", entry.id);
+                    event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingEntryId(entry.id);
                     setFolderDragPreview(event, entry.filename);
@@ -952,7 +959,9 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                   onDrop={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    const draggedEntryId = event.dataTransfer.getData("application/x-openclaw-folder");
+                    const draggedEntryId =
+                      event.dataTransfer.getData("application/x-openclaw-folder") ||
+                      event.dataTransfer.getData("application/x-openclaw-entry");
 
                     if (draggedEntryId && draggedEntryId !== entry.id && entry.canAccess) {
                       resetDragState();
@@ -981,7 +990,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
 
               {fileEntries.map((entry) => (
                 <a
-                  className="files-item files-item-file"
+                  className={`files-item files-item-file${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
                   href={`/api/files/${encodeURIComponent(entry.id)}`}
                   key={entry.id}
                   onContextMenu={(event) => {
@@ -994,8 +1003,18 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                       y: event.clientY,
                     });
                   }}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/x-openclaw-entry", entry.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    setDraggingEntryId(entry.id);
+                    setFolderDragPreview(event, entry.filename);
+                  }}
+                  onDragEnd={() => {
+                    resetDragState();
+                  }}
                 >
-                  <div className="files-file-badge">{getExtensionLabel(entry.filename)}</div>
+                  <div className="files-file-badge">.{getExtensionLabel(entry.filename)}</div>
                   <div className="files-file-copy">
                     <strong>{entry.filename}</strong>
                   </div>
