@@ -376,9 +376,6 @@ export async function getDmCollections(userId: string) {
         },
       ],
     },
-    orderBy: {
-      updatedAt: "desc",
-    },
     include: {
       agents: {
         include: {
@@ -389,12 +386,30 @@ export async function getDmCollections(userId: string) {
           },
         },
       },
+      messages: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 1,
+        select: {
+          createdAt: true,
+        },
+      },
       members: {
         include: {
           user: true,
         },
       },
     },
+  });
+
+  existingDmRooms.sort((left, right) => {
+    const leftTimestamp =
+      left.messages[0]?.createdAt.getTime() ?? left.createdAt.getTime();
+    const rightTimestamp =
+      right.messages[0]?.createdAt.getTime() ?? right.createdAt.getTime();
+
+    return rightTimestamp - leftTimestamp;
   });
 
   await Promise.all(
