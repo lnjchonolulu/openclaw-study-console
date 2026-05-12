@@ -76,10 +76,14 @@ async function main() {
     const defaultAgentBaseName = toDefaultAgentBaseName(user.username);
     const defaultAgentName = `${defaultAgentBaseName} Agent`;
     const collapsedDefaultAgentName = `${defaultAgentBaseName}Agent`;
+    const lowercaseDefaultAgentName = `${user.username} Agent`;
+    const collapsedLowercaseDefaultAgentName = `${user.username}Agent`;
     const nextAgentName =
       !rawAgentName ||
       rawAgentName === "_(pick something you like)_" ||
-      rawAgentName === collapsedDefaultAgentName
+      rawAgentName === collapsedDefaultAgentName ||
+      rawAgentName === lowercaseDefaultAgentName ||
+      rawAgentName === collapsedLowercaseDefaultAgentName
         ? defaultAgentName
         : rawAgentName;
     const nextIdentityMd = replaceBulletValue(identityMd, "Name", nextAgentName);
