@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
-import { executeAgentActions, parseAgentActions } from "@/lib/agent-actions";
+import {
+  executeAgentActions,
+  executeSendHumanDm,
+  parseAgentActions,
+  type SendHumanDmArgs,
+} from "@/lib/agent-actions";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -90,6 +95,72 @@ export async function POST(request: Request) {
       instructions,
       message,
       conversationKey: `room:${dmRoom.room.id}`,
+      onToolCall: async (call) => {
+        if (call.name !== "send_human_dm") {
+          return JSON.stringify({
+            ok: false,
+            reason: "unknown_tool",
+          });
+        }
+
+        let parsedArgs: SendHumanDmArgs | null = null;
+
+        try {
+          const candidate = JSON.parse(call.argumentsJson) as Record<string, unknown>;
+          const toUsername =
+            typeof candidate.toUsername === "string"
+              ? candidate.toUsername.trim().replace(/^@/, "").toLowerCase()
+              : "";
+          const outboundMessage =
+            typeof candidate.message === "string" ? candidate.message.trim() : "";
+
+          if (toUsername && outboundMessage) {
+            parsedArgs = {
+              message: outboundMessage,
+              toUsername,
+            };
+          }
+        } catch {
+          parsedArgs = null;
+        }
+
+        if (!parsedArgs) {
+          return JSON.stringify({
+            ok: false,
+            reason: "invalid_arguments",
+          });
+        }
+
+        const delivery = await executeSendHumanDm({
+          ...parsedArgs,
+          senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+        });
+
+        return JSON.stringify(delivery);
+      },
+      tools: [
+        {
+          description:
+            "Send a direct message to a human participant inside this study app.",
+          name: "send_human_dm",
+          parameters: {
+            additionalProperties: false,
+            properties: {
+              message: {
+                description: "The exact message to send to the human participant.",
+                type: "string",
+              },
+              toUsername: {
+                description:
+                  "The recipient username inside this app, without the @ prefix.",
+                type: "string",
+              },
+            },
+            required: ["toUsername", "message"],
+            type: "object",
+          },
+        },
+      ],
     });
 
     const { actions, visibleText } = parseAgentActions(result.assistantText);

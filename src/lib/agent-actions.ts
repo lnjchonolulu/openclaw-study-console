@@ -1,6 +1,11 @@
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { prisma } from "@/lib/prisma";
 
+export type SendHumanDmArgs = {
+  message: string;
+  toUsername: string;
+};
+
 type SendHumanDmAction = {
   message: string;
   toUsername: string;
@@ -94,4 +99,62 @@ export async function executeAgentActions({
   }
 
   return delivered;
+}
+
+export async function executeSendHumanDm({
+  message,
+  senderAgentOpenclawId,
+  toUsername,
+}: SendHumanDmArgs & { senderAgentOpenclawId: string }) {
+  const recipient = await prisma.user.findUnique({
+    where: {
+      username: toUsername,
+    },
+    select: {
+      id: true,
+      status: true,
+      username: true,
+    },
+  });
+
+  if (!recipient || recipient.status !== "ACTIVE") {
+    return {
+      ok: false,
+      reason: "recipient_not_found",
+      toUsername,
+    };
+  }
+
+  const dmRoom = await getOrCreateAgentDmRoom(recipient.id, senderAgentOpenclawId);
+
+  if (!dmRoom) {
+    return {
+      ok: false,
+      reason: "dm_room_unavailable",
+      toUsername,
+    };
+  }
+
+  const createdMessage = await prisma.message.create({
+    data: {
+      roomId: dmRoom.room.id,
+      role: "AGENT",
+      agentId: senderAgentOpenclawId,
+      content: message,
+    },
+  });
+
+  await prisma.room.update({
+    where: {
+      id: dmRoom.room.id,
+    },
+    data: {},
+  });
+
+  return {
+    ok: true,
+    messageId: createdMessage.id,
+    roomId: dmRoom.room.id,
+    toUsername: recipient.username,
+  };
 }

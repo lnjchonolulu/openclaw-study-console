@@ -50,6 +50,18 @@ function extractAssistantText(payload: unknown) {
   return null;
 }
 
+type OpenClawFunctionTool = {
+  description?: string;
+  name: string;
+  parameters: Record<string, unknown>;
+};
+
+type OpenClawFunctionCall = {
+  argumentsJson: string;
+  callId: string;
+  name: string;
+};
+
 function getResponsesEndpoint() {
   const configuredUrl = process.env.OPENCLAW_RESPONSES_URL?.trim();
 
@@ -78,15 +90,19 @@ function getResponsesEndpoint() {
   throw new Error("Unsupported OpenClaw gateway URL format.");
 }
 
-export async function runAgentTurn({
+async function invokeOpenClawResponse({
   agentId,
+  input,
   instructions,
-  message,
+  previousResponseId,
+  tools,
   conversationKey,
 }: {
   agentId: string;
+  input: string | Array<Record<string, unknown>>;
   instructions?: string;
-  message: string;
+  previousResponseId?: string;
+  tools?: OpenClawFunctionTool[];
   conversationKey: string;
 }) {
   const endpoint = getResponsesEndpoint();
@@ -101,7 +117,20 @@ export async function runAgentTurn({
     body: JSON.stringify({
       model: `openclaw:${agentId}`,
       ...(instructions ? { instructions } : {}),
-      input: message,
+      ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+      ...(tools?.length
+        ? {
+            tools: tools.map((tool) => ({
+              type: "function",
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              },
+            })),
+          }
+        : {}),
+      input,
       user: conversationKey,
     }),
     cache: "no-store",
@@ -115,6 +144,118 @@ export async function runAgentTurn({
         ? payload.error
         : `OpenClaw HTTP API returned ${response.status}.`,
     );
+  }
+
+  return payload;
+}
+
+function extractFunctionCalls(payload: unknown): OpenClawFunctionCall[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  const output = candidate.output;
+
+  if (!Array.isArray(output)) {
+    return [];
+  }
+
+  return output.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const type = record.type;
+
+    if (type !== "function_call") {
+      return [];
+    }
+
+    const name =
+      typeof record.name === "string"
+        ? record.name
+        : typeof (record.function as Record<string, unknown> | undefined)?.name === "string"
+          ? ((record.function as Record<string, unknown>).name as string)
+          : null;
+
+    const callId =
+      typeof record.call_id === "string"
+        ? record.call_id
+        : typeof record.id === "string"
+          ? record.id
+          : null;
+
+    const argumentsJson =
+      typeof record.arguments === "string"
+        ? record.arguments
+        : typeof (record.function as Record<string, unknown> | undefined)?.arguments === "string"
+          ? ((record.function as Record<string, unknown>).arguments as string)
+          : null;
+
+    if (!name || !callId || !argumentsJson) {
+      return [];
+    }
+
+    return [
+      {
+        argumentsJson,
+        callId,
+        name,
+      },
+    ];
+  });
+}
+
+export async function runAgentTurn({
+  agentId,
+  instructions,
+  message,
+  conversationKey,
+  tools,
+  onToolCall,
+}: {
+  agentId: string;
+  instructions?: string;
+  message: string;
+  conversationKey: string;
+  tools?: OpenClawFunctionTool[];
+  onToolCall?: (call: OpenClawFunctionCall) => Promise<string>;
+}) {
+  let payload = await invokeOpenClawResponse({
+    agentId,
+    input: message,
+    instructions,
+    tools,
+    conversationKey,
+  });
+
+  if (tools?.length && onToolCall) {
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      const functionCalls = extractFunctionCalls(payload);
+
+      if (functionCalls.length === 0) {
+        break;
+      }
+
+      const outputs = await Promise.all(
+        functionCalls.map(async (call) => ({
+          call_id: call.callId,
+          output: await onToolCall(call),
+          type: "function_call_output",
+        })),
+      );
+
+      payload = await invokeOpenClawResponse({
+        agentId,
+        input: outputs,
+        instructions,
+        previousResponseId: typeof payload.id === "string" ? payload.id : undefined,
+        tools,
+        conversationKey,
+      });
+    }
   }
 
   const assistantText = extractAssistantText(payload);
