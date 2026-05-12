@@ -64,10 +64,19 @@ async function main() {
     const userMd = await readMarkdownFile(agentId, "USER.md");
     const identityMd = await readMarkdownFile(agentId, "IDENTITY.md");
     const nextUserMd = replaceBulletValue(userMd, "Name", user.username);
+    const rawAgentName = extractBulletValue(identityMd, "Name");
+    const defaultAgentName = `${user.displayName} Agent`;
+    const collapsedDefaultAgentName = `${user.displayName}Agent`;
     const nextAgentName =
-      extractBulletValue(identityMd, "Name") ?? `${user.username}'s agent`;
+      !rawAgentName ||
+      rawAgentName === "_(pick something you like)_" ||
+      rawAgentName === collapsedDefaultAgentName
+        ? defaultAgentName
+        : rawAgentName;
+    const nextIdentityMd = replaceBulletValue(identityMd, "Name", nextAgentName);
 
     await writeMarkdownFile(agentId, "USER.md", nextUserMd);
+    await writeMarkdownFile(agentId, "IDENTITY.md", nextIdentityMd);
 
     await prisma.user.update({
       where: { id: user.id },
