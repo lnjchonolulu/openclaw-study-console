@@ -162,6 +162,7 @@ export function buildAgentRuntimeInstructions({
   audience,
   behaviorConfig,
   counterpartLabel,
+  availableHumanUsernames,
   ownerDisplayName,
   ownerUsername,
   personaSummary,
@@ -170,6 +171,7 @@ export function buildAgentRuntimeInstructions({
   audience: AgentAudience;
   behaviorConfig: unknown;
   counterpartLabel: string;
+  availableHumanUsernames: string[];
   ownerDisplayName: string;
   ownerUsername: string;
   personaSummary?: string | null;
@@ -222,6 +224,14 @@ export function buildAgentRuntimeInstructions({
   }
 
   lines.push(
+    "",
+    "If you need the app to deliver a direct human DM on your behalf, append this block at the end of your reply:",
+    "<send-human-dm>",
+    "to: @username",
+    "message: Your message here",
+    "</send-human-dm>",
+    `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
+    "Only use this block when you truly want the app to send a direct message to a human participant.",
     "",
     "Keep these routing instructions in mind while answering the user's latest message.",
   );

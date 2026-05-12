@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
+import { executeAgentActions, parseAgentActions } from "@/lib/agent-actions";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -59,9 +60,21 @@ export async function POST(request: Request) {
   try {
     const audience =
       dmRoom.targetAgent.userId === user.id ? "direct_line" : "shared_spaces";
+    const activeHumans = await prisma.user.findMany({
+      where: {
+        status: "ACTIVE",
+      },
+      orderBy: {
+        username: "asc",
+      },
+      select: {
+        username: true,
+      },
+    });
     const instructions = buildAgentRuntimeInstructions({
       agentDisplayName: dmRoom.targetAgent.displayName,
       audience,
+      availableHumanUsernames: activeHumans.map((human) => human.username),
       behaviorConfig: dmRoom.targetAgent.soulConfigJson,
       counterpartLabel:
         audience === "direct_line"
@@ -79,12 +92,26 @@ export async function POST(request: Request) {
       conversationKey: `room:${dmRoom.room.id}`,
     });
 
+    const { actions, visibleText } = parseAgentActions(result.assistantText);
+    const assistantText =
+      visibleText ||
+      (actions.length > 0
+        ? "I handled that request."
+        : result.assistantText);
+
+    if (actions.length > 0) {
+      await executeAgentActions({
+        actions,
+        senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+      });
+    }
+
     const replyMessage = await prisma.message.create({
       data: {
         roomId: dmRoom.room.id,
         role: "AGENT",
         agentId: dmRoom.targetAgent.openclawAgentId,
-        content: result.assistantText,
+        content: assistantText,
       },
     });
 
@@ -96,7 +123,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      reply: result.assistantText,
+      reply: assistantText,
       replyMessage: {
         id: replyMessage.id,
         content: replyMessage.content,
