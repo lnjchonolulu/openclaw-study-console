@@ -122,11 +122,9 @@ async function invokeOpenClawResponse({
         ? {
             tools: tools.map((tool) => ({
               type: "function",
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-              },
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
             })),
           }
         : {}),
