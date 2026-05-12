@@ -13,6 +13,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { ChatClient } from "@/components/chat-client";
 
+const INITIAL_DM_PAGE_SIZE = 100;
+
 export default async function ChatPage({
   searchParams,
 }: {
@@ -52,7 +54,7 @@ export default async function ChatPage({
           orderBy: {
             createdAt: "desc",
           },
-          take: 100,
+          take: INITIAL_DM_PAGE_SIZE + 1,
           include: {
             agent: {
               include: {
@@ -65,7 +67,14 @@ export default async function ChatPage({
       },
     }));
 
+  const initialHasOlderMessages = Boolean(
+    room && room.messages.length > INITIAL_DM_PAGE_SIZE,
+  );
+
   if (room) {
+    if (room.messages.length > INITIAL_DM_PAGE_SIZE) {
+      room.messages = room.messages.slice(0, INITIAL_DM_PAGE_SIZE);
+    }
     room.messages.reverse();
   }
 
@@ -118,6 +127,7 @@ export default async function ChatPage({
                 }
               : null
         }
+        initialHasOlderMessages={initialHasOlderMessages}
         initialMessages={initialMessages}
         key={
           personDmRoom

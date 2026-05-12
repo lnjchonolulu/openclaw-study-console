@@ -91,6 +91,7 @@ function buildRenderRows(messages: ChatMessage[]): RenderRow[] {
 export function ChatClient({
   agentId,
   counterpart,
+  initialHasOlderMessages,
   initialMessages,
   recipientId,
   recipientKind,
@@ -103,6 +104,7 @@ export function ChatClient({
     displayName: string;
     meta: string;
   } | null;
+  initialHasOlderMessages: boolean;
   initialMessages: ChatMessage[];
   recipientId: string | null;
   recipientKind: "agent" | "person";
@@ -110,11 +112,18 @@ export function ChatClient({
   selfAvatar: AvatarViewModel;
 }) {
   const [messages, setMessages] = useState(initialMessages);
+  const [hasOlderMessages, setHasOlderMessages] = useState(initialHasOlderMessages);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const pendingScrollRestoreRef = useRef<{
+    previousScrollHeight: number;
+    previousScrollTop: number;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingSentAtRef = useRef(0);
   const typingTimeoutRef = useRef<number | null>(null);
@@ -133,12 +142,21 @@ export function ChatClient({
   }, [message]);
 
   useLayoutEffect(() => {
+    const messageList = messageListRef.current;
+    const pendingRestore = pendingScrollRestoreRef.current;
+
+    if (messageList && pendingRestore) {
+      const nextScrollHeight = messageList.scrollHeight;
+      messageList.scrollTop =
+        nextScrollHeight -
+        pendingRestore.previousScrollHeight +
+        pendingRestore.previousScrollTop;
+      pendingScrollRestoreRef.current = null;
+      return;
+    }
+
     messageEndRef.current?.scrollIntoView({ block: "end" });
   }, [renderRows, isSending, error, isOtherTyping]);
-
-  useEffect(() => {
-    setMessages(initialMessages);
-  }, [initialMessages]);
 
   useEffect(() => {
     if (!roomId) {
@@ -173,6 +191,7 @@ export function ChatClient({
       }
 
       const payload = (await response.json()) as {
+        hasOlderMessages?: boolean;
         isOtherTyping?: boolean;
         messages?: ChatMessage[];
       };
@@ -182,7 +201,11 @@ export function ChatClient({
       }
 
       if (payload.messages) {
-        setMessages(payload.messages);
+        setMessages((current) => mergeMessages(current, payload.messages ?? []));
+      }
+
+      if (typeof payload.hasOlderMessages === "boolean") {
+        setHasOlderMessages(payload.hasOlderMessages);
       }
 
       setIsOtherTyping(Boolean(payload.isOtherTyping));
@@ -358,9 +381,69 @@ export function ChatClient({
     }
   }
 
+  async function loadOlderMessages() {
+    if (!roomId || isLoadingOlder || !hasOlderMessages || messages.length === 0) {
+      return;
+    }
+
+    const oldestMessage = messages[0];
+    const messageList = messageListRef.current;
+
+    if (messageList) {
+      pendingScrollRestoreRef.current = {
+        previousScrollHeight: messageList.scrollHeight,
+        previousScrollTop: messageList.scrollTop,
+      };
+    }
+
+    setIsLoadingOlder(true);
+
+    try {
+      const response = await fetch(
+        `/api/dm/messages?roomId=${encodeURIComponent(roomId)}&before=${encodeURIComponent(
+          oldestMessage.createdAt,
+        )}`,
+      );
+
+      if (!response.ok) {
+        setIsLoadingOlder(false);
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        hasOlderMessages?: boolean;
+        messages?: ChatMessage[];
+      };
+
+      const olderMessages = payload.messages ?? [];
+
+      if (olderMessages.length > 0) {
+        setMessages((current) => mergeMessages(olderMessages, current));
+      }
+
+      setHasOlderMessages(Boolean(payload.hasOlderMessages));
+      setIsLoadingOlder(false);
+    } catch {
+      pendingScrollRestoreRef.current = null;
+      setIsLoadingOlder(false);
+    }
+  }
+
   return (
     <div className="chat-panel">
-      <div className="message-list" aria-live="polite">
+      <div
+        className="message-list"
+        aria-live="polite"
+        onScroll={(event) => {
+          if (event.currentTarget.scrollTop < 48) {
+            void loadOlderMessages();
+          }
+        }}
+        ref={messageListRef}
+      >
+        {isLoadingOlder ? (
+          <div className="message-load-state">Loading older messages...</div>
+        ) : null}
         {renderRows.map((row) =>
           row.type === "date" ? (
             <div className="message-date-divider" key={row.key}>
@@ -452,4 +535,36 @@ export function ChatClient({
       </form>
     </div>
   );
+}
+
+function mergeMessages(
+  previous: ChatMessage[],
+  incoming: ChatMessage[],
+): ChatMessage[] {
+  const byId = new Map<string, ChatMessage>();
+
+  [...previous, ...incoming].forEach((message) => {
+    byId.set(message.id, message);
+  });
+
+  const merged = Array.from(byId.values()).sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+
+  if (
+    merged.length === previous.length &&
+    merged.every(
+      (message, index) =>
+        previous[index] &&
+        previous[index].id === message.id &&
+        previous[index].content === message.content &&
+        previous[index].createdAt === message.createdAt &&
+        previous[index].role === message.role,
+    )
+  ) {
+    return previous;
+  }
+
+  return merged;
 }

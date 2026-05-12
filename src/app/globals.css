@@ -1103,6 +1103,13 @@ button.primary-button {
   overflow-y: auto;
 }
 
+.message-load-state {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .message-line {
   display: flex;
   align-items: flex-end;
