@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  extractMarkdownBulletValue,
   writeAgentMarkdownFile,
   writeHeartbeatEnabled,
 } from "@/lib/agent-workspace";
@@ -27,13 +28,18 @@ export async function PATCH(request: Request) {
     userProfileConfig?: unknown;
   };
 
-  const userDisplayName = body.userDisplayName?.trim() || user.username;
-  const agentDisplayName =
-    body.agentDisplayName?.trim() || `${user.username}'s agent`;
-  const agentId = body.agentId?.trim() || user.agent.openclawAgentId;
   const userMd = typeof body.userMd === "string" ? body.userMd : "";
   const identityMd = typeof body.identityMd === "string" ? body.identityMd : "";
   const soulMd = typeof body.soulMd === "string" ? body.soulMd : "";
+  const userDisplayName =
+    extractMarkdownBulletValue(userMd, "Name")?.trim() ||
+    body.userDisplayName?.trim() ||
+    user.username;
+  const agentDisplayName =
+    extractMarkdownBulletValue(identityMd, "Name")?.trim() ||
+    body.agentDisplayName?.trim() ||
+    `${user.username}'s agent`;
+  const agentId = body.agentId?.trim() || user.agent.openclawAgentId;
   const heartbeatEnabled = Boolean(body.heartbeatEnabled);
   const currentUserProfileConfig = normalizeProfileConfig(
     user.profileConfigJson,
