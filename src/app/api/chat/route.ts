@@ -11,6 +11,21 @@ import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
+function looksLikeHumanDmRequest(message: string, usernames: string[]) {
+  const normalized = message.toLowerCase();
+  const intentPattern =
+    /\b(send|message|dm|tell|notify|text|reach out to|contact)\b/;
+
+  if (!intentPattern.test(normalized)) {
+    return false;
+  }
+
+  return usernames.some((username) => {
+    const lowered = username.toLowerCase();
+    return normalized.includes(`@${lowered}`) || normalized.includes(lowered);
+  });
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -90,78 +105,118 @@ export async function POST(request: Request) {
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
 
-    const result = await runAgentTurn({
-      agentId: dmRoom.targetAgent.openclawAgentId,
-      instructions,
-      message,
-      conversationKey: `room:${dmRoom.room.id}`,
-      onToolCall: async (call) => {
-        if (call.name !== "send_human_dm") {
-          return JSON.stringify({
-            ok: false,
-            reason: "unknown_tool",
-          });
-        }
-
-        let parsedArgs: SendHumanDmArgs | null = null;
-
-        try {
-          const candidate = JSON.parse(call.argumentsJson) as Record<string, unknown>;
-          const toUsername =
-            typeof candidate.toUsername === "string"
-              ? candidate.toUsername.trim().replace(/^@/, "").toLowerCase()
-              : "";
-          const outboundMessage =
-            typeof candidate.message === "string" ? candidate.message.trim() : "";
-
-          if (toUsername && outboundMessage) {
-            parsedArgs = {
-              message: outboundMessage,
-              toUsername,
-            };
-          }
-        } catch {
-          parsedArgs = null;
-        }
-
-        if (!parsedArgs) {
-          return JSON.stringify({
-            ok: false,
-            reason: "invalid_arguments",
-          });
-        }
-
-        const delivery = await executeSendHumanDm({
-          ...parsedArgs,
-          senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+    const toolExecutor = async (call: {
+      argumentsJson: string;
+      name: string;
+    }) => {
+      if (call.name !== "send_human_dm") {
+        return JSON.stringify({
+          ok: false,
+          reason: "unknown_tool",
         });
+      }
 
-        return JSON.stringify(delivery);
-      },
-      tools: [
-        {
-          description:
-            "Send a direct message to a human participant inside this study app.",
-          name: "send_human_dm",
-          parameters: {
-            additionalProperties: false,
-            properties: {
-              message: {
-                description: "The exact message to send to the human participant.",
-                type: "string",
+      let parsedArgs: SendHumanDmArgs | null = null;
+
+      try {
+        const candidate = JSON.parse(call.argumentsJson) as Record<string, unknown>;
+        const toUsername =
+          typeof candidate.toUsername === "string"
+            ? candidate.toUsername.trim().replace(/^@/, "").toLowerCase()
+            : "";
+        const outboundMessage =
+          typeof candidate.message === "string" ? candidate.message.trim() : "";
+
+        if (toUsername && outboundMessage) {
+          parsedArgs = {
+            message: outboundMessage,
+            toUsername,
+          };
+        }
+      } catch {
+        parsedArgs = null;
+      }
+
+      if (!parsedArgs) {
+        return JSON.stringify({
+          ok: false,
+          reason: "invalid_arguments",
+        });
+      }
+
+      const delivery = await executeSendHumanDm({
+        ...parsedArgs,
+        senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+      });
+
+      return JSON.stringify(delivery);
+    };
+
+    const availableHumanUsernames = activeHumans.map((human) => human.username);
+    const isHumanDmRequest = looksLikeHumanDmRequest(message, availableHumanUsernames);
+
+    let result;
+
+    try {
+      result = await runAgentTurn({
+        agentId: dmRoom.targetAgent.openclawAgentId,
+        instructions,
+        message,
+        conversationKey: `room:${dmRoom.room.id}`,
+        onToolCall: toolExecutor,
+        tools: [
+          {
+            description:
+              "Send a direct message to a human participant inside this study app.",
+            name: "send_human_dm",
+            parameters: {
+              additionalProperties: false,
+              properties: {
+                message: {
+                  description: "The exact message to send to the human participant.",
+                  type: "string",
+                },
+                toUsername: {
+                  description:
+                    "The recipient username inside this app, without the @ prefix.",
+                  type: "string",
+                },
               },
-              toUsername: {
-                description:
-                  "The recipient username inside this app, without the @ prefix.",
-                type: "string",
-              },
+              required: ["toUsername", "message"],
+              type: "object",
             },
-            required: ["toUsername", "message"],
-            type: "object",
           },
-        },
-      ],
-    });
+        ],
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "";
+
+      if (!isHumanDmRequest || !errorMessage.includes("400")) {
+        throw error;
+      }
+
+      const fallbackInstructions = [
+        instructions,
+        "",
+        "Fallback mode for this turn:",
+        "The tool call path is unavailable right now.",
+        "If the user is asking you to send a human DM inside this app, respond with only one block in exactly this format and no extra prose:",
+        "<send-human-dm>",
+        "to: @username",
+        "message: Exact message text",
+        "</send-human-dm>",
+        "Do not mention pairing, sessions_send, sessions, or gateway limitations.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      result = await runAgentTurn({
+        agentId: dmRoom.targetAgent.openclawAgentId,
+        instructions: fallbackInstructions,
+        message,
+        conversationKey: `room:${dmRoom.room.id}:fallback`,
+      });
+    }
 
     const { actions, visibleText } = parseAgentActions(result.assistantText);
     const assistantText =

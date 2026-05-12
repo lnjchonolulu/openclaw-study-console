@@ -139,9 +139,15 @@ async function invokeOpenClawResponse({
   const payload = (await response.json()) as Record<string, unknown>;
 
   if (!response.ok) {
+    const structuredError =
+      payload.error && typeof payload.error === "object"
+        ? JSON.stringify(payload.error)
+        : null;
     throw new Error(
       typeof payload.error === "string"
         ? payload.error
+        : structuredError
+          ? structuredError
         : `OpenClaw HTTP API returned ${response.status}.`,
     );
   }
