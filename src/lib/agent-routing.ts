@@ -225,13 +225,15 @@ export function buildAgentRuntimeInstructions({
 
   lines.push(
     "",
-    "If you need the app to deliver a direct human DM on your behalf, append this block at the end of your reply:",
+    "Human participants in this study app are not OpenClaw sessions. Do not use sessions_send, session tools, or pairing-based delivery when you want to contact a human participant here.",
+    "If you want the app to deliver a direct human DM on your behalf, append this block at the end of your reply instead:",
     "<send-human-dm>",
     "to: @username",
     "message: Your message here",
     "</send-human-dm>",
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
     "Only use this block when you truly want the app to send a direct message to a human participant.",
+    "Do not claim that pairing is required for these human DMs inside this app. Use the block above instead.",
     "",
     "Keep these routing instructions in mind while answering the user's latest message.",
   );
