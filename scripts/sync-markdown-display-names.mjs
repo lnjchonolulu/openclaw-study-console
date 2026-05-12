@@ -6,6 +6,14 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const openclawRoot = path.join(os.homedir(), ".openclaw");
 
+function toDefaultAgentBaseName(username) {
+  if (!username) {
+    return "User";
+  }
+
+  return username.charAt(0).toUpperCase() + username.slice(1);
+}
+
 function extractBulletValue(source, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = source.match(new RegExp(`- \\*\\*${escaped}:\\*\\*\\s*(.+)$`, "m"));
@@ -65,8 +73,9 @@ async function main() {
     const identityMd = await readMarkdownFile(agentId, "IDENTITY.md");
     const nextUserMd = replaceBulletValue(userMd, "Name", user.username);
     const rawAgentName = extractBulletValue(identityMd, "Name");
-    const defaultAgentName = `${user.displayName} Agent`;
-    const collapsedDefaultAgentName = `${user.displayName}Agent`;
+    const defaultAgentBaseName = toDefaultAgentBaseName(user.username);
+    const defaultAgentName = `${defaultAgentBaseName} Agent`;
+    const collapsedDefaultAgentName = `${defaultAgentBaseName}Agent`;
     const nextAgentName =
       !rawAgentName ||
       rawAgentName === "_(pick something you like)_" ||
