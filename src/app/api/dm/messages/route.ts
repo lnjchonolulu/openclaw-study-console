@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     include: {
       messages: {
         orderBy: {
-          createdAt: "asc",
+          createdAt: "desc",
         },
         take: 100,
         include: {
@@ -47,6 +47,8 @@ export async function GET(request: Request) {
   if (!room) {
     return NextResponse.json({ error: "Room was not found." }, { status: 404 });
   }
+
+  room.messages.reverse();
 
   const activeTyping = await prisma.typingState.findMany({
     where: {

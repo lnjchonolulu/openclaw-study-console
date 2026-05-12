@@ -50,7 +50,7 @@ export default async function ChatPage({
       include: {
         messages: {
           orderBy: {
-            createdAt: "asc",
+            createdAt: "desc",
           },
           take: 100,
           include: {
@@ -64,6 +64,10 @@ export default async function ChatPage({
         },
       },
     }));
+
+  if (room) {
+    room.messages.reverse();
+  }
 
   const initialMessages =
     room?.messages.length
