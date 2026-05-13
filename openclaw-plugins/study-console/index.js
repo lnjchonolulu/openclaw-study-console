@@ -1,3 +1,5 @@
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+
 function jsonToolResult(payload) {
   return {
     content: [
@@ -167,7 +169,14 @@ function createScheduleDmTool(ctx) {
   };
 }
 
-export default function studyConsolePlugin(api) {
-  api.registerTool((ctx) => createSendDmTool(ctx), { name: "study_send_dm" });
-  api.registerTool((ctx) => createScheduleDmTool(ctx), { name: "study_schedule_dm" });
-}
+export default definePluginEntry({
+  id: "study_console",
+  name: "Study Console",
+  description: "Study console participant messaging tools.",
+  register(api) {
+    api.registerTool((ctx) => createSendDmTool(ctx), { name: "study_send_dm" });
+    api.registerTool((ctx) => createScheduleDmTool(ctx), {
+      name: "study_schedule_dm",
+    });
+  },
+});

@@ -1,0 +1,25 @@
+{
+  "id": "study_console",
+  "name": "Study Console",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string"
+      },
+      "token": {
+        "type": "string"
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "study_send_dm",
+      "study_schedule_dm"
+    ]
+  }
+}
