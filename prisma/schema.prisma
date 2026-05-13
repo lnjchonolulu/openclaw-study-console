@@ -53,6 +53,23 @@ enum ScheduledMessageStatus {
   FAILED
 }
 
+enum AgentTaskStatus {
+  OPEN
+  WAITING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum AgentTaskEventType {
+  USER_REQUEST
+  AGENT_DECISION
+  OUTBOUND_MESSAGE
+  SCHEDULED_MESSAGE
+  INBOUND_REPLY
+  SYSTEM_NOTE
+}
+
 model User {
   id                String             @id @default(cuid())
   username          String             @unique
@@ -74,6 +91,8 @@ model User {
   roomMembers       RoomMember[]
   typingStates      TypingState[]
   scheduledMessages ScheduledMessage[]
+  requestedTasks    AgentTask[]        @relation("AgentTaskRequester")
+  targetTasks       AgentTask[]        @relation("AgentTaskTargetUser")
 }
 
 model Team {
@@ -101,6 +120,7 @@ model Agent {
   messages          Message[]
   roomAgents        RoomAgent[]
   scheduledMessages ScheduledMessage[]
+  tasks             AgentTask[]
 }
 
 model FileRecord {
@@ -145,6 +165,7 @@ model Room {
   agents            RoomAgent[]
   typingStates      TypingState[]
   scheduledMessages ScheduledMessage[]
+  agentTasks        AgentTask[]
 
   @@index([ownerUserId, type])
   @@index([teamId, type])
@@ -181,6 +202,42 @@ model ScheduledMessage {
   @@index([status, deliverAt])
   @@index([toUserId])
   @@index([agentId])
+}
+
+model AgentTask {
+  id              String          @id @default(cuid())
+  agentId         String
+  requesterUserId String
+  targetUserId    String?
+  sourceRoomId    String?
+  status          AgentTaskStatus @default(OPEN)
+  kind            String
+  title           String
+  objective       String
+  resultSummary   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  agent           Agent           @relation(fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+  requester       User            @relation("AgentTaskRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  targetUser      User?           @relation("AgentTaskTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  sourceRoom      Room?           @relation(fields: [sourceRoomId], references: [id], onDelete: SetNull)
+  events          AgentTaskEvent[]
+
+  @@index([agentId, status])
+  @@index([requesterUserId, status])
+  @@index([targetUserId, status])
+}
+
+model AgentTaskEvent {
+  id        String             @id @default(cuid())
+  taskId    String
+  type      AgentTaskEventType
+  summary   String
+  payload   Json?
+  createdAt DateTime           @default(now())
+  task      AgentTask          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
 }
 
 model RoomMember {

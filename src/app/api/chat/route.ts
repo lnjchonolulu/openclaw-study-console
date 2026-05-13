@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
-import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
+import { createAndRunOutboundAgentTask } from "@/lib/agent-task-workflow";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -178,58 +178,31 @@ export async function POST(request: Request) {
     });
 
     if (actionIntent) {
-      if (!actionIntent.message) {
-        const assistantText =
-          actionIntent.kind === "schedule_dm"
-            ? `What message should I send to @${actionIntent.toUsername} later?`
-            : `What message should I send to @${actionIntent.toUsername}?`;
+      const taskResult = await createAndRunOutboundAgentTask({
+        agentDisplayName: dmRoom.targetAgent.displayName,
+        agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+        behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+        delayMinutes: actionIntent.delayMinutes,
+        explicitMessage: actionIntent.message,
+        kind: actionIntent.kind,
+        ownerDisplayName: dmRoom.targetAgent.user.displayName,
+        ownerUsername: dmRoom.targetAgent.user.username,
+        personaSummary: dmRoom.targetAgent.personaSummary,
+        requesterDisplayName: user.displayName,
+        requesterUserId: user.id,
+        requesterUsername: user.username,
+        sourceMessage: message,
+        sourceRoomId: dmRoom.room.id,
+        targetUsername: actionIntent.toUsername,
+      });
 
-        const replyMessage = await prisma.message.create({
-          data: {
-            roomId: dmRoom.room.id,
-            role: "AGENT",
-            agentId: dmRoom.targetAgent.openclawAgentId,
-            content: assistantText,
-          },
-        });
-
-        await prisma.room.update({
-          where: {
-            id: dmRoom.room.id,
-          },
-          data: {},
-        });
-
-        return NextResponse.json({
-          reply: assistantText,
-          replyMessage: {
-            id: replyMessage.id,
-            content: replyMessage.content,
-            createdAt: replyMessage.createdAt.toISOString(),
-          },
-          roomId: dmRoom.room.id,
-        });
-      }
-
-      const delivery =
-        actionIntent.kind === "schedule_dm"
-          ? await scheduleAgentDm({
-              deliverAt: new Date(Date.now() + (actionIntent.delayMinutes ?? 1) * 60 * 1000),
-              message: actionIntent.message,
-              senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-              toUsername: actionIntent.toUsername,
-            })
-          : await sendAgentDm({
-              message: actionIntent.message,
-              senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-              toUsername: actionIntent.toUsername,
-            });
-
-      const assistantText = delivery.ok
-        ? actionIntent.kind === "schedule_dm"
-          ? `Scheduled a message to @${actionIntent.toUsername}.`
-          : `Sent a message to @${actionIntent.toUsername}.`
-        : `I could not deliver that message: ${delivery.reason}.`;
+      const assistantText = taskResult.needsClarification
+        ? taskResult.question
+        : taskResult.ok
+          ? actionIntent.kind === "schedule_dm"
+            ? `Scheduled a message to @${taskResult.toUsername}.`
+            : `Sent a message to @${taskResult.toUsername}.`
+          : `I could not deliver that message: ${taskResult.reason}.`;
 
       const replyMessage = await prisma.message.create({
         data: {
