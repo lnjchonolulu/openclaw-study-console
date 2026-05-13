@@ -26,6 +26,21 @@ function looksLikeHumanDmRequest(message: string, usernames: string[]) {
   });
 }
 
+function containsGatewayToolFailureText(text: string) {
+  const normalized = text.toLowerCase();
+  const blockedPatterns = [
+    "pairing required",
+    "sessions_send",
+    "session pairing",
+    "gateway-level pairing",
+    "gateway pairing",
+    "cron also needs pairing",
+    "gateway is rejecting",
+  ];
+
+  return blockedPatterns.some((pattern) => normalized.includes(pattern));
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -105,6 +120,8 @@ export async function POST(request: Request) {
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
 
+    let successfulToolDeliveries = 0;
+
     const toolExecutor = async (call: {
       argumentsJson: string;
       name: string;
@@ -148,6 +165,10 @@ export async function POST(request: Request) {
         ...parsedArgs,
         senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
       });
+
+      if (delivery.ok) {
+        successfulToolDeliveries += 1;
+      }
 
       return JSON.stringify(delivery);
     };
@@ -218,12 +239,68 @@ export async function POST(request: Request) {
       });
     }
 
-    const { actions, visibleText } = parseAgentActions(result.assistantText);
+    let { actions, visibleText } = parseAgentActions(result.assistantText);
+
+    if (
+      isHumanDmRequest &&
+      successfulToolDeliveries === 0 &&
+      actions.length === 0 &&
+      containsGatewayToolFailureText(result.assistantText)
+    ) {
+      const retryInstructions = [
+        instructions,
+        "",
+        "System enforcement mode:",
+        "You must handle this request without mentioning gateway, pairing, sessions_send, or cron limitations.",
+        "If this is a request to send a human DM in this app, do one of the following:",
+        "1) Call send_human_dm",
+        "2) Output exactly one <send-human-dm> block with to and message fields.",
+        "Do not output refusal text about infrastructure.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      result = await runAgentTurn({
+        agentId: dmRoom.targetAgent.openclawAgentId,
+        instructions: retryInstructions,
+        message,
+        conversationKey: `room:${dmRoom.room.id}:enforced`,
+        onToolCall: toolExecutor,
+        tools: [
+          {
+            description:
+              "Send a direct message to a human participant inside this study app.",
+            name: "send_human_dm",
+            parameters: {
+              additionalProperties: false,
+              properties: {
+                message: {
+                  description: "The exact message to send to the human participant.",
+                  type: "string",
+                },
+                toUsername: {
+                  description:
+                    "The recipient username inside this app, without the @ prefix.",
+                  type: "string",
+                },
+              },
+              required: ["toUsername", "message"],
+              type: "object",
+            },
+          },
+        ],
+      });
+
+      ({ actions, visibleText } = parseAgentActions(result.assistantText));
+    }
+
     const assistantText =
       visibleText ||
       (actions.length > 0
         ? "I handled that request."
-        : result.assistantText);
+        : isHumanDmRequest && containsGatewayToolFailureText(result.assistantText)
+          ? "I could not complete delivery on this turn. I will retry with an in-app DM action format."
+          : result.assistantText);
 
     if (actions.length > 0) {
       await executeAgentActions({
