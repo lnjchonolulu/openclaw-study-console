@@ -6,6 +6,9 @@
   "openclaw": {
     "id": "study_console",
     "name": "Study Console",
-    "description": "Study console participant messaging tools."
+    "description": "Study console participant messaging tools.",
+    "extensions": [
+      "./index.js"
+    ]
   }
 }
