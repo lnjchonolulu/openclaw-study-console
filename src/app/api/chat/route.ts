@@ -13,6 +13,10 @@ type StudyActionIntent = {
   toUsername: string;
 };
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function extractQuotedText(message: string) {
   const quoteMatch = message.match(/["'“”‘’]([^"'“”‘’]+)["'“”‘’]/);
 
@@ -69,7 +73,11 @@ function parseStudyActionIntent({
       ? currentUsername
       : activeUsernames.find((username) => {
           const lowered = username.toLowerCase();
-          return normalized.includes(`@${lowered}`) || normalized.includes(lowered);
+          const escaped = escapeRegExp(lowered);
+          return (
+            normalized.includes(`@${lowered}`) ||
+            new RegExp(`\\b${escaped}\\b`).test(normalized)
+          );
         });
 
   if (!toUsername) {
@@ -82,33 +90,6 @@ function parseStudyActionIntent({
     message: extractQuotedText(message),
     toUsername,
   };
-}
-
-async function draftActionMessage({
-  agentId,
-  conversationKey,
-  instructions,
-  originalRequest,
-}: {
-  agentId: string;
-  conversationKey: string;
-  instructions: string;
-  originalRequest: string;
-}) {
-  const result = await runAgentTurn({
-    agentId,
-    conversationKey: `${conversationKey}:draft-action-message`,
-    instructions: [
-      instructions,
-      "",
-      "For this turn, draft only the exact message body that should be delivered to the human participant.",
-      "Do not mention tools, scheduling, gateway, pairing, or delivery mechanics.",
-      "Return only the message body, with no preface.",
-    ].join("\n"),
-    message: originalRequest,
-  });
-
-  return result.assistantText.trim();
 }
 
 export async function POST(request: Request) {
@@ -197,25 +178,49 @@ export async function POST(request: Request) {
     });
 
     if (actionIntent) {
-      const outboundMessage =
-        actionIntent.message ||
-        (await draftActionMessage({
-          agentId: dmRoom.targetAgent.openclawAgentId,
-          conversationKey: `room:${dmRoom.room.id}`,
-          instructions,
-          originalRequest: message,
-        }));
+      if (!actionIntent.message) {
+        const assistantText =
+          actionIntent.kind === "schedule_dm"
+            ? `What message should I send to @${actionIntent.toUsername} later?`
+            : `What message should I send to @${actionIntent.toUsername}?`;
+
+        const replyMessage = await prisma.message.create({
+          data: {
+            roomId: dmRoom.room.id,
+            role: "AGENT",
+            agentId: dmRoom.targetAgent.openclawAgentId,
+            content: assistantText,
+          },
+        });
+
+        await prisma.room.update({
+          where: {
+            id: dmRoom.room.id,
+          },
+          data: {},
+        });
+
+        return NextResponse.json({
+          reply: assistantText,
+          replyMessage: {
+            id: replyMessage.id,
+            content: replyMessage.content,
+            createdAt: replyMessage.createdAt.toISOString(),
+          },
+          roomId: dmRoom.room.id,
+        });
+      }
 
       const delivery =
         actionIntent.kind === "schedule_dm"
           ? await scheduleAgentDm({
               deliverAt: new Date(Date.now() + (actionIntent.delayMinutes ?? 1) * 60 * 1000),
-              message: outboundMessage,
+              message: actionIntent.message,
               senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
               toUsername: actionIntent.toUsername,
             })
           : await sendAgentDm({
-              message: outboundMessage,
+              message: actionIntent.message,
               senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
               toUsername: actionIntent.toUsername,
             });
