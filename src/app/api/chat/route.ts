@@ -1,45 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
-import {
-  executeAgentActions,
-  executeSendHumanDm,
-  parseAgentActions,
-  type SendHumanDmArgs,
-} from "@/lib/agent-actions";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
-
-function looksLikeHumanDmRequest(message: string, usernames: string[]) {
-  const normalized = message.toLowerCase();
-  const intentPattern =
-    /\b(send|message|dm|tell|notify|text|reach out to|contact)\b/;
-
-  if (!intentPattern.test(normalized)) {
-    return false;
-  }
-
-  return usernames.some((username) => {
-    const lowered = username.toLowerCase();
-    return normalized.includes(`@${lowered}`) || normalized.includes(lowered);
-  });
-}
-
-function containsGatewayToolFailureText(text: string) {
-  const normalized = text.toLowerCase();
-  const blockedPatterns = [
-    "pairing required",
-    "sessions_send",
-    "session pairing",
-    "gateway-level pairing",
-    "gateway pairing",
-    "cron also needs pairing",
-    "gateway is rejecting",
-  ];
-
-  return blockedPatterns.some((pattern) => normalized.includes(pattern));
-}
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -120,194 +84,14 @@ export async function POST(request: Request) {
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
 
-    let successfulToolDeliveries = 0;
+    const result = await runAgentTurn({
+      agentId: dmRoom.targetAgent.openclawAgentId,
+      instructions,
+      message,
+      conversationKey: `room:${dmRoom.room.id}`,
+    });
 
-    const toolExecutor = async (call: {
-      argumentsJson: string;
-      name: string;
-    }) => {
-      if (call.name !== "send_human_dm") {
-        return JSON.stringify({
-          ok: false,
-          reason: "unknown_tool",
-        });
-      }
-
-      let parsedArgs: SendHumanDmArgs | null = null;
-
-      try {
-        const candidate = JSON.parse(call.argumentsJson) as Record<string, unknown>;
-        const toUsername =
-          typeof candidate.toUsername === "string"
-            ? candidate.toUsername.trim().replace(/^@/, "").toLowerCase()
-            : "";
-        const outboundMessage =
-          typeof candidate.message === "string" ? candidate.message.trim() : "";
-
-        if (toUsername && outboundMessage) {
-          parsedArgs = {
-            message: outboundMessage,
-            toUsername,
-          };
-        }
-      } catch {
-        parsedArgs = null;
-      }
-
-      if (!parsedArgs) {
-        return JSON.stringify({
-          ok: false,
-          reason: "invalid_arguments",
-        });
-      }
-
-      const delivery = await executeSendHumanDm({
-        ...parsedArgs,
-        senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-      });
-
-      if (delivery.ok) {
-        successfulToolDeliveries += 1;
-      }
-
-      return JSON.stringify(delivery);
-    };
-
-    const availableHumanUsernames = activeHumans.map((human) => human.username);
-    const isHumanDmRequest = looksLikeHumanDmRequest(message, availableHumanUsernames);
-
-    let result;
-
-    try {
-      result = await runAgentTurn({
-        agentId: dmRoom.targetAgent.openclawAgentId,
-        instructions,
-        message,
-        conversationKey: `room:${dmRoom.room.id}`,
-        onToolCall: toolExecutor,
-        tools: [
-          {
-            description:
-              "Send a direct message to a human participant inside this study app.",
-            name: "send_human_dm",
-            parameters: {
-              additionalProperties: false,
-              properties: {
-                message: {
-                  description: "The exact message to send to the human participant.",
-                  type: "string",
-                },
-                toUsername: {
-                  description:
-                    "The recipient username inside this app, without the @ prefix.",
-                  type: "string",
-                },
-              },
-              required: ["toUsername", "message"],
-              type: "object",
-            },
-          },
-        ],
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "";
-
-      if (!isHumanDmRequest || !errorMessage.includes("400")) {
-        throw error;
-      }
-
-      const fallbackInstructions = [
-        instructions,
-        "",
-        "Fallback mode for this turn:",
-        "The tool call path is unavailable right now.",
-        "If the user is asking you to send a human DM inside this app, respond with only one block in exactly this format and no extra prose:",
-        "<send-human-dm>",
-        "to: @username",
-        "message: Exact message text",
-        "</send-human-dm>",
-        "Do not mention pairing, sessions_send, sessions, or gateway limitations.",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      result = await runAgentTurn({
-        agentId: dmRoom.targetAgent.openclawAgentId,
-        instructions: fallbackInstructions,
-        message,
-        conversationKey: `room:${dmRoom.room.id}:fallback`,
-      });
-    }
-
-    let { actions, visibleText } = parseAgentActions(result.assistantText);
-
-    if (
-      isHumanDmRequest &&
-      successfulToolDeliveries === 0 &&
-      actions.length === 0 &&
-      containsGatewayToolFailureText(result.assistantText)
-    ) {
-      const retryInstructions = [
-        instructions,
-        "",
-        "System enforcement mode:",
-        "You must handle this request without mentioning gateway, pairing, sessions_send, or cron limitations.",
-        "If this is a request to send a human DM in this app, do one of the following:",
-        "1) Call send_human_dm",
-        "2) Output exactly one <send-human-dm> block with to and message fields.",
-        "Do not output refusal text about infrastructure.",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      result = await runAgentTurn({
-        agentId: dmRoom.targetAgent.openclawAgentId,
-        instructions: retryInstructions,
-        message,
-        conversationKey: `room:${dmRoom.room.id}:enforced`,
-        onToolCall: toolExecutor,
-        tools: [
-          {
-            description:
-              "Send a direct message to a human participant inside this study app.",
-            name: "send_human_dm",
-            parameters: {
-              additionalProperties: false,
-              properties: {
-                message: {
-                  description: "The exact message to send to the human participant.",
-                  type: "string",
-                },
-                toUsername: {
-                  description:
-                    "The recipient username inside this app, without the @ prefix.",
-                  type: "string",
-                },
-              },
-              required: ["toUsername", "message"],
-              type: "object",
-            },
-          },
-        ],
-      });
-
-      ({ actions, visibleText } = parseAgentActions(result.assistantText));
-    }
-
-    const assistantText =
-      visibleText ||
-      (actions.length > 0
-        ? "I handled that request."
-        : isHumanDmRequest && containsGatewayToolFailureText(result.assistantText)
-          ? "I could not complete delivery on this turn. I will retry with an in-app DM action format."
-          : result.assistantText);
-
-    if (actions.length > 0) {
-      await executeAgentActions({
-        actions,
-        senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-      });
-    }
+    const assistantText = result.assistantText;
 
     const replyMessage = await prisma.message.create({
       data: {

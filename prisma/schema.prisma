@@ -46,26 +46,34 @@ enum RoomAgentRole {
   COLLABORATOR
 }
 
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+  CANCELED
+  FAILED
+}
+
 model User {
-  id           String      @id @default(cuid())
-  username     String      @unique
-  passwordHash String
-  displayName  String
+  id                String             @id @default(cuid())
+  username          String             @unique
+  passwordHash      String
+  displayName       String
   profileConfigJson Json?
-  role         UserRole    @default(PARTICIPANT)
-  status       UserStatus  @default(ACTIVE)
-  teamId       String?
-  agentId      String?     @unique
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  team         Team?       @relation(fields: [teamId], references: [id])
-  agent        Agent?
-  files        FileRecord[]
-  messages     Message[]
-  sessions     Session[]
-  ownedRooms   Room[]      @relation("RoomOwner")
-  roomMembers  RoomMember[]
-  typingStates TypingState[]
+  role              UserRole           @default(PARTICIPANT)
+  status            UserStatus         @default(ACTIVE)
+  teamId            String?
+  agentId           String?            @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  team              Team?              @relation(fields: [teamId], references: [id])
+  agent             Agent?
+  files             FileRecord[]
+  messages          Message[]
+  sessions          Session[]
+  ownedRooms        Room[]             @relation("RoomOwner")
+  roomMembers       RoomMember[]
+  typingStates      TypingState[]
+  scheduledMessages ScheduledMessage[]
 }
 
 model Team {
@@ -79,62 +87,64 @@ model Team {
 }
 
 model Agent {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  openclawAgentId String   @unique
-  displayName     String
-  workspacePath   String
+  id                String             @id @default(cuid())
+  userId            String             @unique
+  openclawAgentId   String             @unique
+  displayName       String
+  workspacePath     String
   profileConfigJson Json?
-  personaSummary  String?
-  soulConfigJson  Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  user            User     @relation(fields: [userId], references: [id])
-  messages        Message[]
-  roomAgents      RoomAgent[]
+  personaSummary    String?
+  soulConfigJson    Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  user              User               @relation(fields: [userId], references: [id])
+  messages          Message[]
+  roomAgents        RoomAgent[]
+  scheduledMessages ScheduledMessage[]
 }
 
 model FileRecord {
-  id          String         @id @default(cuid())
-  ownerUserId String?
-  teamId      String?
-  roomId      String?
-  parentId    String?
-  systemKey   String?        @unique
-  filename    String
-  storageKey  String
-  mimeType    String?
-  isFolder    Boolean        @default(false)
-  sizeBytes   Int?
-  visibility  FileVisibility @default(PRIVATE)
-  sourceType  String
+  id               String         @id @default(cuid())
+  ownerUserId      String?
+  teamId           String?
+  roomId           String?
+  parentId         String?
+  systemKey        String?        @unique
+  filename         String
+  storageKey       String
+  mimeType         String?
+  isFolder         Boolean        @default(false)
+  sizeBytes        Int?
+  visibility       FileVisibility @default(PRIVATE)
+  sourceType       String
   accessConfigJson Json?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  owner       User?          @relation(fields: [ownerUserId], references: [id])
-  team        Team?          @relation(fields: [teamId], references: [id])
-  room        Room?          @relation(fields: [roomId], references: [id])
-  parent      FileRecord?    @relation("FileRecordChildren", fields: [parentId], references: [id], onDelete: SetNull)
-  children    FileRecord[]   @relation("FileRecordChildren")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  owner            User?          @relation(fields: [ownerUserId], references: [id])
+  team             Team?          @relation(fields: [teamId], references: [id])
+  room             Room?          @relation(fields: [roomId], references: [id])
+  parent           FileRecord?    @relation("FileRecordChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children         FileRecord[]   @relation("FileRecordChildren")
 
   @@index([parentId])
 }
 
 model Room {
-  id           String       @id @default(cuid())
-  type         RoomType
-  name         String       @default("Untitled room")
-  teamId       String?
-  ownerUserId  String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  team         Team?        @relation(fields: [teamId], references: [id])
-  owner        User?        @relation("RoomOwner", fields: [ownerUserId], references: [id])
-  messages     Message[]
-  files        FileRecord[]
-  members      RoomMember[]
-  agents       RoomAgent[]
-  typingStates TypingState[]
+  id                String             @id @default(cuid())
+  type              RoomType
+  name              String             @default("Untitled room")
+  teamId            String?
+  ownerUserId       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  team              Team?              @relation(fields: [teamId], references: [id])
+  owner             User?              @relation("RoomOwner", fields: [ownerUserId], references: [id])
+  messages          Message[]
+  files             FileRecord[]
+  members           RoomMember[]
+  agents            RoomAgent[]
+  typingStates      TypingState[]
+  scheduledMessages ScheduledMessage[]
 
   @@index([ownerUserId, type])
   @@index([teamId, type])
@@ -153,6 +163,26 @@ model Message {
   agent     Agent?      @relation(fields: [agentId], references: [openclawAgentId])
 }
 
+model ScheduledMessage {
+  id        String                 @id @default(cuid())
+  roomId    String
+  agentId   String
+  toUserId  String
+  content   String
+  deliverAt DateTime
+  status    ScheduledMessageStatus @default(PENDING)
+  error     String?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  room      Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  agent     Agent                  @relation(fields: [agentId], references: [openclawAgentId])
+  toUser    User                   @relation(fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([status, deliverAt])
+  @@index([toUserId])
+  @@index([agentId])
+}
+
 model RoomMember {
   roomId          String
   userId          String
@@ -169,38 +199,38 @@ model RoomMember {
 }
 
 model TypingState {
-  roomId     String
-  userId     String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId    String
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([roomId, userId])
   @@index([expiresAt])
 }
 
 model RoomAgent {
-  roomId        String
-  agentId       String
-  role          RoomAgentRole @default(COLLABORATOR)
-  canRespond    Boolean       @default(true)
-  canUseFiles   Boolean       @default(true)
-  canBeMentioned Boolean      @default(true)
-  joinedAt      DateTime      @default(now())
-  room          Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  agent         Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  roomId         String
+  agentId        String
+  role           RoomAgentRole @default(COLLABORATOR)
+  canRespond     Boolean       @default(true)
+  canUseFiles    Boolean       @default(true)
+  canBeMentioned Boolean       @default(true)
+  joinedAt       DateTime      @default(now())
+  room           Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  agent          Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@id([roomId, agentId])
 }
 
 model Session {
-  id         String   @id @default(cuid())
-  tokenHash  String   @unique
-  userId     String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

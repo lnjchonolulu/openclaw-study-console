@@ -225,11 +225,12 @@ export function buildAgentRuntimeInstructions({
 
   lines.push(
     "",
-    "Human participants in this study app are not OpenClaw sessions. Do not use sessions_send, session tools, or pairing-based delivery when you want to contact a human participant here.",
-    "If you want the app to deliver a direct human DM on your behalf, call the send_human_dm tool instead.",
+    "Human participants in this study app are not OpenClaw sessions. Do not use sessions_send, message, gateway delivery, cron, or pairing-based delivery when you want to contact a human participant here.",
+    "If you want the app to deliver a direct human DM now, use the study_send_dm tool.",
+    "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
-    "Use send_human_dm only when you truly want the app to send a direct message to a human participant.",
-    "Do not claim that pairing is required for these human DMs inside this app. Use the send_human_dm tool instead.",
+    "Use these study console tools only when you truly want the app to send or schedule a direct message to a human participant.",
+    "Do not claim that pairing is required for study console human DMs. The study console tools are the supported delivery path.",
     "",
     "Keep these routing instructions in mind while answering the user's latest message.",
   );

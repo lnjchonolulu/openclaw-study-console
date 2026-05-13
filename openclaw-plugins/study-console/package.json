@@ -1,0 +1,11 @@
+{
+  "name": "openclaw-study-console-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "openclaw": {
+    "id": "study_console",
+    "name": "Study Console",
+    "description": "Study console participant messaging tools."
+  }
+}
