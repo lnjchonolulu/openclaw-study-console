@@ -5,6 +5,23 @@ import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
 type TaskDeliveryKind = "send_dm" | "schedule_dm";
+type AgentNextTaskAction =
+  | {
+      action: "report_to_requester";
+      message: string;
+    }
+  | {
+      action: "ask_followup";
+      message: string;
+    }
+  | {
+      action: "wait";
+      reason?: string;
+    }
+  | {
+      action: "complete_no_message";
+      reason?: string;
+    };
 
 export type CreateOutboundAgentTaskInput = {
   agentDisplayName: string;
@@ -34,6 +51,73 @@ function cleanComposedMessage(value: string) {
     .replace(/```$/i, "")
     .replace(/^["“]|["”]$/g, "")
     .trim();
+}
+
+function extractJsonObject(value: string) {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1]?.trim() ?? trimmed;
+  const firstBrace = candidate.indexOf("{");
+  const lastBrace = candidate.lastIndexOf("}");
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return null;
+  }
+
+  return candidate.slice(firstBrace, lastBrace + 1);
+}
+
+function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
+  const jsonObject = extractJsonObject(value);
+
+  if (!jsonObject) {
+    return {
+      action: "wait",
+      reason: "The agent did not return a structured next action.",
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonObject) as {
+      action?: unknown;
+      message?: unknown;
+      reason?: unknown;
+    };
+    const action = typeof parsed.action === "string" ? parsed.action : "";
+    const message = typeof parsed.message === "string" ? cleanComposedMessage(parsed.message) : "";
+    const reason = typeof parsed.reason === "string" ? parsed.reason : undefined;
+
+    if (action === "report_to_requester" && message) {
+      return {
+        action,
+        message,
+      };
+    }
+
+    if (action === "ask_followup" && message) {
+      return {
+        action,
+        message,
+      };
+    }
+
+    if (action === "complete_no_message") {
+      return {
+        action,
+        reason,
+      };
+    }
+
+    return {
+      action: "wait",
+      reason: reason ?? "The agent chose to wait or returned an incomplete action.",
+    };
+  } catch {
+    return {
+      action: "wait",
+      reason: "The agent returned malformed JSON.",
+    };
+  }
 }
 
 function shouldAskForMissingBody(input: CreateOutboundAgentTaskInput) {
@@ -335,17 +419,28 @@ export async function handleInboundTaskReply({
     .map((event) => `- ${event.type}: ${event.summary}`)
     .join("\n");
 
-  const report = await runAgentTurn({
+  const decision = await runAgentTurn({
     agentId: agentOpenclawId,
-    conversationKey: `task:${task.id}:report-back`,
+    conversationKey: `task:${task.id}:decide-next-action`,
     instructions: `${instructions}
 
-You are completing a Study Console task loop.
+You are deciding the next action in a Study Console task loop.
 - A participant has replied to something you asked on behalf of the requester.
-- Write the exact DM body to send back to @${task.requester.username}.
+- Decide autonomously what should happen next.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
-- Do not wrap the message in quotes or markdown fences.
-- Be concise and natural.`,
+- The app backend will execute your selected Study Console action.
+- Return only JSON. No markdown. No extra text.
+
+Valid JSON shapes:
+{"action":"report_to_requester","message":"exact DM to send to @${task.requester.username}"}
+{"action":"ask_followup","message":"exact follow-up DM to send to @${replyingUsername}"}
+{"action":"wait","reason":"why no action should be taken yet"}
+{"action":"complete_no_message","reason":"why the task is complete without another message"}
+
+Choose report_to_requester when the reply answers the request sufficiently.
+Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
+Choose wait only when the best next step is to wait for more context.
+Choose complete_no_message only when no further message is useful.`,
     message: `Task objective:
 ${task.objective}
 
@@ -355,45 +450,119 @@ ${eventLog || "(none)"}
 Latest reply from ${replyingDisplayName} (@${replyingUsername}):
 ${replyMessage}
 
-Write the report-back DM for ${task.requester.displayName} (@${task.requester.username}).`,
+Decide the next action.`,
   });
 
-  const reportMessage = cleanComposedMessage(report.assistantText);
-  const delivery = await sendAgentDm({
-    message: reportMessage,
-    senderAgentOpenclawId: agentOpenclawId,
-    toUsername: task.requester.username,
-  });
+  const nextAction = parseAgentNextTaskAction(decision.assistantText);
 
   await prisma.agentTaskEvent.create({
     data: {
       taskId: task.id,
-      type: "OUTBOUND_MESSAGE",
-      summary: delivery.ok
-        ? `Reported task result to @${task.requester.username}.`
-        : `Report-back delivery failed: ${delivery.reason}.`,
+      type: "AGENT_DECISION",
+      summary: `Chose next action: ${nextAction.action}.`,
       payload: {
-        delivery,
-        message: reportMessage,
+        raw: decision.assistantText,
+        nextAction,
       } satisfies Prisma.InputJsonValue,
     },
   });
+
+  if (nextAction.action === "report_to_requester") {
+    const delivery = await sendAgentDm({
+      message: nextAction.message,
+      senderAgentOpenclawId: agentOpenclawId,
+      toUsername: task.requester.username,
+    });
+
+    await prisma.agentTaskEvent.create({
+      data: {
+        taskId: task.id,
+        type: "OUTBOUND_MESSAGE",
+        summary: delivery.ok
+          ? `Reported task result to @${task.requester.username}.`
+          : `Report-back delivery failed: ${delivery.reason}.`,
+        payload: {
+          delivery,
+          message: nextAction.message,
+        } satisfies Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        resultSummary: nextAction.message,
+        status: delivery.ok ? "COMPLETED" : "FAILED",
+      },
+    });
+
+    return {
+      acknowledgement: delivery.ok
+        ? `Thanks. I'll let @${task.requester.username} know.`
+        : `I got your reply, but I could not report it back: ${delivery.reason}.`,
+      nextAction,
+      taskId: task.id,
+    };
+  }
+
+  if (nextAction.action === "ask_followup") {
+    const delivery = await sendAgentDm({
+      message: nextAction.message,
+      senderAgentOpenclawId: agentOpenclawId,
+      toUsername: replyingUsername,
+    });
+
+    await prisma.agentTaskEvent.create({
+      data: {
+        taskId: task.id,
+        type: "OUTBOUND_MESSAGE",
+        summary: delivery.ok
+          ? `Asked follow-up to @${replyingUsername}.`
+          : `Follow-up delivery failed: ${delivery.reason}.`,
+        payload: {
+          delivery,
+          message: nextAction.message,
+        } satisfies Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        resultSummary: nextAction.message,
+        status: delivery.ok ? "WAITING" : "FAILED",
+      },
+    });
+
+    return {
+      acknowledgement: delivery.ok
+        ? "Thanks. I asked a follow-up."
+        : `I got your reply, but I could not send the follow-up: ${delivery.reason}.`,
+      nextAction,
+      taskId: task.id,
+    };
+  }
 
   await prisma.agentTask.update({
     where: {
       id: task.id,
     },
     data: {
-      resultSummary: reportMessage,
-      status: delivery.ok ? "COMPLETED" : "FAILED",
+      resultSummary: nextAction.reason ?? null,
+      status: nextAction.action === "complete_no_message" ? "COMPLETED" : "WAITING",
     },
   });
 
   return {
-    acknowledgement: delivery.ok
-      ? `Thanks. I'll let @${task.requester.username} know.`
-      : `I got your reply, but I could not report it back: ${delivery.reason}.`,
-    reportMessage,
+    acknowledgement:
+      nextAction.action === "complete_no_message"
+        ? "Thanks. That completes the task."
+        : "Thanks. I'll keep that in mind for now.",
+    nextAction,
     taskId: task.id,
   };
 }
