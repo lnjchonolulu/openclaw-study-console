@@ -41,7 +41,7 @@ function getPluginConfig(ctx) {
     token:
       typeof config.token === "string" && config.token.trim()
         ? config.token.trim()
-        : process.env.INTERNAL_AGENT_ACTION_TOKEN ?? "",
+        : "",
   };
 }
 
