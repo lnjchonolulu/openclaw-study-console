@@ -1,5 +1,3 @@
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-
 function jsonToolResult(payload) {
   return {
     content: [
@@ -169,7 +167,7 @@ function createScheduleDmTool(ctx) {
   };
 }
 
-export default definePluginEntry({
+export default {
   id: "study_console",
   name: "Study Console",
   description: "Study console participant messaging tools.",
@@ -179,4 +177,4 @@ export default definePluginEntry({
       name: "study_schedule_dm",
     });
   },
-});
+};
