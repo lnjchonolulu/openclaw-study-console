@@ -36,9 +36,26 @@ function containsGatewayToolFailureText(text: string) {
     "gateway pairing",
     "cron also needs pairing",
     "gateway is rejecting",
+    "gateway closed",
+    "cron scheduler",
+    "subagent spawning",
+    "openclaw gateway restart",
+    "scheduler isn't available",
   ];
 
   return blockedPatterns.some((pattern) => normalized.includes(pattern));
+}
+
+function looksLikeScheduledDeliveryRequest(message: string) {
+  const normalized = message.toLowerCase();
+
+  const delayPatterns = [
+    /\bafter\s+\d+\s*(minute|minutes|min|hour|hours|hr|hrs)\b/,
+    /\bin\s+\d+\s*(minute|minutes|min|hour|hours|hr|hrs)\b/,
+    /\b(later|tomorrow|tonight|this evening|next week)\b/,
+  ];
+
+  return delayPatterns.some((pattern) => pattern.test(normalized));
 }
 
 export async function POST(request: Request) {
@@ -175,6 +192,7 @@ export async function POST(request: Request) {
 
     const availableHumanUsernames = activeHumans.map((human) => human.username);
     const isHumanDmRequest = looksLikeHumanDmRequest(message, availableHumanUsernames);
+    const isScheduledDeliveryRequest = looksLikeScheduledDeliveryRequest(message);
 
     let result;
 
@@ -294,13 +312,19 @@ export async function POST(request: Request) {
       ({ actions, visibleText } = parseAgentActions(result.assistantText));
     }
 
-    const assistantText =
+    let assistantText =
       visibleText ||
       (actions.length > 0
         ? "I handled that request."
         : isHumanDmRequest && containsGatewayToolFailureText(result.assistantText)
           ? "I could not complete delivery on this turn. I will retry with an in-app DM action format."
           : result.assistantText);
+
+    if (isHumanDmRequest && containsGatewayToolFailureText(assistantText)) {
+      assistantText = isScheduledDeliveryRequest
+        ? "I can send messages to participants in this app, but delayed delivery is not enabled yet. I can send it now if you want."
+        : "I can send messages to participants in this app. Please tell me who to send it to and what to say.";
+    }
 
     if (actions.length > 0) {
       await executeAgentActions({
