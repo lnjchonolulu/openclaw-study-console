@@ -50,6 +50,10 @@ function shouldAskForMissingBody(input: CreateOutboundAgentTaskInput) {
   return !hasDelegatedQuestion;
 }
 
+function shouldWaitForReply(input: CreateOutboundAgentTaskInput) {
+  return !input.explicitMessage?.trim() && !shouldAskForMissingBody(input);
+}
+
 async function composeOutboundMessage({
   input,
   taskId,
@@ -226,7 +230,11 @@ export async function createAndRunOutboundAgentTask(input: CreateOutboundAgentTa
     },
     data: {
       resultSummary: delivery.ok ? composed.message : delivery.reason,
-      status: delivery.ok ? (input.kind === "schedule_dm" ? "WAITING" : "COMPLETED") : "FAILED",
+      status: delivery.ok
+        ? input.kind === "schedule_dm" || shouldWaitForReply(input)
+          ? "WAITING"
+          : "COMPLETED"
+        : "FAILED",
     },
   });
 
@@ -236,5 +244,156 @@ export async function createAndRunOutboundAgentTask(input: CreateOutboundAgentTa
     message: composed.message,
     taskId: task.id,
     toUsername: targetUser.username,
+  };
+}
+
+export async function handleInboundTaskReply({
+  agentDisplayName,
+  agentOpenclawId,
+  behaviorConfig,
+  ownerDisplayName,
+  ownerUsername,
+  personaSummary,
+  replyingDisplayName,
+  replyingUserId,
+  replyingUsername,
+  replyMessage,
+}: {
+  agentDisplayName: string;
+  agentOpenclawId: string;
+  behaviorConfig: unknown;
+  ownerDisplayName: string;
+  ownerUsername: string;
+  personaSummary?: string | null;
+  replyingDisplayName: string;
+  replyingUserId: string;
+  replyingUsername: string;
+  replyMessage: string;
+}) {
+  const task = await prisma.agentTask.findFirst({
+    where: {
+      agentId: agentOpenclawId,
+      requesterUserId: {
+        not: replyingUserId,
+      },
+      status: "WAITING",
+      targetUserId: replyingUserId,
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    include: {
+      events: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      requester: true,
+    },
+  });
+
+  if (!task) {
+    return null;
+  }
+
+  await prisma.agentTaskEvent.create({
+    data: {
+      taskId: task.id,
+      type: "INBOUND_REPLY",
+      summary: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+      payload: {
+        replyMessage,
+        replyingUsername,
+      } satisfies Prisma.InputJsonValue,
+    },
+  });
+
+  const activeHumans = await prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    orderBy: {
+      username: "asc",
+    },
+    select: {
+      username: true,
+    },
+  });
+
+  const instructions = buildAgentRuntimeInstructions({
+    agentDisplayName,
+    audience: "shared_spaces",
+    availableHumanUsernames: activeHumans.map((human) => human.username),
+    behaviorConfig,
+    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying to a Study Console task`,
+    ownerDisplayName,
+    ownerUsername,
+    personaSummary,
+  });
+
+  const eventLog = task.events
+    .map((event) => `- ${event.type}: ${event.summary}`)
+    .join("\n");
+
+  const report = await runAgentTurn({
+    agentId: agentOpenclawId,
+    conversationKey: `task:${task.id}:report-back`,
+    instructions: `${instructions}
+
+You are completing a Study Console task loop.
+- A participant has replied to something you asked on behalf of the requester.
+- Write the exact DM body to send back to @${task.requester.username}.
+- Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
+- Do not wrap the message in quotes or markdown fences.
+- Be concise and natural.`,
+    message: `Task objective:
+${task.objective}
+
+Prior task events:
+${eventLog || "(none)"}
+
+Latest reply from ${replyingDisplayName} (@${replyingUsername}):
+${replyMessage}
+
+Write the report-back DM for ${task.requester.displayName} (@${task.requester.username}).`,
+  });
+
+  const reportMessage = cleanComposedMessage(report.assistantText);
+  const delivery = await sendAgentDm({
+    message: reportMessage,
+    senderAgentOpenclawId: agentOpenclawId,
+    toUsername: task.requester.username,
+  });
+
+  await prisma.agentTaskEvent.create({
+    data: {
+      taskId: task.id,
+      type: "OUTBOUND_MESSAGE",
+      summary: delivery.ok
+        ? `Reported task result to @${task.requester.username}.`
+        : `Report-back delivery failed: ${delivery.reason}.`,
+      payload: {
+        delivery,
+        message: reportMessage,
+      } satisfies Prisma.InputJsonValue,
+    },
+  });
+
+  await prisma.agentTask.update({
+    where: {
+      id: task.id,
+    },
+    data: {
+      resultSummary: reportMessage,
+      status: delivery.ok ? "COMPLETED" : "FAILED",
+    },
+  });
+
+  return {
+    acknowledgement: delivery.ok
+      ? `Thanks. I'll let @${task.requester.username} know.`
+      : `I got your reply, but I could not report it back: ${delivery.reason}.`,
+    reportMessage,
+    taskId: task.id,
   };
 }

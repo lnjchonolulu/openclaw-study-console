@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
-import { createAndRunOutboundAgentTask } from "@/lib/agent-task-workflow";
+import {
+  createAndRunOutboundAgentTask,
+  handleInboundTaskReply,
+} from "@/lib/agent-task-workflow";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -170,6 +173,47 @@ export async function POST(request: Request) {
       ownerUsername: dmRoom.targetAgent.user.username,
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
+
+    const taskReply = await handleInboundTaskReply({
+      agentDisplayName: dmRoom.targetAgent.displayName,
+      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+      behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+      ownerDisplayName: dmRoom.targetAgent.user.displayName,
+      ownerUsername: dmRoom.targetAgent.user.username,
+      personaSummary: dmRoom.targetAgent.personaSummary,
+      replyingDisplayName: user.displayName,
+      replyingUserId: user.id,
+      replyingUsername: user.username,
+      replyMessage: message,
+    });
+
+    if (taskReply) {
+      const replyMessage = await prisma.message.create({
+        data: {
+          roomId: dmRoom.room.id,
+          role: "AGENT",
+          agentId: dmRoom.targetAgent.openclawAgentId,
+          content: taskReply.acknowledgement,
+        },
+      });
+
+      await prisma.room.update({
+        where: {
+          id: dmRoom.room.id,
+        },
+        data: {},
+      });
+
+      return NextResponse.json({
+        reply: taskReply.acknowledgement,
+        replyMessage: {
+          id: replyMessage.id,
+          content: replyMessage.content,
+          createdAt: replyMessage.createdAt.toISOString(),
+        },
+        roomId: dmRoom.room.id,
+      });
+    }
 
     const actionIntent = parseStudyActionIntent({
       activeUsernames: activeHumans.map((human) => human.username),
