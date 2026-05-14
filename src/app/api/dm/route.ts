@@ -13,9 +13,11 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     message?: string;
     recipientId?: string;
+    replyToMessageId?: string;
   };
   const message = body.message?.trim();
   const recipientId = body.recipientId?.trim();
+  const replyToMessageId = body.replyToMessageId?.trim() || null;
 
   if (!message) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
@@ -33,6 +35,25 @@ export async function POST(request: Request) {
 
   const room = personDm.room;
 
+  if (replyToMessageId) {
+    const replyTarget = await prisma.message.findFirst({
+      where: {
+        id: replyToMessageId,
+        roomId: room.id,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!replyTarget) {
+      return NextResponse.json(
+        { error: "Reply target was not found in this conversation." },
+        { status: 400 },
+      );
+    }
+  }
+
   await prisma.typingState.deleteMany({
     where: {
       roomId: room.id,
@@ -46,6 +67,7 @@ export async function POST(request: Request) {
       userId: user.id,
       role: "USER",
       content: message,
+      replyToMessageId,
     },
   });
 

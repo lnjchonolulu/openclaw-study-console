@@ -33,6 +33,22 @@ function getSenderKey(message: TeamChannelDetail["messages"][number]) {
   return message.userId;
 }
 
+function truncateReplyPreview(value: string, maxLength = 120) {
+  const compact = value.replace(/\s+/g, " ").trim();
+
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+
+  return `${compact.slice(0, maxLength - 1)}…`;
+}
+
+type ReplyTarget = {
+  author: string;
+  content: string;
+  id: string;
+};
+
 type RenderRow =
   | {
       type: "date";
@@ -131,12 +147,17 @@ export function TeamChatClient({
   const [channel, setChannel] = useState(initialChannel);
   const [isRosterOpen, setIsRosterOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setChannel(initialChannel);
   }, [initialChannel]);
+
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [selectedChannelId]);
 
   useEffect(() => {
     if (!selectedChannelId) {
@@ -218,6 +239,7 @@ export function TeamChatClient({
       },
       body: JSON.stringify({
         message: trimmedMessage,
+        replyToMessageId: replyTarget?.id ?? null,
         roomId: channel.id,
       }),
     });
@@ -235,11 +257,25 @@ export function TeamChatClient({
       current
         ? {
             ...current,
-            messages: [...current.messages, payload.message!],
+            messages: [
+              ...current.messages,
+              {
+                ...payload.message!,
+                replyTo: payload.message?.replyTo ?? (replyTarget
+                  ? {
+                      author: replyTarget.author,
+                      content: replyTarget.content,
+                      id: replyTarget.id,
+                      userId: user.id,
+                    }
+                  : null),
+              },
+            ],
           }
         : current,
     );
     setMessage("");
+    setReplyTarget(null);
     router.refresh();
   }
 
@@ -314,6 +350,16 @@ export function TeamChatClient({
                             row.isOwnMessage ? "message-row-user" : "message-row-agent"
                           }`}
                         >
+                          {row.message.replyTo ? (
+                            <div className="message-reply-preview">
+                              <span className="message-reply-author">
+                                {row.message.replyTo.author}
+                              </span>
+                              <span className="message-reply-content">
+                                {truncateReplyPreview(row.message.replyTo.content)}
+                              </span>
+                            </div>
+                          ) : null}
                           <p>{row.message.content}</p>
                         </div>
                       </div>
@@ -323,9 +369,34 @@ export function TeamChatClient({
                           row.isOwnMessage ? "message-row-user" : "message-row-agent"
                         }`}
                       >
+                        {row.message.replyTo ? (
+                          <div className="message-reply-preview">
+                            <span className="message-reply-author">
+                              {row.message.replyTo.author}
+                            </span>
+                            <span className="message-reply-content">
+                              {truncateReplyPreview(row.message.replyTo.content)}
+                            </span>
+                          </div>
+                        ) : null}
                         <p>{row.message.content}</p>
                       </div>
                     )}
+                    <button
+                      className="message-reply-button"
+                      onClick={() =>
+                        setReplyTarget({
+                          author:
+                            memberMap.get(row.message.userId)?.name ??
+                            row.message.author,
+                          content: row.message.content,
+                          id: row.message.id,
+                        })
+                      }
+                      type="button"
+                    >
+                      Reply
+                    </button>
                     {row.isOwnMessage ? (
                       <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
                     ) : null}
@@ -347,8 +418,27 @@ export function TeamChatClient({
           <div ref={messageEndRef} />
         </div>
 
-        <form className="message-composer" onSubmit={handleSubmit}>
-          <div className="composer-bar">
+      <form className="message-composer" onSubmit={handleSubmit}>
+        {replyTarget ? (
+          <div className="composer-reply-banner">
+            <div className="composer-reply-copy">
+              <span className="composer-reply-label">
+                Replying to {replyTarget.author}
+              </span>
+              <span className="composer-reply-snippet">
+                {truncateReplyPreview(replyTarget.content, 160)}
+              </span>
+            </div>
+            <button
+              className="composer-reply-clear"
+              onClick={() => setReplyTarget(null)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
+        <div className="composer-bar">
             <textarea
               aria-label="Team message"
               placeholder="Write a message"

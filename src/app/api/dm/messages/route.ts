@@ -57,6 +57,16 @@ export async function GET(request: Request) {
               user: true,
             },
           },
+          replyToMessage: {
+            include: {
+              agent: {
+                include: {
+                  user: true,
+                },
+              },
+              user: true,
+            },
+          },
           user: true,
         },
       },

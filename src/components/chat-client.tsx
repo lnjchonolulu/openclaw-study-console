@@ -41,6 +41,22 @@ function getSenderKey(message: ChatMessage) {
   return message.role === "USER" ? "USER" : "OTHER";
 }
 
+function truncateReplyPreview(value: string, maxLength = 120) {
+  const compact = value.replace(/\s+/g, " ").trim();
+
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+
+  return `${compact.slice(0, maxLength - 1)}…`;
+}
+
+type ReplyTarget = {
+  authorName: string | null;
+  content: string;
+  id: string;
+};
+
 type RenderRow =
   | {
       type: "date";
@@ -118,6 +134,7 @@ export function ChatClient({
   const [isSending, setIsSending] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const pendingScrollRestoreRef = useRef<{
@@ -306,12 +323,21 @@ export function ChatClient({
       role: "USER",
       content: trimmedMessage,
       createdAt: new Date().toISOString(),
+      replyTo: replyTarget
+        ? {
+            authorName: replyTarget.authorName,
+            content: replyTarget.content,
+            id: replyTarget.id,
+            role: "OTHER",
+          }
+        : null,
     };
 
     setIsSending(true);
     setError(null);
     setMessages((current) => [...current, optimisticMessage]);
     setMessage("");
+    setReplyTarget(null);
     setIsOtherTyping(false);
 
     if (typingTimeoutRef.current) {
@@ -331,6 +357,7 @@ export function ChatClient({
           agentId,
           message: trimmedMessage,
           recipientId,
+          replyToMessageId: replyTarget?.id ?? null,
         }),
       });
 
@@ -471,8 +498,36 @@ export function ChatClient({
                   row.message.role === "USER" ? "message-row-user" : "message-row-agent"
                 }`}
               >
+                {row.message.replyTo ? (
+                  <div className="message-reply-preview">
+                    <span className="message-reply-author">
+                      {row.message.replyTo.authorName ??
+                        (row.message.replyTo.role === "USER" ? "You" : "Earlier message")}
+                    </span>
+                    <span className="message-reply-content">
+                      {truncateReplyPreview(row.message.replyTo.content)}
+                    </span>
+                  </div>
+                ) : null}
                 <p>{row.message.content}</p>
               </div>
+              <button
+                className="message-reply-button"
+                onClick={() =>
+                  setReplyTarget({
+                    authorName:
+                      row.message.authorName ??
+                      (row.message.role === "USER"
+                        ? "You"
+                        : counterpart?.displayName ?? "Message"),
+                    content: row.message.content,
+                    id: row.message.id,
+                  })
+                }
+                type="button"
+              >
+                Reply
+              </button>
               {row.message.role === "USER" ? (
                 <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
               ) : null}
@@ -509,6 +564,25 @@ export function ChatClient({
 
       <form className="message-composer" onSubmit={handleSubmit}>
         {error ? <p className="helper-text message-error">{error}</p> : null}
+        {replyTarget ? (
+          <div className="composer-reply-banner">
+            <div className="composer-reply-copy">
+              <span className="composer-reply-label">
+                Replying to {replyTarget.authorName ?? "message"}
+              </span>
+              <span className="composer-reply-snippet">
+                {truncateReplyPreview(replyTarget.content, 160)}
+              </span>
+            </div>
+            <button
+              className="composer-reply-clear"
+              onClick={() => setReplyTarget(null)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
         <div className="composer-bar">
           <textarea
             aria-label="Message"
@@ -560,7 +634,9 @@ function mergeMessages(
         previous[index].id === message.id &&
         previous[index].content === message.content &&
         previous[index].createdAt === message.createdAt &&
-        previous[index].role === message.role,
+        previous[index].role === message.role &&
+        previous[index].replyTo?.id === message.replyTo?.id &&
+        previous[index].replyTo?.content === message.replyTo?.content,
     )
   ) {
     return previous;

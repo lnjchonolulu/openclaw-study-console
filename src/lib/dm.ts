@@ -13,7 +13,78 @@ export type ChatMessage = {
   role: "USER" | "AGENT" | "OTHER";
   content: string;
   createdAt: string;
+  replyTo?: {
+    authorName: string | null;
+    content: string;
+    id: string;
+    role: "USER" | "AGENT" | "OTHER";
+  } | null;
 };
+
+type SerializableMessage = {
+  agent?: {
+    displayName: string;
+    profileConfigJson: unknown;
+    user: {
+      username: string;
+    } | null;
+  } | null;
+  content: string;
+  createdAt: Date;
+  id: string;
+  replyToMessage?: {
+    agent?: {
+      displayName: string;
+      user: {
+        username: string;
+      } | null;
+    } | null;
+    content: string;
+    id: string;
+    role: "USER" | "AGENT" | "SYSTEM";
+    user?: {
+      displayName: string;
+    } | null;
+    userId: string | null;
+  } | null;
+  role: "USER" | "AGENT" | "SYSTEM";
+  user?: {
+    displayName: string;
+    profileConfigJson: unknown;
+    username: string;
+  } | null;
+  userId: string | null;
+};
+
+function getSerializedMessageRole(
+  message: Pick<SerializableMessage, "role" | "userId">,
+  currentUserId: string,
+) {
+  if (message.role === "AGENT") {
+    return "AGENT" as const;
+  }
+
+  return message.userId === currentUserId ? ("USER" as const) : ("OTHER" as const);
+}
+
+function buildReplyPreview(
+  replyToMessage: SerializableMessage["replyToMessage"],
+  currentUserId: string,
+) {
+  if (!replyToMessage || replyToMessage.role === "SYSTEM") {
+    return null;
+  }
+
+  return {
+    authorName:
+      replyToMessage.role === "AGENT"
+        ? replyToMessage.agent?.displayName ?? null
+        : replyToMessage.user?.displayName ?? null,
+    content: replyToMessage.content,
+    id: replyToMessage.id,
+    role: getSerializedMessageRole(replyToMessage, currentUserId),
+  };
+}
 
 export type DmItem = {
   avatar: AvatarViewModel;
@@ -233,25 +304,7 @@ export async function getOrCreatePersonDmRoom(userId: string, recipientId: strin
 }
 
 export function serializeChatMessages(
-  messages: {
-    agent?: {
-      displayName: string;
-      profileConfigJson: unknown;
-      user: {
-        username: string;
-      } | null;
-    } | null;
-    id: string;
-    role: "USER" | "AGENT" | "SYSTEM";
-    content: string;
-    createdAt: Date;
-    user?: {
-      displayName: string;
-      profileConfigJson: unknown;
-      username: string;
-    } | null;
-    userId: string | null;
-  }[],
+  messages: SerializableMessage[],
   currentUserId: string,
 ): ChatMessage[] {
   return messages
@@ -282,14 +335,10 @@ export function serializeChatMessages(
           ? message.agent?.displayName ?? null
           : message.user?.displayName ?? null,
       id: message.id,
-      role:
-        message.role === "AGENT"
-          ? "AGENT"
-          : message.userId === currentUserId
-            ? "USER"
-            : "OTHER",
+      role: getSerializedMessageRole(message, currentUserId),
       content: message.content,
       createdAt: message.createdAt.toISOString(),
+      replyTo: buildReplyPreview(message.replyToMessage, currentUserId),
     }));
 }
 

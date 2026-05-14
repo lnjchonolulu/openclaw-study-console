@@ -16,11 +16,13 @@ export function verifyInternalAgentActionToken(request: Request) {
 
 export async function sendAgentDm({
   message,
+  replyToMessageId,
   senderAgentOpenclawId,
   taskId,
   toUsername,
 }: {
   message: string;
+  replyToMessageId?: string | null;
   senderAgentOpenclawId: string;
   taskId?: string | null;
   toUsername: string;
@@ -60,6 +62,7 @@ export async function sendAgentDm({
       role: "AGENT",
       agentId: senderAgentOpenclawId,
       taskId: taskId ?? null,
+      replyToMessageId: replyToMessageId ?? null,
       content: message,
     },
   });

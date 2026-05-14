@@ -172,20 +172,24 @@ model Room {
 }
 
 model Message {
-  id        String      @id @default(cuid())
-  roomId    String
-  userId    String?
-  agentId   String?
-  taskId    String?
-  role      MessageRole
-  content   String
-  createdAt DateTime    @default(now())
-  room      Room        @relation(fields: [roomId], references: [id])
-  user      User?       @relation(fields: [userId], references: [id])
-  agent     Agent?      @relation(fields: [agentId], references: [openclawAgentId])
-  task      AgentTask?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  id               String      @id @default(cuid())
+  roomId           String
+  userId           String?
+  agentId          String?
+  taskId           String?
+  replyToMessageId String?
+  role             MessageRole
+  content          String
+  createdAt        DateTime    @default(now())
+  room             Room        @relation(fields: [roomId], references: [id])
+  user             User?       @relation(fields: [userId], references: [id])
+  agent            Agent?      @relation(fields: [agentId], references: [openclawAgentId])
+  task             AgentTask?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  replyToMessage   Message?    @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies          Message[]   @relation("MessageReplies")
 
   @@index([taskId, createdAt])
+  @@index([replyToMessageId])
 }
 
 model ScheduledMessage {

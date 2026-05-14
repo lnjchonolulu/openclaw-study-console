@@ -61,6 +61,16 @@ export default async function ChatPage({
                 user: true,
               },
             },
+            replyToMessage: {
+              include: {
+                agent: {
+                  include: {
+                    user: true,
+                  },
+                },
+                user: true,
+              },
+            },
             user: true,
           },
         },

@@ -1117,6 +1117,12 @@ button.primary-button {
   width: 100%;
 }
 
+.message-line:hover .message-reply-button,
+.message-line:focus-within .message-reply-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .message-line-user {
   align-self: flex-end;
   justify-content: flex-end;
@@ -1135,6 +1141,32 @@ button.primary-button {
   border-radius: 14px;
   border: 1px solid rgba(17, 17, 17, 0.08);
   background: rgba(255, 255, 255, 0.7);
+}
+
+.message-reply-preview {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(17, 17, 17, 0.06);
+}
+
+.message-row-user .message-reply-preview {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.message-reply-author {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.message-reply-content {
+  font-size: 0.77rem;
+  line-height: 1.35;
+  color: inherit;
+  opacity: 0.88;
 }
 
 .message-avatar {
@@ -1169,6 +1201,24 @@ button.primary-button {
 .message-row-pending {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.48);
+}
+
+.message-reply-button {
+  opacity: 0;
+  pointer-events: none;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--foreground);
+  cursor: pointer;
+  font: 600 0.76rem/1 inherit;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+
+.message-reply-button:hover {
+  background: rgba(17, 17, 17, 0.06);
 }
 
 .message-date-divider {
@@ -1231,6 +1281,51 @@ button.primary-button {
   border-top: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.96);
+}
+
+.composer-reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 14px;
+  background: rgba(17, 17, 17, 0.03);
+}
+
+.composer-reply-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-reply-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.composer-reply-snippet {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-reply-clear {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 999px;
+  background: white;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
 }
 
 .composer-bar {

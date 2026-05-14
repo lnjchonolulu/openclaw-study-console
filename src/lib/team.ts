@@ -31,6 +31,12 @@ export type TeamChannelDetail = {
     content: string;
     createdAt: string;
     id: string;
+    replyTo?: {
+      author: string;
+      content: string;
+      id: string;
+      userId: string;
+    } | null;
     userId: string;
   }[];
   title: string;
@@ -443,6 +449,11 @@ export async function getTeamChannelDetail(
           createdAt: "asc",
         },
         include: {
+          replyToMessage: {
+            include: {
+              user: true,
+            },
+          },
           user: true,
         },
       },
@@ -476,6 +487,11 @@ export async function getTeamChannelDetail(
               createdAt: "asc",
             },
             include: {
+              replyToMessage: {
+                include: {
+                  user: true,
+                },
+              },
               user: true,
             },
           },
@@ -498,6 +514,14 @@ export async function getTeamChannelDetail(
         content: message.content,
         createdAt: message.createdAt.toISOString(),
         id: message.id,
+        replyTo: message.replyToMessage
+          ? {
+              author: message.replyToMessage.user?.displayName ?? "Unknown",
+              content: message.replyToMessage.content,
+              id: message.replyToMessage.id,
+              userId: message.replyToMessage.userId ?? "unknown",
+            }
+          : null,
         userId: message.userId ?? "unknown",
       })),
       title: fallbackRoom.name,
@@ -516,6 +540,14 @@ export async function getTeamChannelDetail(
       content: message.content,
       createdAt: message.createdAt.toISOString(),
       id: message.id,
+      replyTo: message.replyToMessage
+        ? {
+            author: message.replyToMessage.user?.displayName ?? "Unknown",
+            content: message.replyToMessage.content,
+            id: message.replyToMessage.id,
+            userId: message.replyToMessage.userId ?? "unknown",
+          }
+        : null,
       userId: message.userId ?? "unknown",
     })),
     title: room.name,
@@ -722,7 +754,12 @@ export async function deleteTeamChannel(userId: string, roomId: string) {
   return true;
 }
 
-export async function createTeamMessage(userId: string, roomId: string, content: string) {
+export async function createTeamMessage(
+  userId: string,
+  roomId: string,
+  content: string,
+  replyToMessageId?: string | null,
+) {
   const room = await prisma.room.findFirst({
     where: {
       AND: [
@@ -761,14 +798,36 @@ export async function createTeamMessage(userId: string, roomId: string, content:
     return null;
   }
 
+  if (replyToMessageId) {
+    const replyTarget = await prisma.message.findFirst({
+      where: {
+        id: replyToMessageId,
+        roomId: room.id,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!replyTarget) {
+      return null;
+    }
+  }
+
   return prisma.message.create({
     data: {
       roomId: room.id,
       userId,
       role: "USER",
       content,
+      replyToMessageId: replyToMessageId?.trim() || null,
     },
     include: {
+      replyToMessage: {
+        include: {
+          user: true,
+        },
+      },
       user: true,
     },
   });

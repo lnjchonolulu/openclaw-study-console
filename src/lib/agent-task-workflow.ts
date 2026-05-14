@@ -23,6 +23,43 @@ type AgentNextTaskAction =
       reason?: string;
     };
 
+type WaitingTaskSnapshot = {
+  latestOutboundMessage: {
+    content: string;
+    createdAt: Date;
+    id: string;
+  };
+  task: {
+    events: {
+      createdAt: Date;
+      summary: string;
+      type: string;
+    }[];
+    id: string;
+    objective: string;
+    requester: {
+      username: string;
+    };
+    status: string;
+    targetUserId: string | null;
+    title: string;
+  };
+};
+
+type TaskResolution =
+  | {
+      kind: "matched";
+      matchedOutboundMessageId: string;
+      task: WaitingTaskSnapshot["task"];
+    }
+  | {
+      acknowledgement: string;
+      kind: "ambiguous";
+    }
+  | {
+      kind: "none";
+    };
+
 export type CreateOutboundAgentTaskInput = {
   agentDisplayName: string;
   agentOpenclawId: string;
@@ -118,6 +155,338 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
       reason: "The agent returned malformed JSON.",
     };
   }
+}
+
+function tokenizeForTaskMatch(value: string) {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣\s]/g, " ")
+      .split(/\s+/)
+      .filter(
+        (token) =>
+          token.length >= 2 &&
+          !new Set([
+            "the",
+            "and",
+            "for",
+            "that",
+            "with",
+            "this",
+            "from",
+            "have",
+            "will",
+            "your",
+            "about",
+            "next",
+            "just",
+            "they",
+            "them",
+            "their",
+            "reply",
+            "message",
+            "okay",
+            "ok",
+            "sure",
+            "yeah",
+          ]).has(token),
+      ),
+  );
+}
+
+function hasScheduleSignal(value: string) {
+  return /\b(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|am|pm|week|meeting|calendar|available|availability|time)\b/i.test(
+    value,
+  );
+}
+
+function scoreTaskCandidate(candidate: WaitingTaskSnapshot, replyMessage: string) {
+  const candidateContext = [
+    candidate.task.title,
+    candidate.task.objective,
+    candidate.latestOutboundMessage.content,
+    ...candidate.task.events.slice(-4).map((event) => event.summary),
+  ].join("\n");
+  const replyTokens = tokenizeForTaskMatch(replyMessage);
+  const candidateTokens = tokenizeForTaskMatch(candidateContext);
+  let overlap = 0;
+
+  replyTokens.forEach((token) => {
+    if (candidateTokens.has(token)) {
+      overlap += 1;
+    }
+  });
+
+  let score = overlap * 2;
+
+  if (hasScheduleSignal(replyMessage) && hasScheduleSignal(candidateContext)) {
+    score += 3;
+  }
+
+  return score;
+}
+
+function buildAmbiguousTaskReply(candidates: WaitingTaskSnapshot[]) {
+  const lines = candidates.slice(0, 3).map((candidate, index) => {
+    const snippet = cleanComposedMessage(candidate.latestOutboundMessage.content)
+      .replace(/\s+/g, " ")
+      .slice(0, 90);
+
+    return `${index + 1}. ${snippet}${snippet.length >= 90 ? "..." : ""}`;
+  });
+
+  return `I have more than one open thread with you right now, so I do not want to attach your reply to the wrong task.\n\nPlease reply to the specific message you mean, or tell me which one you are answering:\n${lines.join("\n")}`;
+}
+
+function extractTaskChoice(value: string) {
+  const jsonObject = extractJsonObject(value);
+
+  if (!jsonObject) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonObject) as {
+      reason?: unknown;
+      taskId?: unknown;
+    };
+
+    return {
+      reason: typeof parsed.reason === "string" ? parsed.reason : null,
+      taskId: typeof parsed.taskId === "string" ? parsed.taskId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveInboundTaskReply({
+  agentDisplayName,
+  agentOpenclawId,
+  behaviorConfig,
+  inboundMessageCreatedAt,
+  ownerDisplayName,
+  ownerUsername,
+  personaSummary,
+  replyMessage,
+  replyingDisplayName,
+  replyingUserId,
+  replyingUsername,
+  roomId,
+  selectedReplyToMessage,
+}: {
+  agentDisplayName: string;
+  agentOpenclawId: string;
+  behaviorConfig: unknown;
+  inboundMessageCreatedAt: Date;
+  ownerDisplayName: string;
+  ownerUsername: string;
+  personaSummary?: string | null;
+  replyMessage: string;
+  replyingDisplayName: string;
+  replyingUserId: string;
+  replyingUsername: string;
+  roomId: string;
+  selectedReplyToMessage:
+    | {
+        agentId: string | null;
+        id: string;
+        task:
+          | {
+              events: {
+                createdAt: Date;
+                summary: string;
+                type: string;
+              }[];
+              id: string;
+              objective: string;
+              requester: {
+                username: string;
+              };
+              status: string;
+              targetUserId: string | null;
+              title: string;
+            }
+          | null;
+      }
+    | null
+    | undefined;
+}): Promise<TaskResolution> {
+  if (
+    selectedReplyToMessage?.task &&
+    selectedReplyToMessage.agentId === agentOpenclawId &&
+    selectedReplyToMessage.task.status === "WAITING" &&
+    selectedReplyToMessage.task.targetUserId === replyingUserId
+  ) {
+    return {
+      kind: "matched",
+      matchedOutboundMessageId: selectedReplyToMessage.id,
+      task: selectedReplyToMessage.task,
+    };
+  }
+
+  const outboundCandidates = await prisma.message.findMany({
+    where: {
+      roomId,
+      role: "AGENT",
+      agentId: agentOpenclawId,
+      taskId: {
+        not: null,
+      },
+      createdAt: {
+        lt: inboundMessageCreatedAt,
+      },
+      task: {
+        status: "WAITING",
+        targetUserId: replyingUserId,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    take: 12,
+    include: {
+      task: {
+        include: {
+          events: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          requester: true,
+        },
+      },
+    },
+  });
+
+  const candidateMap = new Map<string, WaitingTaskSnapshot>();
+
+  outboundCandidates.forEach((message) => {
+    if (!message.taskId || !message.task || candidateMap.has(message.taskId)) {
+      return;
+    }
+
+    candidateMap.set(message.taskId, {
+      latestOutboundMessage: {
+        content: message.content,
+        createdAt: message.createdAt,
+        id: message.id,
+      },
+      task: {
+        events: message.task.events.map((event) => ({
+          createdAt: event.createdAt,
+          summary: event.summary,
+          type: event.type,
+        })),
+        id: message.task.id,
+        objective: message.task.objective,
+        requester: {
+          username: message.task.requester.username,
+        },
+        status: message.task.status,
+        targetUserId: message.task.targetUserId,
+        title: message.task.title,
+      },
+    });
+  });
+
+  const candidates = Array.from(candidateMap.values());
+
+  if (candidates.length === 0) {
+    return {
+      kind: "none",
+    };
+  }
+
+  if (candidates.length === 1) {
+    return {
+      kind: "matched",
+      matchedOutboundMessageId: candidates[0].latestOutboundMessage.id,
+      task: candidates[0].task,
+    };
+  }
+
+  const scoredCandidates = candidates
+    .map((candidate) => ({
+      candidate,
+      score: scoreTaskCandidate(candidate, replyMessage),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  const best = scoredCandidates[0];
+  const runnerUp = scoredCandidates[1];
+
+  if (best && best.score >= 4 && best.score - (runnerUp?.score ?? 0) >= 2) {
+    return {
+      kind: "matched",
+      matchedOutboundMessageId: best.candidate.latestOutboundMessage.id,
+      task: best.candidate.task,
+    };
+  }
+
+  const instructions = buildAgentRuntimeInstructions({
+    agentDisplayName,
+    audience: "shared_spaces",
+    availableHumanUsernames: [ownerUsername, replyingUsername],
+    behaviorConfig,
+    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying in a Study Console DM`,
+    ownerDisplayName,
+    ownerUsername,
+    personaSummary,
+  });
+
+  const decision = await runAgentTurn({
+    agentId: agentOpenclawId,
+    conversationKey: `task-match:${roomId}:${replyingUserId}`,
+    instructions: `${instructions}
+
+You are matching a new human reply to one of several open Study Console tasks.
+- Return JSON only.
+- Choose a task only if the reply clearly belongs to it.
+- If the reply is too ambiguous, return null taskId.
+
+Return exactly one of:
+{"taskId":"candidate-task-id","reason":"short explanation"}
+{"taskId":null,"reason":"why the reply is ambiguous"}`,
+    message: `Latest reply from ${replyingDisplayName} (@${replyingUsername}):
+${replyMessage}
+
+Open candidate tasks:
+${candidates
+  .map(
+    (candidate, index) => `Candidate ${index + 1}
+taskId: ${candidate.task.id}
+title: ${candidate.task.title}
+objective: ${candidate.task.objective}
+latest outbound message:
+${candidate.latestOutboundMessage.content}
+recent task events:
+${candidate.task.events
+  .slice(-4)
+  .map((event) => `- ${event.type}: ${event.summary}`)
+  .join("\n") || "(none)"}`,
+  )
+  .join("\n\n")}`,
+  });
+
+  const taskChoice = extractTaskChoice(decision.assistantText);
+
+  if (taskChoice?.taskId) {
+    const matched = candidates.find((candidate) => candidate.task.id === taskChoice.taskId);
+
+    if (matched) {
+      return {
+        kind: "matched",
+        matchedOutboundMessageId: matched.latestOutboundMessage.id,
+        task: matched.task,
+      };
+    }
+  }
+
+  return {
+    acknowledgement: buildAmbiguousTaskReply(candidates),
+    kind: "ambiguous",
+  };
 }
 
 function shouldAskForMissingBody(input: CreateOutboundAgentTaskInput) {
@@ -373,9 +742,21 @@ export async function handleInboundTaskReply({
     where: {
       id: userMessageId,
     },
-    select: {
-      createdAt: true,
-      roomId: true,
+    include: {
+      replyToMessage: {
+        include: {
+          task: {
+            include: {
+              events: {
+                orderBy: {
+                  createdAt: "asc",
+                },
+              },
+              requester: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -383,50 +764,67 @@ export async function handleInboundTaskReply({
     return null;
   }
 
-  const lastTaggedOutbound = await prisma.message.findFirst({
-    where: {
-      roomId,
-      role: "AGENT",
-      agentId: agentOpenclawId,
-      taskId: {
-        not: null,
-      },
-      createdAt: {
-        lt: inboundMessage.createdAt,
-      },
-      task: {
-        status: "WAITING",
-        targetUserId: replyingUserId,
-      },
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    include: {
-      task: {
-        include: {
-          events: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-          requester: true,
-        },
-      },
-    },
+  const resolution = await resolveInboundTaskReply({
+    agentDisplayName,
+    agentOpenclawId,
+    behaviorConfig,
+    inboundMessageCreatedAt: inboundMessage.createdAt,
+    ownerDisplayName,
+    ownerUsername,
+    personaSummary,
+    replyMessage,
+    replyingDisplayName,
+    replyingUserId,
+    replyingUsername,
+    roomId,
+    selectedReplyToMessage: inboundMessage.replyToMessage
+      ? {
+          agentId: inboundMessage.replyToMessage.agentId,
+          id: inboundMessage.replyToMessage.id,
+          task: inboundMessage.replyToMessage.task
+            ? {
+                events: inboundMessage.replyToMessage.task.events.map((event) => ({
+                  createdAt: event.createdAt,
+                  summary: event.summary,
+                  type: event.type,
+                })),
+                id: inboundMessage.replyToMessage.task.id,
+                objective: inboundMessage.replyToMessage.task.objective,
+                requester: {
+                  username: inboundMessage.replyToMessage.task.requester.username,
+                },
+                status: inboundMessage.replyToMessage.task.status,
+                targetUserId: inboundMessage.replyToMessage.task.targetUserId,
+                title: inboundMessage.replyToMessage.task.title,
+              }
+            : null,
+        }
+      : null,
   });
 
-  const task = lastTaggedOutbound?.task ?? null;
-
-  if (!task) {
+  if (resolution.kind === "none") {
     return null;
   }
+
+  if (resolution.kind === "ambiguous") {
+    return {
+      acknowledgement: resolution.acknowledgement,
+      nextAction: {
+        action: "wait" as const,
+        reason: "Ambiguous reply-to match",
+      },
+      taskId: null,
+    };
+  }
+
+  const task = resolution.task;
 
   await prisma.message.update({
     where: {
       id: userMessageId,
     },
     data: {
+      replyToMessageId: inboundMessage.replyToMessageId ?? resolution.matchedOutboundMessageId,
       taskId: task.id,
     },
   });
@@ -562,6 +960,7 @@ Decide the next action.`,
   if (nextAction.action === "ask_followup") {
     const delivery = await sendAgentDm({
       message: nextAction.message,
+      replyToMessageId: userMessageId,
       senderAgentOpenclawId: agentOpenclawId,
       taskId: task.id,
       toUsername: replyingUsername,

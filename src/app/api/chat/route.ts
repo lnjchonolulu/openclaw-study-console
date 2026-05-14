@@ -141,9 +141,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as { agentId?: string; message?: string };
+  const body = (await request.json()) as {
+    agentId?: string;
+    message?: string;
+    replyToMessageId?: string;
+  };
   const targetAgentId = body.agentId?.trim() || user.agent?.openclawAgentId;
   const message = body.message?.trim();
+  const replyToMessageId = body.replyToMessageId?.trim() || null;
 
   if (!message) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
@@ -169,12 +174,32 @@ export async function POST(request: Request) {
     },
   });
 
+  if (replyToMessageId) {
+    const replyTarget = await prisma.message.findFirst({
+      where: {
+        id: replyToMessageId,
+        roomId: dmRoom.room.id,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!replyTarget) {
+      return NextResponse.json(
+        { error: "Reply target was not found in this conversation." },
+        { status: 400 },
+      );
+    }
+  }
+
   const createdUserMessage = await prisma.message.create({
     data: {
       roomId: dmRoom.room.id,
       userId: user.id,
       role: "USER",
       content: message,
+      replyToMessageId,
     },
   });
 
