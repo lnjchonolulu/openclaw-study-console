@@ -17,10 +17,12 @@ export function verifyInternalAgentActionToken(request: Request) {
 export async function sendAgentDm({
   message,
   senderAgentOpenclawId,
+  taskId,
   toUsername,
 }: {
   message: string;
   senderAgentOpenclawId: string;
+  taskId?: string | null;
   toUsername: string;
 }) {
   const recipient = await prisma.user.findUnique({
@@ -57,6 +59,7 @@ export async function sendAgentDm({
       roomId: dmRoom.room.id,
       role: "AGENT",
       agentId: senderAgentOpenclawId,
+      taskId: taskId ?? null,
       content: message,
     },
   });
@@ -80,11 +83,13 @@ export async function scheduleAgentDm({
   deliverAt,
   message,
   senderAgentOpenclawId,
+  taskId,
   toUsername,
 }: {
   deliverAt: Date;
   message: string;
   senderAgentOpenclawId: string;
+  taskId?: string | null;
   toUsername: string;
 }) {
   const recipient = await prisma.user.findUnique({
@@ -121,6 +126,7 @@ export async function scheduleAgentDm({
       roomId: dmRoom.room.id,
       agentId: senderAgentOpenclawId,
       toUserId: recipient.id,
+      taskId: taskId ?? null,
       content: message,
       deliverAt,
     },
@@ -158,6 +164,7 @@ export async function deliverDueScheduledMessages(now = new Date()) {
           roomId: scheduled.roomId,
           role: "AGENT",
           agentId: scheduled.agentId,
+          taskId: scheduled.taskId,
           content: scheduled.content,
         },
       });

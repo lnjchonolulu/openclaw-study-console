@@ -293,11 +293,13 @@ export async function createAndRunOutboundAgentTask(input: CreateOutboundAgentTa
           deliverAt: new Date(Date.now() + (input.delayMinutes ?? 1) * 60 * 1000),
           message: composed.message,
           senderAgentOpenclawId: input.agentOpenclawId,
+          taskId: task.id,
           toUsername: targetUser.username,
         })
       : await sendAgentDm({
           message: composed.message,
           senderAgentOpenclawId: input.agentOpenclawId,
+          taskId: task.id,
           toUsername: targetUser.username,
         });
 
@@ -363,27 +365,40 @@ export async function handleInboundTaskReply({
   replyingUsername: string;
   replyMessage: string;
 }) {
-  const task = await prisma.agentTask.findFirst({
+  const lastTaggedOutbound = await prisma.message.findFirst({
     where: {
-      agentId: agentOpenclawId,
-      requesterUserId: {
-        not: replyingUserId,
+      room: {
+        ownerUserId: replyingUserId,
+        type: "PERSONAL",
       },
-      status: "WAITING",
-      targetUserId: replyingUserId,
+      role: "AGENT",
+      agentId: agentOpenclawId,
+      taskId: {
+        not: null,
+      },
+      task: {
+        status: "WAITING",
+        targetUserId: replyingUserId,
+      },
     },
     orderBy: {
-      updatedAt: "desc",
+      createdAt: "desc",
     },
     include: {
-      events: {
-        orderBy: {
-          createdAt: "asc",
+      task: {
+        include: {
+          events: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          requester: true,
         },
       },
-      requester: true,
     },
   });
+
+  const task = lastTaggedOutbound?.task ?? null;
 
   if (!task) {
     return null;
@@ -480,6 +495,7 @@ Decide the next action.`,
     const delivery = await sendAgentDm({
       message: nextAction.message,
       senderAgentOpenclawId: agentOpenclawId,
+      taskId: task.id,
       toUsername: task.requester.username,
     });
 
@@ -520,6 +536,7 @@ Decide the next action.`,
     const delivery = await sendAgentDm({
       message: nextAction.message,
       senderAgentOpenclawId: agentOpenclawId,
+      taskId: task.id,
       toUsername: replyingUsername,
     });
 
