@@ -63,8 +63,11 @@ function parseStudyActionIntent({
 }): StudyActionIntent | null {
   const normalized = message.toLowerCase();
   const hasSendIntent =
-    /\b(send|message|dm|tell|notify|text|remind)\b/.test(normalized) ||
-    /(보내|전해|알려|리마인드|예약)/.test(message);
+    /\b(send|message|dm|tell|notify|text|remind|ask|ping|contact|reach)\b/.test(
+      normalized,
+    ) ||
+    /\b(check with|find out|get (?:their|her|his) opinion)\b/.test(normalized) ||
+    /(보내|전해|알려|리마인드|예약|물어|질문|확인|연락)/.test(message);
 
   if (!hasSendIntent) {
     return null;
