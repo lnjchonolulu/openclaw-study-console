@@ -169,7 +169,7 @@ export async function POST(request: Request) {
     },
   });
 
-  await prisma.message.create({
+  const createdUserMessage = await prisma.message.create({
     data: {
       roomId: dmRoom.room.id,
       userId: user.id,
@@ -221,7 +221,9 @@ export async function POST(request: Request) {
       ownerUsername: dmRoom.targetAgent.user.username,
       personaSummary: dmRoom.targetAgent.personaSummary,
       replyingDisplayName: user.displayName,
+      roomId: dmRoom.room.id,
       replyingUserId: user.id,
+      userMessageId: createdUserMessage.id,
       replyingUsername: user.username,
       replyMessage: message,
     });

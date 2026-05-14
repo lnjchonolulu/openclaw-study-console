@@ -350,7 +350,9 @@ export async function handleInboundTaskReply({
   ownerUsername,
   personaSummary,
   replyingDisplayName,
+  roomId,
   replyingUserId,
+  userMessageId,
   replyingUsername,
   replyMessage,
 }: {
@@ -361,20 +363,36 @@ export async function handleInboundTaskReply({
   ownerUsername: string;
   personaSummary?: string | null;
   replyingDisplayName: string;
+  roomId: string;
   replyingUserId: string;
+  userMessageId: string;
   replyingUsername: string;
   replyMessage: string;
 }) {
+  const inboundMessage = await prisma.message.findUnique({
+    where: {
+      id: userMessageId,
+    },
+    select: {
+      createdAt: true,
+      roomId: true,
+    },
+  });
+
+  if (!inboundMessage) {
+    return null;
+  }
+
   const lastTaggedOutbound = await prisma.message.findFirst({
     where: {
-      room: {
-        ownerUserId: replyingUserId,
-        type: "PERSONAL",
-      },
+      roomId,
       role: "AGENT",
       agentId: agentOpenclawId,
       taskId: {
         not: null,
+      },
+      createdAt: {
+        lt: inboundMessage.createdAt,
       },
       task: {
         status: "WAITING",
@@ -403,6 +421,15 @@ export async function handleInboundTaskReply({
   if (!task) {
     return null;
   }
+
+  await prisma.message.update({
+    where: {
+      id: userMessageId,
+    },
+    data: {
+      taskId: task.id,
+    },
+  });
 
   await prisma.agentTaskEvent.create({
     data: {
