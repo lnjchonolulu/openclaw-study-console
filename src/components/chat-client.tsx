@@ -174,7 +174,7 @@ export function ChatClient({
   }, [roomId]);
 
   useEffect(() => {
-    if (recipientKind !== "person" || !roomId) {
+    if (!roomId) {
       return;
     }
 
@@ -208,7 +208,7 @@ export function ChatClient({
         setHasOlderMessages(payload.hasOlderMessages);
       }
 
-      setIsOtherTyping(Boolean(payload.isOtherTyping));
+      setIsOtherTyping(recipientKind === "person" ? Boolean(payload.isOtherTyping) : false);
     }
 
     void refreshMessages();
