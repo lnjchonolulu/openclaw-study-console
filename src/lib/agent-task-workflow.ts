@@ -126,10 +126,19 @@ function shouldAskForMissingBody(input: CreateOutboundAgentTaskInput) {
   }
 
   const normalized = input.sourceMessage.toLowerCase();
+  const hasFollowupBodyHint =
+    /\b(tell|say|let them know|let her know|let him know|update|confirm|reply)\b/.test(
+      normalized,
+    ) ||
+    /(전해|말해|알려|답장|확정|확인해줘)/.test(input.sourceMessage);
   const hasDelegatedQuestion =
     /\b(ask|get their opinion|get her opinion|get his opinion|find out|check with)\b/.test(
       normalized,
     ) || /(물어|의견|확인해|확인해줘|어떻게 생각)/.test(input.sourceMessage);
+
+  if (hasFollowupBodyHint) {
+    return false;
+  }
 
   return !hasDelegatedQuestion;
 }

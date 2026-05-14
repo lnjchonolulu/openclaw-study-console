@@ -98,6 +98,42 @@ function parseStudyActionIntent({
   };
 }
 
+async function inferMostRecentTaskTargetUsername({
+  agentId,
+  requesterUserId,
+  roomId,
+}: {
+  agentId: string;
+  requesterUserId: string;
+  roomId: string;
+}) {
+  const recent = await prisma.agentTask.findFirst({
+    where: {
+      agentId,
+      requesterUserId,
+      sourceRoomId: roomId,
+      targetUserId: {
+        not: null,
+      },
+      createdAt: {
+        gte: new Date(Date.now() - 1000 * 60 * 60 * 6),
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    include: {
+      targetUser: {
+        select: {
+          username: true,
+        },
+      },
+    },
+  });
+
+  return recent?.targetUser?.username ?? null;
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -224,14 +260,29 @@ export async function POST(request: Request) {
       message,
     });
 
-    if (actionIntent) {
+    const normalized = message.toLowerCase();
+    const isPronounFollowup =
+      /\b(her|him|them)\b/.test(normalized) || /(그녀|그를|그에게|그사람|걔)/.test(message);
+
+    if (actionIntent || isPronounFollowup) {
+      const inferredTarget =
+        actionIntent?.toUsername ??
+        (await inferMostRecentTaskTargetUsername({
+          agentId: dmRoom.targetAgent.openclawAgentId,
+          requesterUserId: user.id,
+          roomId: dmRoom.room.id,
+        }));
+
+      if (!inferredTarget) {
+        // Fall back to normal agent response if we cannot infer who "her/him/them" refers to.
+      } else {
       const taskResult = await createAndRunOutboundAgentTask({
         agentDisplayName: dmRoom.targetAgent.displayName,
         agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
         behaviorConfig: dmRoom.targetAgent.soulConfigJson,
-        delayMinutes: actionIntent.delayMinutes,
-        explicitMessage: actionIntent.message,
-        kind: actionIntent.kind,
+        delayMinutes: actionIntent?.delayMinutes,
+        explicitMessage: actionIntent?.message ?? null,
+        kind: actionIntent?.kind ?? "send_dm",
         ownerDisplayName: dmRoom.targetAgent.user.displayName,
         ownerUsername: dmRoom.targetAgent.user.username,
         personaSummary: dmRoom.targetAgent.personaSummary,
@@ -240,13 +291,13 @@ export async function POST(request: Request) {
         requesterUsername: user.username,
         sourceMessage: message,
         sourceRoomId: dmRoom.room.id,
-        targetUsername: actionIntent.toUsername,
+        targetUsername: inferredTarget,
       });
 
       const assistantText = taskResult.needsClarification
         ? taskResult.question
         : taskResult.ok
-          ? actionIntent.kind === "schedule_dm"
+          ? (actionIntent?.kind ?? "send_dm") === "schedule_dm"
             ? `Scheduled a message to @${taskResult.toUsername}.`
             : `Sent a message to @${taskResult.toUsername}.`
           : `I could not deliver that message: ${taskResult.reason}.`;
@@ -276,6 +327,7 @@ export async function POST(request: Request) {
         },
         roomId: dmRoom.room.id,
       });
+      }
     }
 
     const result = await runAgentTurn({
