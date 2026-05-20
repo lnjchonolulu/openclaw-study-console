@@ -11,10 +11,12 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
+    clientMessageId?: string;
     message?: string;
     recipientId?: string;
     replyToMessageId?: string;
   };
+  const clientMessageId = body.clientMessageId?.trim() || null;
   const message = body.message?.trim();
   const recipientId = body.recipientId?.trim();
   const replyToMessageId = body.replyToMessageId?.trim() || null;
@@ -81,7 +83,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     roomId: room.id,
-    message: {
+    userMessage: {
+      clientMessageId,
       id: createdMessage.id,
       content: createdMessage.content,
       createdAt: createdMessage.createdAt.toISOString(),

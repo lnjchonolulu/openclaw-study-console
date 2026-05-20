@@ -57,6 +57,13 @@ type ReplyTarget = {
   id: string;
 };
 
+type PendingUserMessage = {
+  clientMessageId: string;
+  content: string;
+  createdAt: string;
+  replyTo: ChatMessage["replyTo"];
+};
+
 type RenderRow =
   | {
       type: "date";
@@ -318,16 +325,20 @@ export function ChatClient({
       return;
     }
 
+    const clientMessageId = createClientId();
+    const previousMessageDraft = message;
+    const previousReplyTarget = replyTarget;
+
     const optimisticMessage: ChatMessage = {
-      id: createClientId(),
+      id: clientMessageId,
       role: "USER",
       content: trimmedMessage,
       createdAt: new Date().toISOString(),
-      replyTo: replyTarget
+      replyTo: previousReplyTarget
         ? {
-            authorName: replyTarget.authorName,
-            content: replyTarget.content,
-            id: replyTarget.id,
+            authorName: previousReplyTarget.authorName,
+            content: previousReplyTarget.content,
+            id: previousReplyTarget.id,
             role: "OTHER",
           }
         : null,
@@ -355,9 +366,10 @@ export function ChatClient({
         },
         body: JSON.stringify({
           agentId,
+          clientMessageId,
           message: trimmedMessage,
           recipientId,
-          replyToMessageId: replyTarget?.id ?? null,
+          replyToMessageId: previousReplyTarget?.id ?? null,
         }),
       });
 
@@ -369,12 +381,33 @@ export function ChatClient({
           content: string;
           createdAt: string;
         };
+        userMessage?: {
+          clientMessageId?: string | null;
+          createdAt: string;
+          id: string;
+        };
       };
 
       if (!response.ok) {
+        setMessages((current) =>
+          current.filter((currentMessage) => currentMessage.id !== clientMessageId),
+        );
+        setMessage(previousMessageDraft);
+        setReplyTarget(previousReplyTarget);
         setError(payload.error ?? "The message could not be sent.");
         setIsSending(false);
         return;
+      }
+
+      if (payload.userMessage) {
+        setMessages((current) =>
+          replacePendingUserMessage(current, {
+            clientMessageId,
+            content: trimmedMessage,
+            createdAt: payload.userMessage!.createdAt,
+            replyTo: optimisticMessage.replyTo,
+          }, payload.userMessage!.id),
+        );
       }
 
       if (payload.replyMessage) {
@@ -401,6 +434,11 @@ export function ChatClient({
 
       setIsSending(false);
     } catch (sendError) {
+      setMessages((current) =>
+        current.filter((currentMessage) => currentMessage.id !== clientMessageId),
+      );
+      setMessage(previousMessageDraft);
+      setReplyTarget(previousReplyTarget);
       setError(
         sendError instanceof Error ? sendError.message : "The message could not be sent.",
       );
@@ -643,4 +681,24 @@ function mergeMessages(
   }
 
   return merged;
+}
+
+function replacePendingUserMessage(
+  current: ChatMessage[],
+  pending: PendingUserMessage,
+  persistedId: string,
+) {
+  return current.map((message) => {
+    if (message.id !== pending.clientMessageId) {
+      return message;
+    }
+
+    return {
+      ...message,
+      content: pending.content,
+      createdAt: pending.createdAt,
+      id: persistedId,
+      replyTo: pending.replyTo,
+    };
+  });
 }

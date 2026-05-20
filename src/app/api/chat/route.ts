@@ -143,9 +143,11 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     agentId?: string;
+    clientMessageId?: string;
     message?: string;
     replyToMessageId?: string;
   };
+  const clientMessageId = body.clientMessageId?.trim() || null;
   const targetAgentId = body.agentId?.trim() || user.agent?.openclawAgentId;
   const message = body.message?.trim();
   const replyToMessageId = body.replyToMessageId?.trim() || null;
@@ -277,6 +279,11 @@ export async function POST(request: Request) {
           content: replyMessage.content,
           createdAt: replyMessage.createdAt.toISOString(),
         },
+        userMessage: {
+          clientMessageId,
+          createdAt: createdUserMessage.createdAt.toISOString(),
+          id: createdUserMessage.id,
+        },
         roomId: dmRoom.room.id,
       });
     }
@@ -352,6 +359,11 @@ export async function POST(request: Request) {
           content: replyMessage.content,
           createdAt: replyMessage.createdAt.toISOString(),
         },
+        userMessage: {
+          clientMessageId,
+          createdAt: createdUserMessage.createdAt.toISOString(),
+          id: createdUserMessage.id,
+        },
         roomId: dmRoom.room.id,
       });
       }
@@ -388,6 +400,11 @@ export async function POST(request: Request) {
         id: replyMessage.id,
         content: replyMessage.content,
         createdAt: replyMessage.createdAt.toISOString(),
+      },
+      userMessage: {
+        clientMessageId,
+        createdAt: createdUserMessage.createdAt.toISOString(),
+        id: createdUserMessage.id,
       },
       roomId: dmRoom.room.id,
     });
