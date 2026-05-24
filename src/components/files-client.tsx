@@ -799,7 +799,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                 }}
                 type="button"
               >
-                {index === 0 ? "/home" : crumb.label}
+                {index === 0 ? "CyWorld Drive" : crumb.label}
               </button>
             ))}
           </div>

@@ -510,16 +510,18 @@ export async function buildStudyFilesRuntimeContext({
   });
 
   return [
-    "CyWorld Files context",
-    "- When the user says files, folders, workspace, shared folder, drive, or this interface, they usually mean the CyWorld Files tab/shared workspace, not your OpenClaw workspace root.",
-    "- The CyWorld Files UI root is /home.",
-    "- If the user asks what files you can see, answer from the visible CyWorld entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
-    "- Access here is the app-level shared workspace access. If an entry is listed as no access, say you cannot access that folder in CyWorld.",
+    "CyWorld Drive context",
+    "- CyWorld Drive is the shared file area shown in the web app Drive tab.",
+    "- When the user says Drive, CyWorld Drive, files, folders, shared folder, shared files, workspace, or this interface, they usually mean CyWorld Drive, not your OpenClaw workspace root.",
+    "- The CyWorld Drive UI root is /home.",
+    "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use it as the filesystem mirror of CyWorld Drive.",
+    "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
+    "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
     "",
-    "Visible CyWorld entries:",
+    "Visible CyWorld Drive entries:",
     visibleLines.length > 0 ? visibleLines.join("\n") : "- (none)",
     "",
-    "Known CyWorld folders you cannot access:",
+    "Known CyWorld Drive folders you cannot access:",
     inaccessibleLines.length > 0 ? inaccessibleLines.join("\n") : "- (none)",
   ].join("\n");
 }

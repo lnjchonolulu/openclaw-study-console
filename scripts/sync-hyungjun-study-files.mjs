@@ -9,18 +9,18 @@ import path from "node:path";
 const prisma = new PrismaClient();
 const TARGET_USERNAME = "hyungjun";
 const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
-const STUDY_FILES_DIRNAME = "STUDY_FILES";
+const STUDY_FILES_DIRNAME = "CYWORLD_DRIVE";
 const MANAGED_INDEX = ".study-console-managed.json";
 const FILES_MANAGED_START = "<!-- BEGIN:study-console-files -->";
 const FILES_MANAGED_END = "<!-- END:study-console-files -->";
 const SYNC_MTIME_TOLERANCE_MS = 1500;
 
 const agentsFilesBlock = `${FILES_MANAGED_START}
-## Study Console Files
+## CyWorld Drive
 
-The Study Console web app has a Google Drive-like Files tab. In conversation, users may call it "Files", "the shared folder", "shared workspace", "drive", "directory", or a visible path such as \`/home/Onboarding\`.
+CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In conversation, users may call it "Drive", "CyWorld Drive", "the shared folder", "shared files", "the interface files", "directory", or a visible path such as \`/home/Onboarding\`.
 
-For this agent, the Files tab is mirrored into this workspace at:
+For this agent, CyWorld Drive is mirrored into this OpenClaw workspace at:
 
 - Workspace root: \`${STUDY_FILES_DIRNAME}/\`
 - Manifest: \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`
@@ -36,24 +36,25 @@ Access language:
 - \`no access\`: you may mention that the folder exists only if it appears in the manifest, but you must not claim to know its contents.
 - \`system-managed\`: access is controlled by the Study Console app and should not be bypassed.
 
-When you create, edit, rename, or delete files under \`${STUDY_FILES_DIRNAME}/\`, the Study Console sync job can import those changes back into the web app. Do not edit \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` to change permissions; permissions come from the app.
+When you create, edit, rename, or delete files under \`${STUDY_FILES_DIRNAME}/\`, the CyWorld Drive sync job can import those changes back into the web app. Do not edit \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` to change permissions; permissions come from the app.
 
 Important file policy:
-- The Files tab is a shared drive, not a live collaborative editor.
+- CyWorld Drive is a shared drive, not a live collaborative editor.
 - If you revise an existing file, the sync job will upload your revision as a new file instead of replacing the original.
 - Prefer naming revised outputs clearly, such as \`Original Name - HyungjunBot revision.ext\` or \`Original Name - edited by HyungjunBot.ext\`.
 - Only delete or rename files when the user clearly asked you to change the shared drive entry itself.
 
-If a user refers to a folder that is not listed in the manifest, say you cannot find it in the visible Study Console Files workspace. If a folder is listed as no access, say you can see that it exists but do not have access to its contents.
+If a user refers to a folder that is not listed in the manifest, say you cannot find it in the visible CyWorld Drive. If a folder is listed as no access, say you can see that it exists but do not have access to its contents.
 ${FILES_MANAGED_END}`;
 
 const toolsFilesBlock = `${FILES_MANAGED_START}
-### Study Console Files
+### CyWorld Drive
 
-Use \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` as the source of truth for the Study Console Files tab.
+Use \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` as the source of truth for CyWorld Drive.
 
 Canonical terms:
-- Files tab: the web app's shared file workspace
+- CyWorld Drive: the web app's shared file workspace
+- Drive tab: the web app tab where humans browse CyWorld Drive
 - UI path: the path the human sees, such as \`/home/Onboarding\`
 - Workspace path: the mirrored local path under \`${STUDY_FILES_DIRNAME}/\`
 - Participants with access: humans and agents who can access that folder
@@ -66,7 +67,7 @@ Sync behavior:
 - Renamed mirrored files or folders can be imported back into the web app when the sync job can identify the rename safely.
 - Deleted mirrored files or folders can be deleted from the web app on the next sync. Be careful with destructive file changes.
 
-Do not look for Study Console files outside \`${STUDY_FILES_DIRNAME}/\` unless the user explicitly asks about non-study workspace files.
+Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
 ${FILES_MANAGED_END}`;
 
 function storageRoot() {
@@ -1093,21 +1094,21 @@ async function main() {
   let records = await prisma.fileRecord.findMany(recordQuery);
   let { byId: recordsById, childrenByParentId } = buildRecordMaps(records);
   const manifestLines = [
-    "# Study Console Files Manifest",
+    "# CyWorld Drive Manifest",
     "",
-    "This folder mirrors the Files tab in the Study Console web app.",
+    "This folder mirrors CyWorld Drive, the shared file area in the CyWorld web app.",
     "",
     "## How to read this manifest",
     "",
     "- UI path is the path the human sees in the web app.",
     "- Workspace path is the local mirrored path this agent can use.",
     "- If Access is `no access`, do not claim to know the folder or file contents.",
-    "- Users may call `/home` the shared folder, shared workspace, drive, or Files tab.",
+    "- Users may call this CyWorld Drive, Drive, the shared folder, shared files, interface files, or a visible path such as `/home/Onboarding`.",
     "",
     "## Root",
     "",
     "- UI path: /home",
-    "- Workspace path: STUDY_FILES/home",
+    `- Workspace path: ${STUDY_FILES_DIRNAME}/home`,
     "- Access: view/edit",
     "",
     "## Entries",
@@ -1146,7 +1147,7 @@ async function main() {
     storageRootPath: storageRoot(),
     studyFilesRoot,
     uiParentPath: "/home",
-    workspaceParentPath: "STUDY_FILES/home",
+    workspaceParentPath: `${STUDY_FILES_DIRNAME}/home`,
     agentParticipantKey,
   });
 
@@ -1180,7 +1181,7 @@ async function main() {
     "utf8",
   );
 
-  console.log(`Synced Study Console Files for ${user.agent.openclawAgentId}`);
+  console.log(`Synced CyWorld Drive for ${user.agent.openclawAgentId}`);
   console.log(`Workspace: ${studyFilesRoot}`);
   console.log(`Mirrored entries: ${nextManagedEntries.length - 1}`);
   if (importedChanges.length > 0) {

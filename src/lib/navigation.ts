@@ -21,7 +21,7 @@ export const primaryNavItems: AppNavItem[] = [
   {
     href: "/files",
     icon: "files",
-    title: "Files",
+    title: "Drive",
     description: "Upload, download, and share working materials.",
   },
 ];

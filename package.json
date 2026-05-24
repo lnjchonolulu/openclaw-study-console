@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:seed-demo": "node scripts/seed-demo-users.mjs",
     "sync:hyungjun-files": "node scripts/sync-hyungjun-study-files.mjs",
+    "sync:cyworld-drive": "node scripts/sync-hyungjun-study-files.mjs",
     "sync:study-workflow": "node scripts/sync-study-console-workflow.mjs"
   },
   "dependencies": {
