@@ -659,7 +659,7 @@ function mergeMessages(
     byId.set(message.id, message);
   });
 
-  const merged = Array.from(byId.values()).sort(
+  const merged = removeResolvedOptimisticMessages(Array.from(byId.values())).sort(
     (left, right) =>
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
   );
@@ -688,17 +688,64 @@ function replacePendingUserMessage(
   pending: PendingUserMessage,
   persistedId: string,
 ) {
-  return current.map((message) => {
-    if (message.id !== pending.clientMessageId) {
-      return message;
+  const persistedAlreadyExists = current.some((message) => message.id === persistedId);
+
+  if (persistedAlreadyExists) {
+    return current.filter((message) => message.id !== pending.clientMessageId);
+  }
+
+  return removeResolvedOptimisticMessages(
+    current.map((message) => {
+      if (message.id !== pending.clientMessageId) {
+        return message;
+      }
+
+      return {
+        ...message,
+        content: pending.content,
+        createdAt: pending.createdAt,
+        id: persistedId,
+        replyTo: pending.replyTo,
+      };
+    }),
+  );
+}
+
+function isOptimisticUserMessage(message: ChatMessage) {
+  return message.role === "USER" && message.id.startsWith("client-");
+}
+
+function isSameUserMessage(left: ChatMessage, right: ChatMessage) {
+  if (left.role !== "USER" || right.role !== "USER") {
+    return false;
+  }
+
+  if (left.content !== right.content) {
+    return false;
+  }
+
+  if ((left.replyTo?.id ?? null) !== (right.replyTo?.id ?? null)) {
+    return false;
+  }
+
+  return (
+    Math.abs(
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+    ) < 1000 * 60 * 2
+  );
+}
+
+function removeResolvedOptimisticMessages(messages: ChatMessage[]) {
+  return messages.filter((message) => {
+    if (!isOptimisticUserMessage(message)) {
+      return true;
     }
 
-    return {
-      ...message,
-      content: pending.content,
-      createdAt: pending.createdAt,
-      id: persistedId,
-      replyTo: pending.replyTo,
-    };
+    return !messages.some(
+      (candidate) =>
+        candidate.id !== message.id &&
+        !isOptimisticUserMessage(candidate) &&
+        isSameUserMessage(message, candidate),
+    );
   });
 }
