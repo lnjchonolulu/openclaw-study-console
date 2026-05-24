@@ -6,6 +6,7 @@ import {
   createAndRunOutboundAgentTask,
   handleInboundTaskReply,
 } from "@/lib/agent-task-workflow";
+import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -52,6 +53,29 @@ function parseDelayMinutes(message: string) {
   return unit.startsWith("hour") || unit.startsWith("hr") ? amount * 60 : amount;
 }
 
+function isSelfDirectedInformationRequest(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    /\b(tell|show|list|explain|describe)\s+me\s+(what|which|how|why|where|whether|if|about)\b/.test(
+      normalized,
+    ) ||
+    /\b(can|could|would|will)\s+you\s+(tell|show|list|explain|describe|check|see|access)\b/.test(
+      normalized,
+    ) ||
+    /\bwhat\s+(files|folders|workspace|directory|directories)\b/.test(normalized) ||
+    /(뭐.*보여|무엇.*보여|파일.*뭐|폴더.*뭐|워크스페이스.*뭐|공유\s*폴더)/.test(message)
+  );
+}
+
+function mentionsStudyFiles(message: string) {
+  return (
+    /\b(files?|folders?|workspace|shared folder|drive|directory|directories|interface|upload|download|pdf|docx?|sheets?)\b/i.test(
+      message,
+    ) || /(파일|폴더|공유\s*폴더|워크스페이스|인터페이스|업로드|다운로드|문서)/.test(message)
+  );
+}
+
 function parseStudyActionIntent({
   activeUsernames,
   currentUsername,
@@ -62,10 +86,17 @@ function parseStudyActionIntent({
   message: string;
 }): StudyActionIntent | null {
   const normalized = message.toLowerCase();
+  const delayMinutes = parseDelayMinutes(message);
+
+  if (!delayMinutes && isSelfDirectedInformationRequest(message)) {
+    return null;
+  }
+
   const hasSendIntent =
-    /\b(send|message|dm|tell|notify|text|remind|ask|ping|contact|reach)\b/.test(
+    /\b(send|message|dm|notify|text|remind|ask|ping|contact|reach)\b/.test(
       normalized,
     ) ||
+    /\btell\s+(?!me\b)(?:@?\w+|her|him|them|someone|somebody)\b/.test(normalized) ||
     /\b(check with|find out|get (?:their|her|his) opinion)\b/.test(normalized) ||
     /(보내|전해|알려|리마인드|예약|물어|질문|확인|연락)/.test(message);
 
@@ -73,7 +104,6 @@ function parseStudyActionIntent({
     return null;
   }
 
-  const delayMinutes = parseDelayMinutes(message);
   const toUsername =
     /\b(me|myself)\b/.test(normalized) || /(나한테|내게|나에게)/.test(message)
       ? currentUsername
@@ -87,6 +117,10 @@ function parseStudyActionIntent({
         });
 
   if (!toUsername) {
+    return null;
+  }
+
+  if (toUsername === currentUsername && !delayMinutes) {
     return null;
   }
 
@@ -240,20 +274,37 @@ export async function POST(request: Request) {
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
 
-    const taskReply = await handleInboundTaskReply({
-      agentDisplayName: dmRoom.targetAgent.displayName,
-      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-      behaviorConfig: dmRoom.targetAgent.soulConfigJson,
-      ownerDisplayName: dmRoom.targetAgent.user.displayName,
-      ownerUsername: dmRoom.targetAgent.user.username,
-      personaSummary: dmRoom.targetAgent.personaSummary,
-      replyingDisplayName: user.displayName,
-      roomId: dmRoom.room.id,
-      replyingUserId: user.id,
-      userMessageId: createdUserMessage.id,
-      replyingUsername: user.username,
-      replyMessage: message,
-    });
+    const repliedToTaskMessage = replyToMessageId
+      ? await prisma.message.findFirst({
+          where: {
+            id: replyToMessageId,
+            roomId: dmRoom.room.id,
+            taskId: {
+              not: null,
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+      : null;
+    const shouldAttemptTaskReply = Boolean(repliedToTaskMessage) || audience === "shared_spaces";
+    const taskReply = shouldAttemptTaskReply
+      ? await handleInboundTaskReply({
+          agentDisplayName: dmRoom.targetAgent.displayName,
+          agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+          behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+          ownerDisplayName: dmRoom.targetAgent.user.displayName,
+          ownerUsername: dmRoom.targetAgent.user.username,
+          personaSummary: dmRoom.targetAgent.personaSummary,
+          replyingDisplayName: user.displayName,
+          roomId: dmRoom.room.id,
+          replyingUserId: user.id,
+          userMessageId: createdUserMessage.id,
+          replyingUsername: user.username,
+          replyMessage: message,
+        })
+      : null;
 
     if (taskReply) {
       const replyMessage = await prisma.message.create({
@@ -369,9 +420,19 @@ export async function POST(request: Request) {
       }
     }
 
+    const filesContext = mentionsStudyFiles(message)
+      ? await buildStudyFilesRuntimeContext({
+          agentDatabaseId: dmRoom.targetAgent.id,
+          userId: user.id,
+        })
+      : null;
+    const turnInstructions = filesContext
+      ? `${instructions}\n\n${filesContext}`
+      : instructions;
+
     const result = await runAgentTurn({
       agentId: dmRoom.targetAgent.openclawAgentId,
-      instructions,
+      instructions: turnInstructions,
       message,
       conversationKey: `room:${dmRoom.room.id}`,
     });

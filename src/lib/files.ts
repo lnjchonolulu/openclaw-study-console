@@ -377,6 +377,153 @@ function mapEntry(
   };
 }
 
+function participantNameForKey(
+  key: string,
+  context: FileWorkspaceContext,
+) {
+  return context.participantsByKey.get(key)?.name ?? key;
+}
+
+function accessLabelForConfig(
+  config: FileAccessConfig,
+  context: FileWorkspaceContext,
+) {
+  if (config.participantKeys.length === 0) {
+    return "everyone";
+  }
+
+  return config.participantKeys
+    .map((key) => participantNameForKey(key, context))
+    .join(", ");
+}
+
+function buildStudyFilePath(
+  record: FileRecordLite,
+  recordsById: Map<string, FileRecordLite>,
+) {
+  const segments = [record.filename];
+  let cursor = record.parentId ? recordsById.get(record.parentId) : null;
+
+  while (cursor) {
+    segments.unshift(cursor.filename);
+    cursor = cursor.parentId ? recordsById.get(cursor.parentId) : null;
+  }
+
+  return `/home/${segments.join("/")}`;
+}
+
+function canAccessRecordWithKey(
+  record: FileRecordLite,
+  participantKey: string,
+  recordsById: Map<string, FileRecordLite>,
+) {
+  const ownAccess = parseAccessConfig(record.accessConfigJson);
+
+  if (!hasExplicitAccess(ownAccess, participantKey)) {
+    return false;
+  }
+
+  let cursor = record.parentId ? recordsById.get(record.parentId) : null;
+
+  while (cursor) {
+    const parentAccess = parseAccessConfig(cursor.accessConfigJson);
+
+    if (!hasExplicitAccess(parentAccess, participantKey)) {
+      return false;
+    }
+
+    cursor = cursor.parentId ? recordsById.get(cursor.parentId) : null;
+  }
+
+  return true;
+}
+
+export async function buildStudyFilesRuntimeContext({
+  agentDatabaseId,
+  userId,
+}: {
+  agentDatabaseId: string;
+  userId: string;
+}) {
+  const context = await getFileWorkspaceContext(userId);
+  const agentKey = `agent:${agentDatabaseId}`;
+
+  await ensurePersonalsStructure(context);
+
+  const records = await prisma.fileRecord.findMany({
+    where: {
+      OR: [{ teamId: context.teamId }, { teamId: null }],
+    },
+    orderBy: [{ isFolder: "desc" }, { filename: "asc" }],
+    select: {
+      accessConfigJson: true,
+      createdAt: true,
+      filename: true,
+      id: true,
+      isFolder: true,
+      mimeType: true,
+      owner: {
+        select: {
+          displayName: true,
+        },
+      },
+      ownerUserId: true,
+      parentId: true,
+      sizeBytes: true,
+      storageKey: true,
+      systemKey: true,
+      teamId: true,
+      updatedAt: true,
+    },
+  });
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  const visibleRecords = records
+    .filter((record) => canAccessRecordWithKey(record, agentKey, recordsById))
+    .sort((left, right) => {
+      const leftPath = buildStudyFilePath(left, recordsById);
+      const rightPath = buildStudyFilePath(right, recordsById);
+      return leftPath.localeCompare(rightPath);
+    })
+    .slice(0, 80);
+  const inaccessibleFolders = records
+    .filter((record) => record.isFolder && !canAccessRecordWithKey(record, agentKey, recordsById))
+    .filter((record) => {
+      if (!record.parentId) {
+        return true;
+      }
+
+      const parent = recordsById.get(record.parentId);
+
+      return parent ? canAccessRecordWithKey(parent, agentKey, recordsById) : true;
+    })
+    .slice(0, 20);
+  const visibleLines = visibleRecords.map((record) => {
+    const access = accessLabelForConfig(parseAccessConfig(record.accessConfigJson), context);
+    const kind = record.isFolder ? "folder" : "file";
+
+    return `- ${buildStudyFilePath(record, recordsById)} (${kind}; access: ${access})`;
+  });
+  const inaccessibleLines = inaccessibleFolders.map((record) => {
+    const access = accessLabelForConfig(parseAccessConfig(record.accessConfigJson), context);
+
+    return `- ${buildStudyFilePath(record, recordsById)} (folder; no access for you; access: ${access})`;
+  });
+
+  return [
+    "CyWorld Files context",
+    "- When the user says files, folders, workspace, shared folder, drive, or this interface, they usually mean the CyWorld Files tab/shared workspace, not your OpenClaw workspace root.",
+    "- The CyWorld Files UI root is /home.",
+    "- If the user asks what files you can see, answer from the visible CyWorld entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
+    "- Access here is the app-level shared workspace access. If an entry is listed as no access, say you cannot access that folder in CyWorld.",
+    "",
+    "Visible CyWorld entries:",
+    visibleLines.length > 0 ? visibleLines.join("\n") : "- (none)",
+    "",
+    "Known CyWorld folders you cannot access:",
+    inaccessibleLines.length > 0 ? inaccessibleLines.join("\n") : "- (none)",
+  ].join("\n");
+}
+
 export async function listWorkspaceFolder(
   parentId: string | null,
   userId: string,
