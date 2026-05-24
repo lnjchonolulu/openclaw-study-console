@@ -288,7 +288,8 @@ export async function POST(request: Request) {
           },
         })
       : null;
-    const shouldAttemptTaskReply = Boolean(repliedToTaskMessage) || audience === "shared_spaces";
+    const shouldAttemptTaskReply =
+      audience === "shared_spaces" && Boolean(repliedToTaskMessage);
     const taskReply = shouldAttemptTaskReply
       ? await handleInboundTaskReply({
           agentDisplayName: dmRoom.targetAgent.displayName,
