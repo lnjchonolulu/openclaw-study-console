@@ -462,7 +462,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     setDropFolderId(null);
   }
 
-  async function uploadFiles(files: File[]) {
+  async function uploadFiles(files: File[], replaceExisting = false) {
     if (!files.length) {
       return;
     }
@@ -480,12 +480,33 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
       formData.append("parentId", view.currentFolder.id);
     }
 
+    if (replaceExisting) {
+      formData.append("replaceExisting", "true");
+    }
+
     const response = await fetch("/api/files", {
       method: "POST",
       body: formData,
     });
 
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json()) as {
+      conflicts?: Array<{ existingId: string; filename: string }>;
+      error?: string;
+    };
+
+    if (response.status === 409 && payload.conflicts?.length) {
+      setIsUploading(false);
+      const conflictNames = payload.conflicts.map((conflict) => conflict.filename).join(", ");
+      const shouldReplace = window.confirm(
+        `A file with the same name already exists: ${conflictNames}\n\nReplace the existing file? Choose Cancel to keep the current file and upload again with a different name.`,
+      );
+
+      if (shouldReplace) {
+        await uploadFiles(files, true);
+      }
+
+      return;
+    }
 
     if (!response.ok) {
       setNotice(payload.error ?? "Upload failed.");

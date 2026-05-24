@@ -364,6 +364,9 @@ export function AppShell({
     <div className={`app-shell${hasContext ? " app-shell-context-open" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-main">
+          <div className="sidebar-brand" aria-label="CyWorld">
+            CyWorld
+          </div>
           <nav className="nav-list" aria-label="Primary">
             {primaryNavItems.map((item) => {
               const isActive = pathname === item.href;

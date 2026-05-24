@@ -439,31 +439,15 @@ button.primary-button {
 
 .sidebar-main {
   display: grid;
-  gap: 28px;
+  gap: 22px;
 }
 
-.brand-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.brand-block {
-  display: grid;
-  gap: 8px;
-}
-
-.brand-block p {
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.5;
-}
-
-.brand-title {
-  font-size: 1.2rem;
+.sidebar-brand {
+  padding: 4px 11px 10px;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 .nav-list {

@@ -75,6 +75,7 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const parentId = (formData.get("parentId") as string | null)?.trim() || null;
+  const replaceExisting = formData.get("replaceExisting") === "true";
   const files = formData
     .getAll("files")
     .filter((entry): entry is File => entry instanceof File);
@@ -87,10 +88,21 @@ export async function POST(request: Request) {
     const entries = await uploadWorkspaceFiles({
       files,
       parentId,
+      replaceExisting,
       uploadedByUserId: user.id,
     });
 
-    return NextResponse.json({ entries });
+    if (entries.conflicts.length > 0) {
+      return NextResponse.json(
+        {
+          conflicts: entries.conflicts,
+          error: "Upload conflict.",
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ entries: entries.entries });
   } catch (error) {
     return NextResponse.json(
       {

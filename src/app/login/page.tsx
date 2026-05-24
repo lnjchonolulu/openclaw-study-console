@@ -23,7 +23,7 @@ export default async function LoginPage({
   return (
     <main className="login-page">
       <section className="login-card">
-        <h1>[TBA] Tool Name</h1>
+        <h1>CyWorld</h1>
 
         <form action="/api/auth/login" className="form-grid-single" method="post">
           <label className="split-label">

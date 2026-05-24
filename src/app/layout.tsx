@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OpenClaw Study Console",
+  title: "CyWorld",
   description: "Study workspace for personal OpenClaw agents, files, and team collaboration.",
 };
 

@@ -45,6 +45,11 @@ export type WorkspaceEntry = {
   updatedByName: string;
 };
 
+export type UploadConflict = {
+  existingId: string;
+  filename: string;
+};
+
 export type WorkspaceBreadcrumb = {
   id: string | null;
   isLocked: boolean;
@@ -521,10 +526,12 @@ export async function createWorkspaceFolder({
 export async function uploadWorkspaceFiles({
   files,
   parentId,
+  replaceExisting,
   uploadedByUserId,
 }: {
   files: File[];
   parentId: string | null;
+  replaceExisting?: boolean;
   uploadedByUserId: string;
 }) {
   const context = await getFileWorkspaceContext(uploadedByUserId);
@@ -540,55 +547,122 @@ export async function uploadWorkspaceFiles({
 
   const root = await ensureStorageRoot();
   const createdEntries: WorkspaceEntry[] = [];
+  const incomingNames = files.map((file) => sanitizeFilename(file.name));
+  const existingFiles = await prisma.fileRecord.findMany({
+    where: {
+      parentId,
+      isFolder: false,
+      filename: {
+        in: incomingNames,
+      },
+    },
+    select: {
+      accessConfigJson: true,
+      filename: true,
+      id: true,
+      storageKey: true,
+    },
+  });
+  const accessibleConflicts = existingFiles.filter((existing) =>
+    hasExplicitAccess(parseAccessConfig(existing.accessConfigJson), context.currentUserKey),
+  );
+
+  if (accessibleConflicts.length > 0 && !replaceExisting) {
+    return {
+      conflicts: accessibleConflicts.map((existing) => ({
+        existingId: existing.id,
+        filename: existing.filename,
+      })),
+      entries: [],
+    };
+  }
+  const existingByFilename = new Map(
+    accessibleConflicts.map((existing) => [existing.filename, existing]),
+  );
 
   for (const file of files) {
     const safeName = sanitizeFilename(file.name);
-    const recordId = randomUUID();
-    const storageKey = `${recordId}-${safeName}`;
+    const existing = replaceExisting ? existingByFilename.get(safeName) : null;
+    const recordId = existing?.id ?? randomUUID();
+    const storageKey = existing?.storageKey ?? `${recordId}-${safeName}`;
     const absolutePath = path.join(root, storageKey);
     const bytes = Buffer.from(await file.arrayBuffer());
 
     await writeFile(absolutePath, bytes);
 
-    const created = await prisma.fileRecord.create({
-      data: {
-        id: recordId,
-        ownerUserId: uploadedByUserId,
-        teamId: context.teamId,
-        parentId,
-        filename: safeName,
-        storageKey,
-        mimeType: file.type || null,
-        sizeBytes: bytes.byteLength,
-        visibility: "TEAM",
-        sourceType: "USER_UPLOAD",
-      },
-      select: {
-        accessConfigJson: true,
-        createdAt: true,
-        filename: true,
-        id: true,
-        isFolder: true,
-        mimeType: true,
-        owner: {
-          select: {
-            displayName: true,
+    const created = existing
+      ? await prisma.fileRecord.update({
+          where: {
+            id: existing.id,
           },
-        },
-        ownerUserId: true,
-        parentId: true,
-        sizeBytes: true,
-        storageKey: true,
-        systemKey: true,
-        teamId: true,
-        updatedAt: true,
-      },
-    });
+          data: {
+            mimeType: file.type || null,
+            sizeBytes: bytes.byteLength,
+            sourceType: "USER_REPLACED_UPLOAD",
+          },
+          select: {
+            accessConfigJson: true,
+            createdAt: true,
+            filename: true,
+            id: true,
+            isFolder: true,
+            mimeType: true,
+            owner: {
+              select: {
+                displayName: true,
+              },
+            },
+            ownerUserId: true,
+            parentId: true,
+            sizeBytes: true,
+            storageKey: true,
+            systemKey: true,
+            teamId: true,
+            updatedAt: true,
+          },
+        })
+      : await prisma.fileRecord.create({
+          data: {
+            id: recordId,
+            ownerUserId: uploadedByUserId,
+            teamId: context.teamId,
+            parentId,
+            filename: safeName,
+            storageKey,
+            mimeType: file.type || null,
+            sizeBytes: bytes.byteLength,
+            visibility: "TEAM",
+            sourceType: "USER_UPLOAD",
+          },
+          select: {
+            accessConfigJson: true,
+            createdAt: true,
+            filename: true,
+            id: true,
+            isFolder: true,
+            mimeType: true,
+            owner: {
+              select: {
+                displayName: true,
+              },
+            },
+            ownerUserId: true,
+            parentId: true,
+            sizeBytes: true,
+            storageKey: true,
+            systemKey: true,
+            teamId: true,
+            updatedAt: true,
+          },
+        });
 
     createdEntries.push(mapEntry(created, context));
   }
 
-  return createdEntries;
+  return {
+    conflicts: [],
+    entries: createdEntries,
+  };
 }
 
 export async function updateWorkspaceFolderAccess(
