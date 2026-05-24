@@ -1,0 +1,10 @@
+[Unit]
+Description=CyWorld Drive mirror sync for Hyungjun agent
+After=network.target openclaw-study.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/openclaw-study
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run sync:cyworld-drive
+User=root
