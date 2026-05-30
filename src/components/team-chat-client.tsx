@@ -30,7 +30,7 @@ function getMinuteKey(isoString: string) {
 }
 
 function getSenderKey(message: TeamChannelDetail["messages"][number]) {
-  return message.userId;
+  return message.senderKey;
 }
 
 function truncateReplyPreview(value: string, maxLength = 120) {
@@ -209,8 +209,7 @@ export function TeamChatClient({
     () =>
       new Map(
         (channel?.members ?? [])
-          .filter((member) => member.kind === "user")
-          .map((member) => [member.id, member]),
+          .map((member) => [member.messageKey, member]),
       ),
     [channel?.members],
   );
@@ -246,6 +245,7 @@ export function TeamChatClient({
 
     const payload = (await response.json()) as {
       error?: string;
+      agentMessages?: TeamChannelDetail["messages"];
       message?: TeamChannelDetail["messages"][number];
     };
 
@@ -270,6 +270,7 @@ export function TeamChatClient({
                     }
                   : null),
               },
+              ...(payload.agentMessages ?? []),
             ],
           }
         : current,

@@ -11,6 +11,7 @@ export type TeamParticipant = {
   id: string;
   kind: "agent" | "user";
   meta: string;
+  messageKey: string;
   name: string;
   username: string;
 };
@@ -37,6 +38,7 @@ export type TeamChannelDetail = {
       id: string;
       userId: string;
     } | null;
+    senderKey: string;
     userId: string;
   }[];
   title: string;
@@ -89,6 +91,7 @@ function mapParticipant(user: {
     },
     id: user.id,
     kind: "user" as const,
+    messageKey: user.id,
     name: user.displayName,
     meta: getUserMeta(user.username),
     username: user.username,
@@ -98,6 +101,7 @@ function mapParticipant(user: {
 function mapAgentParticipant(agent: {
   id: string;
   displayName?: string | null;
+  openclawAgentId: string;
   profileConfigJson?: unknown;
   user: {
     username: string;
@@ -114,6 +118,7 @@ function mapAgentParticipant(agent: {
     },
     id: agent.id,
     kind: "agent" as const,
+    messageKey: `agent:${agent.openclawAgentId}`,
     meta: getAgentMeta(agent.user.username),
     name: agent.displayName ?? `${agent.user.username}'s agent`,
     username: `${agent.user.username}-agent`,
@@ -185,6 +190,7 @@ function mergeParticipants(
   agentMembers: Array<{
     agent: {
       id: string;
+      openclawAgentId: string;
       user: {
         displayName: string;
         username: string;
@@ -202,6 +208,7 @@ function buildChannelParticipants(args: {
   agentMembers: Array<{
     agent: {
       id: string;
+      openclawAgentId: string;
       user: {
         displayName: string;
         username: string;
@@ -306,6 +313,7 @@ export async function listTeamParticipants(userId: string): Promise<TeamParticip
         mapAgentParticipant({
           displayName: member.agent.displayName,
           id: member.agent.id,
+          openclawAgentId: member.agent.openclawAgentId,
           profileConfigJson: member.agent.profileConfigJson,
           user: {
             username: member.username,
@@ -451,9 +459,11 @@ export async function getTeamChannelDetail(
         include: {
           replyToMessage: {
             include: {
+              agent: true,
               user: true,
             },
           },
+          agent: true,
           user: true,
         },
       },
@@ -489,9 +499,11 @@ export async function getTeamChannelDetail(
             include: {
               replyToMessage: {
                 include: {
+                  agent: true,
                   user: true,
                 },
               },
+              agent: true,
               user: true,
             },
           },
@@ -510,19 +522,25 @@ export async function getTeamChannelDetail(
         agentMembers: fallbackRoom.agents,
       }),
       messages: fallbackRoom.messages.map((message) => ({
-        author: message.user?.displayName ?? "Unknown",
+        author: message.user?.displayName ?? message.agent?.displayName ?? "Unknown",
         content: message.content,
         createdAt: message.createdAt.toISOString(),
         id: message.id,
         replyTo: message.replyToMessage
           ? {
-              author: message.replyToMessage.user?.displayName ?? "Unknown",
+              author:
+                message.replyToMessage.user?.displayName ??
+                message.replyToMessage.agent?.displayName ??
+                "Unknown",
               content: message.replyToMessage.content,
               id: message.replyToMessage.id,
-              userId: message.replyToMessage.userId ?? "unknown",
+              userId:
+                message.replyToMessage.userId ??
+                `agent:${message.replyToMessage.agentId ?? "unknown"}`,
             }
           : null,
-        userId: message.userId ?? "unknown",
+        senderKey: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
+        userId: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
       })),
       title: fallbackRoom.name,
     };
@@ -536,19 +554,25 @@ export async function getTeamChannelDetail(
       agentMembers: room.agents,
     }),
     messages: room.messages.map((message) => ({
-      author: message.user?.displayName ?? "Unknown",
+      author: message.user?.displayName ?? message.agent?.displayName ?? "Unknown",
       content: message.content,
       createdAt: message.createdAt.toISOString(),
       id: message.id,
       replyTo: message.replyToMessage
         ? {
-            author: message.replyToMessage.user?.displayName ?? "Unknown",
+            author:
+              message.replyToMessage.user?.displayName ??
+              message.replyToMessage.agent?.displayName ??
+              "Unknown",
             content: message.replyToMessage.content,
             id: message.replyToMessage.id,
-            userId: message.replyToMessage.userId ?? "unknown",
+            userId:
+              message.replyToMessage.userId ??
+              `agent:${message.replyToMessage.agentId ?? "unknown"}`,
           }
         : null,
-      userId: message.userId ?? "unknown",
+      senderKey: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
+      userId: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
     })),
     title: room.name,
   };
@@ -825,9 +849,11 @@ export async function createTeamMessage(
     include: {
       replyToMessage: {
         include: {
+          agent: true,
           user: true,
         },
       },
+      agent: true,
       user: true,
     },
   });

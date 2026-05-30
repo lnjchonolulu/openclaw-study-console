@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { runTeamAgentDispatch } from "@/lib/team-agent-dispatcher";
 import { createTeamMessage, getTeamChannelDetail } from "@/lib/team";
 
 export async function GET(request: Request) {
@@ -46,7 +47,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Message could not be created." }, { status: 404 });
   }
 
+  const agentMessages = await runTeamAgentDispatch({
+    roomId,
+    triggeringMessageId: created.id,
+  });
+
   return NextResponse.json({
+    agentMessages,
     message: {
       author: created.user?.displayName ?? user.displayName,
       content: created.content,
@@ -54,12 +61,18 @@ export async function POST(request: Request) {
       id: created.id,
       replyTo: created.replyToMessage
         ? {
-            author: created.replyToMessage.user?.displayName ?? "Unknown",
+            author:
+              created.replyToMessage.user?.displayName ??
+              created.replyToMessage.agent?.displayName ??
+              "Unknown",
             content: created.replyToMessage.content,
             id: created.replyToMessage.id,
-            userId: created.replyToMessage.userId ?? "unknown",
+            userId:
+              created.replyToMessage.userId ??
+              `agent:${created.replyToMessage.agentId ?? "unknown"}`,
           }
         : null,
+      senderKey: created.userId ?? `agent:${created.agentId ?? "unknown"}`,
       userId: created.userId ?? user.id,
     },
   });

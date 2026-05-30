@@ -50,13 +50,13 @@ function extractAssistantText(payload: unknown) {
   return null;
 }
 
-type OpenClawFunctionTool = {
+export type OpenClawFunctionTool = {
   description?: string;
   name: string;
   parameters: Record<string, unknown>;
 };
 
-type OpenClawFunctionCall = {
+export type OpenClawFunctionCall = {
   argumentsJson: string;
   callId: string;
   name: string;
