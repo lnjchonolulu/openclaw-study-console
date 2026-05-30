@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 import { PrismaClient } from "@prisma/client";
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ const TARGET_USERNAME = "hyungjun";
 const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
 const STUDY_FILES_DIRNAME = "CYWORLD_DRIVE";
 const MANAGED_INDEX = ".study-console-managed.json";
+const QUARANTINE_DIRNAME = "_INVALID_CYWORLD_DRIVE_PATHS";
 const FILES_MANAGED_START = "<!-- BEGIN:study-console-files -->";
 const FILES_MANAGED_END = "<!-- END:study-console-files -->";
 const SYNC_MTIME_TOLERANCE_MS = 1500;
@@ -23,12 +24,20 @@ CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In co
 For this agent, CyWorld Drive is mirrored into this OpenClaw workspace at:
 
 - Workspace root: \`${STUDY_FILES_DIRNAME}/\`
+- Required content root: \`${STUDY_FILES_DIRNAME}/home/\`
 - Manifest: \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`
+
+Critical path rule:
+- Every CyWorld Drive UI path keeps its leading \`/home\` segment in the workspace mirror.
+- UI path \`/home\` maps to \`${STUDY_FILES_DIRNAME}/home\`.
+- UI path \`/home/Personals/hyungjun\` maps to \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\`.
+- Never create \`${STUDY_FILES_DIRNAME}/Personals\`, \`${STUDY_FILES_DIRNAME}/Onboarding\`, or any other top-level content folder outside \`${STUDY_FILES_DIRNAME}/home\`.
+- Files or folders created outside \`${STUDY_FILES_DIRNAME}/home\` are invalid and will not appear in the CyWorld Drive UI.
 
 Before answering requests about shared files or folders:
 1. Read \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`.
 2. Match the user's wording to the UI path shown in the manifest.
-3. Use the mirrored workspace path when you need to read or edit accessible files.
+3. Use the exact mirrored workspace path from the manifest when you need to read or edit accessible files.
 4. Respect the access state shown in the manifest.
 
 Access language:
@@ -67,7 +76,12 @@ Sync behavior:
 - Renamed mirrored files or folders can be imported back into the web app when the sync job can identify the rename safely.
 - Deleted mirrored files or folders can be deleted from the web app on the next sync. Be careful with destructive file changes.
 
-Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
+Path safety:
+- The only valid content root is \`${STUDY_FILES_DIRNAME}/home/\`.
+- Keep the \`home\` segment. Do not shorten \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\` to \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`.
+- Do not create top-level content folders directly under \`${STUDY_FILES_DIRNAME}/\`.
+
+Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/home/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
 ${FILES_MANAGED_END}`;
 
 function storageRoot() {
@@ -320,6 +334,44 @@ async function pathExists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function quarantineInvalidTopLevelEntries(studyFilesRoot, agentId) {
+  if (!(await pathExists(studyFilesRoot))) {
+    return [];
+  }
+
+  const allowedTopLevelNames = new Set([
+    "home",
+    "MANIFEST.md",
+    MANAGED_INDEX,
+    QUARANTINE_DIRNAME,
+  ]);
+  const entries = await readdir(studyFilesRoot, {
+    withFileTypes: true,
+  });
+  const invalidEntries = entries.filter((entry) => !allowedTopLevelNames.has(entry.name));
+  const logs = [];
+
+  if (invalidEntries.length === 0) {
+    return logs;
+  }
+
+  const quarantineRoot = path.join(studyFilesRoot, QUARANTINE_DIRNAME);
+  await mkdir(quarantineRoot, { recursive: true });
+
+  for (const entry of invalidEntries) {
+    const sourcePath = path.join(studyFilesRoot, entry.name);
+    const targetName = `${new Date().toISOString().replace(/[:.]/g, "-")}-${sanitizePathSegment(entry.name)}`;
+    const targetPath = path.join(quarantineRoot, targetName);
+
+    await rename(sourcePath, targetPath);
+    logs.push(
+      `${agentId}: quarantined invalid CyWorld Drive path ${entry.name} -> ${QUARANTINE_DIRNAME}/${targetName}`,
+    );
+  }
+
+  return logs;
 }
 
 async function readWorkspaceTree(root, relativeRoot = "") {
@@ -1118,6 +1170,10 @@ async function main() {
 
   await mkdir(homeRoot, { recursive: true });
   await syncAgentMarkdown(workspacePath);
+  const quarantinedInvalidPaths = await quarantineInvalidTopLevelEntries(
+    studyFilesRoot,
+    user.agent.openclawAgentId,
+  );
 
   const importedChanges = await importWorkspaceChanges({
     agent: user.agent,
@@ -1130,7 +1186,7 @@ async function main() {
     userId: user.id,
   });
 
-  if (importedChanges.length > 0) {
+  if (importedChanges.length > 0 || quarantinedInvalidPaths.length > 0) {
     records = await prisma.fileRecord.findMany(recordQuery);
     ({ childrenByParentId } = buildRecordMaps(records));
   }
@@ -1184,9 +1240,11 @@ async function main() {
   console.log(`Synced CyWorld Drive for ${user.agent.openclawAgentId}`);
   console.log(`Workspace: ${studyFilesRoot}`);
   console.log(`Mirrored entries: ${nextManagedEntries.length - 1}`);
-  if (importedChanges.length > 0) {
+  const syncLogs = [...quarantinedInvalidPaths, ...importedChanges];
+
+  if (syncLogs.length > 0) {
     console.log("Imported agent workspace changes:");
-    for (const change of importedChanges) {
+    for (const change of syncLogs) {
       console.log(`- ${change}`);
     }
   }
