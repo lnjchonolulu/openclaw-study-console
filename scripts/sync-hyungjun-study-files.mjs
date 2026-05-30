@@ -163,6 +163,40 @@ function splitFilename(filename) {
   };
 }
 
+function mimeTypeForFilename(filename) {
+  switch (path.extname(filename).toLowerCase()) {
+    case ".csv":
+      return "text/csv";
+    case ".doc":
+      return "application/msword";
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".gif":
+      return "image/gif";
+    case ".jpeg":
+    case ".jpg":
+      return "image/jpeg";
+    case ".json":
+      return "application/json";
+    case ".md":
+      return "text/markdown";
+    case ".pdf":
+      return "application/pdf";
+    case ".png":
+      return "image/png";
+    case ".txt":
+      return "text/plain";
+    case ".webp":
+      return "image/webp";
+    case ".xls":
+      return "application/vnd.ms-excel";
+    case ".xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    default:
+      return null;
+  }
+}
+
 async function uniqueFilename(parentId, baseFilename) {
   const existing = await prisma.fileRecord.findMany({
     where: {
@@ -841,7 +875,7 @@ async function syncExistingWorkspaceEdits({
         parentId: record.parentId,
         filename: nextFilename,
         storageKey,
-        mimeType: record.mimeType,
+        mimeType: record.mimeType ?? mimeTypeForFilename(nextFilename),
         sizeBytes: localStat.size,
         visibility: "TEAM",
         sourceType: "AGENT_REVISION_FILE",
@@ -977,7 +1011,7 @@ async function createRecordsForNewWorkspaceEntries({
         parentId: parentRecord?.id ?? null,
         filename,
         storageKey,
-        mimeType: null,
+        mimeType: mimeTypeForFilename(filename),
         sizeBytes: localStat.size,
         visibility: "TEAM",
         sourceType: "AGENT_CREATED_FILE",
@@ -1185,6 +1219,31 @@ async function syncAgentMarkdown(workspacePath) {
   }
 }
 
+async function backfillMissingMimeTypes(records) {
+  const updates = records
+    .filter((record) => !record.isFolder && !record.mimeType)
+    .map((record) => ({
+      id: record.id,
+      mimeType: mimeTypeForFilename(record.filename),
+    }))
+    .filter((record) => record.mimeType);
+
+  await Promise.all(
+    updates.map((record) =>
+      prisma.fileRecord.update({
+        where: {
+          id: record.id,
+        },
+        data: {
+          mimeType: record.mimeType,
+        },
+      }),
+    ),
+  );
+
+  return updates.length;
+}
+
 async function main() {
   const user = await prisma.user.findUnique({
     where: {
@@ -1272,11 +1331,19 @@ async function main() {
     teamId: user.teamId,
     userId: user.id,
   });
+  let mimeBackfillCount = 0;
 
   if (importedChanges.length > 0 || migrationLogs.length > 0) {
     records = await prisma.fileRecord.findMany(recordQuery);
-    ({ childrenByParentId } = buildRecordMaps(records));
   }
+
+  mimeBackfillCount = await backfillMissingMimeTypes(records);
+
+  if (mimeBackfillCount > 0) {
+    records = await prisma.fileRecord.findMany(recordQuery);
+  }
+
+  ({ childrenByParentId } = buildRecordMaps(records));
 
   await mirrorTree({
     childrenByParentId,
@@ -1334,6 +1401,9 @@ async function main() {
     for (const change of syncLogs) {
       console.log(`- ${change}`);
     }
+  }
+  if (mimeBackfillCount > 0) {
+    console.log(`Backfilled MIME types: ${mimeBackfillCount}`);
   }
 }
 

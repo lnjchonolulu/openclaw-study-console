@@ -6,6 +6,10 @@ import {
   createAndRunOutboundAgentTask,
   handleInboundTaskReply,
 } from "@/lib/agent-task-workflow";
+import {
+  shouldTriggerCyWorldDriveSync,
+  triggerCyWorldDriveSync,
+} from "@/lib/cyworld-drive-sync";
 import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -455,6 +459,10 @@ export async function POST(request: Request) {
       },
       data: {},
     });
+
+    if (shouldTriggerCyWorldDriveSync(message, assistantText)) {
+      await triggerCyWorldDriveSync(dmRoom.targetAgent.openclawAgentId);
+    }
 
     return NextResponse.json({
       reply: assistantText,
