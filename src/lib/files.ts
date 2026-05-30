@@ -300,7 +300,7 @@ async function buildBreadcrumbs(
   folderId: string | null,
   context: FileWorkspaceContext,
 ): Promise<WorkspaceBreadcrumb[]> {
-  const crumbs: WorkspaceBreadcrumb[] = [{ id: null, isLocked: false, label: "/home" }];
+  const crumbs: WorkspaceBreadcrumb[] = [{ id: null, isLocked: false, label: "/" }];
 
   if (!folderId) {
     return crumbs;
@@ -409,7 +409,7 @@ function buildStudyFilePath(
     cursor = cursor.parentId ? recordsById.get(cursor.parentId) : null;
   }
 
-  return `/home/${segments.join("/")}`;
+  return `/${segments.join("/")}`;
 }
 
 function canAccessRecordWithKey(
@@ -513,8 +513,9 @@ export async function buildStudyFilesRuntimeContext({
     "CyWorld Drive context",
     "- CyWorld Drive is the shared file area shown in the web app Drive tab.",
     "- When the user says Drive, CyWorld Drive, files, folders, shared folder, shared files, workspace, or this interface, they usually mean CyWorld Drive, not your OpenClaw workspace root.",
-    "- The CyWorld Drive UI root is /home.",
-    "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use it as the filesystem mirror of CyWorld Drive.",
+    "- The CyWorld Drive UI root is /.",
+    "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use CYWORLD_DRIVE/ as the filesystem mirror of CyWorld Drive.",
+    "- UI path /X maps directly to workspace path CYWORLD_DRIVE/X. Do not add or remove a home segment.",
     "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
     "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
     "",
@@ -597,7 +598,7 @@ export async function listWorkspaceFolder(
       isHome: parentId === null,
       isLocked: false,
       isSystemManaged: Boolean(parentFolder?.systemKey),
-      label: breadcrumbs[breadcrumbs.length - 1]?.label ?? "/home",
+      label: breadcrumbs[breadcrumbs.length - 1]?.label ?? "/",
     },
     currentUserKey: context.currentUserKey,
     entries: normalizedEntries,

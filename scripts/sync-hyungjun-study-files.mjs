@@ -19,20 +19,18 @@ const SYNC_MTIME_TOLERANCE_MS = 1500;
 const agentsFilesBlock = `${FILES_MANAGED_START}
 ## CyWorld Drive
 
-CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In conversation, users may call it "Drive", "CyWorld Drive", "the shared folder", "shared files", "the interface files", "directory", or a visible path such as \`/home/Onboarding\`.
+CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In conversation, users may call it "Drive", "CyWorld Drive", "the shared folder", "shared files", "the interface files", "directory", or a visible path such as \`/Onboarding\`.
 
 For this agent, CyWorld Drive is mirrored into this OpenClaw workspace at:
 
 - Workspace root: \`${STUDY_FILES_DIRNAME}/\`
-- Required content root: \`${STUDY_FILES_DIRNAME}/home/\`
 - Manifest: \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`
 
 Critical path rule:
-- Every CyWorld Drive UI path keeps its leading \`/home\` segment in the workspace mirror.
-- UI path \`/home\` maps to \`${STUDY_FILES_DIRNAME}/home\`.
-- UI path \`/home/Personals/hyungjun\` maps to \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\`.
-- Never create \`${STUDY_FILES_DIRNAME}/Personals\`, \`${STUDY_FILES_DIRNAME}/Onboarding\`, or any other top-level content folder outside \`${STUDY_FILES_DIRNAME}/home\`.
-- Files or folders created outside \`${STUDY_FILES_DIRNAME}/home\` are invalid and will not appear in the CyWorld Drive UI.
+- CyWorld Drive root maps directly to \`${STUDY_FILES_DIRNAME}/\`.
+- UI path \`/\` maps to \`${STUDY_FILES_DIRNAME}/\`.
+- UI path \`/Personals/hyungjun\` maps to \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`.
+- Do not invent or insert a \`home\` segment. \`${STUDY_FILES_DIRNAME}/home\` is a legacy path and is no longer the Drive root.
 
 Before answering requests about shared files or folders:
 1. Read \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`.
@@ -64,7 +62,7 @@ Use \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` as the source of truth for CyWorld Dr
 Canonical terms:
 - CyWorld Drive: the web app's shared file workspace
 - Drive tab: the web app tab where humans browse CyWorld Drive
-- UI path: the path the human sees, such as \`/home/Onboarding\`
+- UI path: the path the human sees, such as \`/Onboarding\`
 - Workspace path: the mirrored local path under \`${STUDY_FILES_DIRNAME}/\`
 - Participants with access: humans and agents who can access that folder
 - Personal folder: a system-managed folder for a human and that human's own agent
@@ -77,11 +75,11 @@ Sync behavior:
 - Deleted mirrored files or folders can be deleted from the web app on the next sync. Be careful with destructive file changes.
 
 Path safety:
-- The only valid content root is \`${STUDY_FILES_DIRNAME}/home/\`.
-- Keep the \`home\` segment. Do not shorten \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\` to \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`.
-- Do not create top-level content folders directly under \`${STUDY_FILES_DIRNAME}/\`.
+- CyWorld Drive root maps directly to \`${STUDY_FILES_DIRNAME}/\`.
+- Use \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`, not \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\`.
+- \`${STUDY_FILES_DIRNAME}/home\` is a legacy path and should not be used.
 
-Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/home/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
+Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
 ${FILES_MANAGED_END}`;
 
 function storageRoot() {
@@ -316,12 +314,39 @@ function accessParticipantsForRecord(record, participants, participantsByKey) {
   return access.participantKeys.map((key) => participantLabel(key, participantsByKey));
 }
 
+function normalizeManagedRelativePath(relativePath) {
+  if (relativePath === "home") {
+    return null;
+  }
+
+  if (relativePath.startsWith(`home${path.sep}`)) {
+    return relativePath.slice(`home${path.sep}`.length);
+  }
+
+  if (relativePath.startsWith("home/")) {
+    return relativePath.slice("home/".length);
+  }
+
+  return relativePath;
+}
+
 async function loadManagedIndex(studyFilesRoot) {
   try {
     const raw = await readFile(path.join(studyFilesRoot, MANAGED_INDEX), "utf8");
     const parsed = JSON.parse(raw);
 
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
+    if (!Array.isArray(parsed.entries)) {
+      return [];
+    }
+
+    return parsed.entries.flatMap((entry) => {
+      if (!entry || typeof entry.relativePath !== "string") {
+        return [entry];
+      }
+      const relativePath = normalizeManagedRelativePath(entry.relativePath);
+
+      return relativePath === null ? [] : [{ ...entry, relativePath }];
+    });
   } catch {
     return [];
   }
@@ -336,44 +361,6 @@ async function pathExists(filePath) {
   }
 }
 
-async function quarantineInvalidTopLevelEntries(studyFilesRoot, agentId) {
-  if (!(await pathExists(studyFilesRoot))) {
-    return [];
-  }
-
-  const allowedTopLevelNames = new Set([
-    "home",
-    "MANIFEST.md",
-    MANAGED_INDEX,
-    QUARANTINE_DIRNAME,
-  ]);
-  const entries = await readdir(studyFilesRoot, {
-    withFileTypes: true,
-  });
-  const invalidEntries = entries.filter((entry) => !allowedTopLevelNames.has(entry.name));
-  const logs = [];
-
-  if (invalidEntries.length === 0) {
-    return logs;
-  }
-
-  const quarantineRoot = path.join(studyFilesRoot, QUARANTINE_DIRNAME);
-  await mkdir(quarantineRoot, { recursive: true });
-
-  for (const entry of invalidEntries) {
-    const sourcePath = path.join(studyFilesRoot, entry.name);
-    const targetName = `${new Date().toISOString().replace(/[:.]/g, "-")}-${sanitizePathSegment(entry.name)}`;
-    const targetPath = path.join(quarantineRoot, targetName);
-
-    await rename(sourcePath, targetPath);
-    logs.push(
-      `${agentId}: quarantined invalid CyWorld Drive path ${entry.name} -> ${QUARANTINE_DIRNAME}/${targetName}`,
-    );
-  }
-
-  return logs;
-}
-
 async function readWorkspaceTree(root, relativeRoot = "") {
   if (!(await pathExists(root))) {
     return [];
@@ -385,7 +372,11 @@ async function readWorkspaceTree(root, relativeRoot = "") {
   const results = [];
 
   for (const entry of entries) {
-    if (entry.name === "MANIFEST.md" || entry.name === MANAGED_INDEX) {
+    if (
+      entry.name === "MANIFEST.md" ||
+      entry.name === MANAGED_INDEX ||
+      entry.name === QUARANTINE_DIRNAME
+    ) {
       continue;
     }
 
@@ -409,6 +400,100 @@ async function readWorkspaceTree(root, relativeRoot = "") {
   }
 
   return results;
+}
+
+async function moveDirectoryContents(sourceDir, destinationDir) {
+  const moved = [];
+
+  if (!(await pathExists(sourceDir))) {
+    return moved;
+  }
+
+  await mkdir(destinationDir, { recursive: true });
+  const entries = await readdir(sourceDir, {
+    withFileTypes: true,
+  });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+
+    if (await pathExists(destinationPath)) {
+      if (entry.isDirectory()) {
+        moved.push(...(await moveDirectoryContents(sourcePath, destinationPath)));
+        await rm(sourcePath, { force: true, recursive: true });
+        continue;
+      }
+
+      const targetName = `${path.basename(entry.name, path.extname(entry.name))} - legacy-home-${Date.now()}${path.extname(entry.name)}`;
+      const conflictPath = path.join(destinationDir, sanitizeFilename(targetName));
+      await rename(sourcePath, conflictPath);
+      moved.push(`${sourcePath} -> ${conflictPath}`);
+      continue;
+    }
+
+    await rename(sourcePath, destinationPath);
+    moved.push(`${sourcePath} -> ${destinationPath}`);
+  }
+
+  return moved;
+}
+
+async function migrateLegacyHomeMirror(studyFilesRoot, agentId) {
+  const legacyHomeRoot = path.join(studyFilesRoot, "home");
+  const logs = [];
+
+  if (!(await pathExists(legacyHomeRoot))) {
+    return logs;
+  }
+
+  const moved = await moveDirectoryContents(legacyHomeRoot, studyFilesRoot);
+  await rm(legacyHomeRoot, { force: true, recursive: true });
+
+  if (moved.length > 0) {
+    logs.push(`${agentId}: migrated legacy CYWORLD_DRIVE/home mirror to CYWORLD_DRIVE root`);
+  }
+
+  return logs;
+}
+
+async function restoreQuarantinedRootEntries(studyFilesRoot, agentId) {
+  const quarantineRoot = path.join(studyFilesRoot, QUARANTINE_DIRNAME);
+  const logs = [];
+
+  if (!(await pathExists(quarantineRoot))) {
+    return logs;
+  }
+
+  const entries = await readdir(quarantineRoot, {
+    withFileTypes: true,
+  });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const restoredName = entry.name.replace(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-/, "");
+
+    if (!restoredName || restoredName === entry.name) {
+      continue;
+    }
+
+    const sourcePath = path.join(quarantineRoot, entry.name);
+    const destinationPath = path.join(studyFilesRoot, sanitizePathSegment(restoredName));
+
+    if (await pathExists(destinationPath)) {
+      await moveDirectoryContents(sourcePath, destinationPath);
+      await rm(sourcePath, { force: true, recursive: true });
+    } else {
+      await rename(sourcePath, destinationPath);
+    }
+
+    logs.push(`${agentId}: restored previously quarantined root entry ${entry.name} -> ${restoredName}`);
+  }
+
+  return logs;
 }
 
 function getParentRelativePath(relativePath) {
@@ -926,7 +1011,7 @@ async function importWorkspaceChanges({
   teamId,
   userId,
 }) {
-  const workspaceTree = await readWorkspaceTree(studyFilesRoot, "home");
+  const workspaceTree = await readWorkspaceTree(studyFilesRoot);
   const renameResult = await applyWorkspaceRenames({
     agent,
     agentParticipantKey,
@@ -972,6 +1057,7 @@ async function removeStaleManagedEntries(studyFilesRoot, previousEntries, nextRe
   await Promise.all(
     previousEntries
       .filter((entry) => typeof entry.relativePath === "string")
+      .filter((entry) => entry.relativePath.length > 0)
       .filter((entry) => !nextPaths.has(entry.relativePath))
       .map((entry) =>
         rm(path.join(studyFilesRoot, entry.relativePath), {
@@ -1117,7 +1203,6 @@ async function main() {
     user.agent.workspacePath || path.join(OPENCLAW_ROOT, `workspace-${user.agent.openclawAgentId}`),
   );
   const studyFilesRoot = path.join(workspacePath, STUDY_FILES_DIRNAME);
-  const homeRoot = path.join(studyFilesRoot, "home");
   const agentParticipantKey = `agent:${user.agent.id}`;
   const participants = await listParticipants(user.teamId);
   const participantsByKey = new Map(participants.map((participant) => [participant.key, participant]));
@@ -1155,12 +1240,14 @@ async function main() {
     "- UI path is the path the human sees in the web app.",
     "- Workspace path is the local mirrored path this agent can use.",
     "- If Access is `no access`, do not claim to know the folder or file contents.",
-    "- Users may call this CyWorld Drive, Drive, the shared folder, shared files, interface files, or a visible path such as `/home/Onboarding`.",
+    "- Users may call this CyWorld Drive, Drive, the shared folder, shared files, interface files, or a visible path such as `/Onboarding`.",
+    "- UI path `/X` maps directly to workspace path `CYWORLD_DRIVE/X`.",
+    "- Do not add a `home` path segment. `CYWORLD_DRIVE/home` is a legacy path.",
     "",
     "## Root",
     "",
-    "- UI path: /home",
-    `- Workspace path: ${STUDY_FILES_DIRNAME}/home`,
+    "- UI path: /",
+    `- Workspace path: ${STUDY_FILES_DIRNAME}/`,
     "- Access: view/edit",
     "",
     "## Entries",
@@ -1168,12 +1255,12 @@ async function main() {
   ];
   const nextManagedEntries = [];
 
-  await mkdir(homeRoot, { recursive: true });
+  await mkdir(studyFilesRoot, { recursive: true });
   await syncAgentMarkdown(workspacePath);
-  const quarantinedInvalidPaths = await quarantineInvalidTopLevelEntries(
-    studyFilesRoot,
-    user.agent.openclawAgentId,
-  );
+  const migrationLogs = [
+    ...(await migrateLegacyHomeMirror(studyFilesRoot, user.agent.openclawAgentId)),
+    ...(await restoreQuarantinedRootEntries(studyFilesRoot, user.agent.openclawAgentId)),
+  ];
 
   const importedChanges = await importWorkspaceChanges({
     agent: user.agent,
@@ -1186,7 +1273,7 @@ async function main() {
     userId: user.id,
   });
 
-  if (importedChanges.length > 0 || quarantinedInvalidPaths.length > 0) {
+  if (importedChanges.length > 0 || migrationLogs.length > 0) {
     records = await prisma.fileRecord.findMany(recordQuery);
     ({ childrenByParentId } = buildRecordMaps(records));
   }
@@ -1199,11 +1286,11 @@ async function main() {
     nextManagedEntries,
     participants,
     participantsByKey,
-    relativeParentPath: "home",
+    relativeParentPath: "",
     storageRootPath: storageRoot(),
     studyFilesRoot,
-    uiParentPath: "/home",
-    workspaceParentPath: `${STUDY_FILES_DIRNAME}/home`,
+    uiParentPath: "",
+    workspaceParentPath: STUDY_FILES_DIRNAME,
     agentParticipantKey,
   });
 
@@ -1240,7 +1327,7 @@ async function main() {
   console.log(`Synced CyWorld Drive for ${user.agent.openclawAgentId}`);
   console.log(`Workspace: ${studyFilesRoot}`);
   console.log(`Mirrored entries: ${nextManagedEntries.length - 1}`);
-  const syncLogs = [...quarantinedInvalidPaths, ...importedChanges];
+  const syncLogs = [...migrationLogs, ...importedChanges];
 
   if (syncLogs.length > 0) {
     console.log("Imported agent workspace changes:");
