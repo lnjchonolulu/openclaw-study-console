@@ -1,6 +1,6 @@
 export type AppNavItem = {
   href: string;
-  icon: "dm" | "team" | "files" | "setting";
+  icon: "calendar" | "dm" | "files" | "setting" | "team";
   title: string;
   description: string;
 };
@@ -23,6 +23,12 @@ export const primaryNavItems: AppNavItem[] = [
     icon: "files",
     title: "Drive",
     description: "Upload, download, and share working materials.",
+  },
+  {
+    href: "/calendar",
+    icon: "calendar",
+    title: "Calendar",
+    description: "Plan events with invitation-based access.",
   },
 ];
 

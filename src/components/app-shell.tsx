@@ -8,7 +8,7 @@ import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
 import type { TeamChannelDetail, TeamChannelSummary, TeamParticipant } from "@/lib/team";
 
-type IconName = "dm" | "team" | "files" | "setting" | "sign-out";
+type IconName = "calendar" | "dm" | "files" | "setting" | "sign-out" | "team";
 
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -27,6 +27,19 @@ function NavIcon({ name }: { name: IconName }) {
       <>
         <path d="M5.75 6.75h5l1.6 2h5.9v8.5a2 2 0 0 1-2 2H7.75a2 2 0 0 1-2-2V6.75Z" />
         <path d="M5.75 9.25h12.5" />
+      </>
+    ),
+    calendar: (
+      <>
+        <path d="M6.25 5.75h11.5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6.25a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2Z" />
+        <path d="M7.75 3.75v4" />
+        <path d="M16.25 3.75v4" />
+        <path d="M4.25 9.5h15.5" />
+        <path d="M8 13h.1" />
+        <path d="M12 13h.1" />
+        <path d="M16 13h.1" />
+        <path d="M8 16h.1" />
+        <path d="M12 16h.1" />
       </>
     ),
     setting: (
