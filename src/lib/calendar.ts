@@ -241,14 +241,6 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
       where: {
         invitedUserId: userId,
         status: "PENDING",
-        event: {
-          startAt: {
-            lt: monthEnd,
-          },
-          endAt: {
-            gte: monthStart,
-          },
-        },
       },
       include: {
         invitedBy: true,
