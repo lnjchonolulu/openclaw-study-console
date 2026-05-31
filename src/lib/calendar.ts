@@ -12,11 +12,13 @@ type CalendarEventRecord = {
     displayName: string;
     username: string;
   } | null;
+  createdByUserId: string | null;
   description: string | null;
   endAt: Date;
   id: string;
   invitations?: Array<{
     id: string;
+    invitedUserId: string;
     invitedUser: {
       displayName: string;
       username: string;
@@ -27,6 +29,10 @@ type CalendarEventRecord = {
   source: string;
   startAt: Date;
   title: string;
+  titleOverrides?: Array<{
+    title: string;
+    userId: string;
+  }>;
 };
 
 export type CalendarEventView = {
@@ -38,10 +44,13 @@ export type CalendarEventView = {
   invitees: {
     displayName: string;
     id: string;
+    invitedUserId: string;
     status: string;
     username: string;
   }[];
   location: string;
+  originalTitle: string;
+  ownerUserId: string | null;
   source: string;
   startAt: string;
   title: string;
@@ -59,6 +68,7 @@ export type CalendarMonthView = {
   invitations: CalendarInvitationView[];
   month: string;
   participants: TeamParticipant[];
+  currentUserId: string;
 };
 
 export function calendarUserKey(userId: string) {
@@ -122,6 +132,25 @@ function hasAccess(event: { accessConfigJson: unknown }, keys: string[]) {
   return access.participantKeys.some((key) => keys.includes(key));
 }
 
+async function getAccessKeysForUserIds(userIds: string[]) {
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      id: {
+        in: userIds,
+      },
+    },
+    include: {
+      agent: true,
+    },
+  });
+
+  return users.flatMap((user) => getUserAccessKeys(user));
+}
+
 function startOfMonth(month: string) {
   const [year, monthIndex] = month.split("-").map((value) => Number(value));
 
@@ -140,7 +169,9 @@ function toMonthKey(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function mapEvent(event: CalendarEventRecord): CalendarEventView {
+function mapEvent(event: CalendarEventRecord, viewerUserId: string): CalendarEventView {
+  const titleOverride = event.titleOverrides?.find((override) => override.userId === viewerUserId);
+
   return {
     allDay: event.allDay,
     createdBy: event.createdBy?.displayName ?? "Unknown",
@@ -151,13 +182,16 @@ function mapEvent(event: CalendarEventRecord): CalendarEventView {
       event.invitations?.map((invitation) => ({
         displayName: invitation.invitedUser.displayName,
         id: invitation.id,
+        invitedUserId: invitation.invitedUserId,
         status: invitation.status,
         username: invitation.invitedUser.username,
       })) ?? [],
     location: event.location ?? "",
+    originalTitle: event.title,
+    ownerUserId: event.createdByUserId,
     source: event.source,
     startAt: event.startAt.toISOString(),
-    title: event.title,
+    title: titleOverride?.title ?? event.title,
   };
 }
 
@@ -193,6 +227,11 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
             createdAt: "asc",
           },
         },
+        titleOverrides: {
+          where: {
+            userId,
+          },
+        },
       },
       orderBy: {
         startAt: "asc",
@@ -221,6 +260,11 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
                 invitedUser: true,
               },
             },
+            titleOverrides: {
+              where: {
+                userId,
+              },
+            },
           },
         },
       },
@@ -231,9 +275,10 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
   ]);
 
   return {
-    events: events.filter((event) => hasAccess(event, accessKeys)).map(mapEvent),
+    currentUserId: userId,
+    events: events.filter((event) => hasAccess(event, accessKeys)).map((event) => mapEvent(event, userId)),
     invitations: invitations.map((invitation) => ({
-      event: mapEvent(invitation.event),
+      event: mapEvent(invitation.event, userId),
       id: invitation.id,
       invitedBy: invitation.invitedBy?.displayName ?? "Someone",
       status: invitation.status,
@@ -309,6 +354,150 @@ export async function createCalendarEvent(args: {
       teamId: user.teamId,
       title: args.title.trim(),
     },
+  });
+}
+
+export async function updateCalendarEvent(args: {
+  description?: string;
+  endAt?: Date;
+  eventId: string;
+  invitedUserIds?: string[];
+  location?: string;
+  startAt?: Date;
+  title?: string;
+  userId: string;
+}) {
+  const user = await getCalendarUser(args.userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const event = await prisma.calendarEvent.findUnique({
+    where: {
+      id: args.eventId,
+    },
+    include: {
+      invitations: true,
+    },
+  });
+
+  if (!event || !hasAccess(event, getUserAccessKeys(user))) {
+    throw new Error("Event not found.");
+  }
+
+  const nextStartAt = args.startAt ?? event.startAt;
+  const nextEndAt = args.endAt ?? event.endAt;
+
+  if (nextEndAt.getTime() <= nextStartAt.getTime()) {
+    throw new Error("Event end must be after the start.");
+  }
+
+  const existingInviteeIds = event.invitations
+    .filter((invitation) => invitation.status !== "CANCELED")
+    .map((invitation) => invitation.invitedUserId);
+  const requestedInviteeIds =
+    args.invitedUserIds === undefined
+      ? existingInviteeIds
+      : uniq(args.invitedUserIds).filter((userId) => userId !== user.id);
+  const validInvitees = await prisma.user.findMany({
+    where: {
+      id: {
+        in: requestedInviteeIds.length > 0 ? requestedInviteeIds : ["__none__"],
+      },
+      teamId: user.teamId,
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+    },
+  });
+  const validInviteeIds = validInvitees.map((invitee) => invitee.id);
+  const removedInviteeIds = existingInviteeIds.filter(
+    (inviteeId) => !validInviteeIds.includes(inviteeId),
+  );
+  const timeChanged =
+    nextStartAt.getTime() !== event.startAt.getTime() ||
+    nextEndAt.getTime() !== event.endAt.getTime();
+  const currentAccess = parseCalendarAccessConfig(event.accessConfigJson);
+  const removedAccessKeys = await getAccessKeysForUserIds(
+    timeChanged
+      ? validInviteeIds.filter((inviteeId) => inviteeId !== user.id)
+      : removedInviteeIds,
+  );
+  const nextAccessKeys = currentAccess.participantKeys.filter(
+    (key) => !removedAccessKeys.includes(key),
+  );
+
+  await prisma.$transaction(async (transaction) => {
+    if (args.title?.trim()) {
+      await transaction.calendarEventTitleOverride.upsert({
+        where: {
+          eventId_userId: {
+            eventId: event.id,
+            userId: user.id,
+          },
+        },
+        update: {
+          title: args.title.trim(),
+        },
+        create: {
+          eventId: event.id,
+          title: args.title.trim(),
+          userId: user.id,
+        },
+      });
+    }
+
+    await transaction.calendarEvent.update({
+      where: {
+        id: event.id,
+      },
+      data: {
+        accessConfigJson: {
+          participantKeys: uniq(nextAccessKeys),
+        },
+        description: args.description === undefined ? undefined : args.description.trim() || null,
+        endAt: nextEndAt,
+        location: args.location === undefined ? undefined : args.location.trim() || null,
+        startAt: nextStartAt,
+      },
+    });
+
+    for (const invitedUserId of validInviteeIds) {
+      await transaction.calendarInvitation.upsert({
+        where: {
+          eventId_invitedUserId: {
+            eventId: event.id,
+            invitedUserId,
+          },
+        },
+        update: {
+          invitedByUserId: user.id,
+          status: timeChanged && invitedUserId !== user.id ? "PENDING" : undefined,
+        },
+        create: {
+          eventId: event.id,
+          invitedByUserId: user.id,
+          invitedUserId,
+          status: "PENDING",
+        },
+      });
+    }
+
+    if (removedInviteeIds.length > 0) {
+      await transaction.calendarInvitation.updateMany({
+        where: {
+          eventId: event.id,
+          invitedUserId: {
+            in: removedInviteeIds,
+          },
+        },
+        data: {
+          status: "CANCELED",
+        },
+      });
+    }
   });
 }
 

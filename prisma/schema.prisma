@@ -83,31 +83,32 @@ enum CalendarInvitationStatus {
 }
 
 model User {
-  id                  String               @id @default(cuid())
-  username            String               @unique
-  passwordHash        String
-  displayName         String
-  profileConfigJson   Json?
-  role                UserRole             @default(PARTICIPANT)
-  status              UserStatus           @default(ACTIVE)
-  teamId              String?
-  agentId             String?              @unique
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  team                Team?                @relation(fields: [teamId], references: [id])
-  agent               Agent?
-  files               FileRecord[]
-  messages            Message[]
-  sessions            Session[]
-  ownedRooms          Room[]               @relation("RoomOwner")
-  roomMembers         RoomMember[]
-  typingStates        TypingState[]
-  scheduledMessages   ScheduledMessage[]
-  requestedTasks      AgentTask[]          @relation("AgentTaskRequester")
-  targetTasks         AgentTask[]          @relation("AgentTaskTargetUser")
-  calendarEvents      CalendarEvent[]      @relation("CalendarEventCreator")
-  calendarInvites     CalendarInvitation[] @relation("CalendarInvitationInvitee")
-  sentCalendarInvites CalendarInvitation[] @relation("CalendarInvitationInviter")
+  id                     String                       @id @default(cuid())
+  username               String                       @unique
+  passwordHash           String
+  displayName            String
+  profileConfigJson      Json?
+  role                   UserRole                     @default(PARTICIPANT)
+  status                 UserStatus                   @default(ACTIVE)
+  teamId                 String?
+  agentId                String?                      @unique
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  team                   Team?                        @relation(fields: [teamId], references: [id])
+  agent                  Agent?
+  files                  FileRecord[]
+  messages               Message[]
+  sessions               Session[]
+  ownedRooms             Room[]                       @relation("RoomOwner")
+  roomMembers            RoomMember[]
+  typingStates           TypingState[]
+  scheduledMessages      ScheduledMessage[]
+  requestedTasks         AgentTask[]                  @relation("AgentTaskRequester")
+  targetTasks            AgentTask[]                  @relation("AgentTaskTargetUser")
+  calendarEvents         CalendarEvent[]              @relation("CalendarEventCreator")
+  calendarInvites        CalendarInvitation[]         @relation("CalendarInvitationInvitee")
+  sentCalendarInvites    CalendarInvitation[]         @relation("CalendarInvitationInviter")
+  calendarTitleOverrides CalendarEventTitleOverride[]
 }
 
 model Team {
@@ -322,7 +323,7 @@ model Session {
 }
 
 model CalendarEvent {
-  id               String               @id @default(cuid())
+  id               String                       @id @default(cuid())
   teamId           String?
   createdByUserId  String?
   title            String
@@ -330,20 +331,35 @@ model CalendarEvent {
   location         String?
   startAt          DateTime
   endAt            DateTime
-  allDay           Boolean              @default(false)
-  source           CalendarEventSource  @default(CYWORLD)
+  allDay           Boolean                      @default(false)
+  source           CalendarEventSource          @default(CYWORLD)
   externalProvider String?
   externalEventId  String?
   accessConfigJson Json?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  team             Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  createdBy        User?                @relation("CalendarEventCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  team             Team?                        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy        User?                        @relation("CalendarEventCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   invitations      CalendarInvitation[]
+  titleOverrides   CalendarEventTitleOverride[]
 
   @@index([teamId, startAt])
   @@index([createdByUserId, startAt])
   @@index([source, externalProvider, externalEventId])
+}
+
+model CalendarEventTitleOverride {
+  id        String        @id @default(cuid())
+  eventId   String
+  userId    String
+  title     String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  event     CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model CalendarInvitation {
