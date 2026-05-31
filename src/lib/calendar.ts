@@ -391,7 +391,10 @@ export async function updateCalendarEvent(args: {
   const requestedInviteeIds =
     args.invitedUserIds === undefined
       ? existingInviteeIds
-      : uniq(args.invitedUserIds).filter((userId) => userId !== user.id);
+      : uniq([
+          ...args.invitedUserIds,
+          ...existingInviteeIds.filter((inviteeId) => inviteeId === user.id),
+        ]);
   const validInvitees = await prisma.user.findMany({
     where: {
       id: {
