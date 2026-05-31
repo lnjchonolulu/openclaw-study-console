@@ -5,6 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { TeamChannelDetail } from "@/lib/team";
 
+function createClientId() {
+  if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
+    return `client-${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function formatMessageTime(isoString: string) {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
@@ -49,6 +57,8 @@ type ReplyTarget = {
   id: string;
 };
 
+type TeamMessage = TeamChannelDetail["messages"][number];
+
 type RenderRow =
   | {
       type: "date";
@@ -64,7 +74,7 @@ type RenderRow =
     };
 
 function buildRenderRows(
-  messages: TeamChannelDetail["messages"],
+  messages: TeamMessage[],
   currentUserId: string,
 ): RenderRow[] {
   const rows: RenderRow[] = [];
@@ -179,14 +189,23 @@ export function TeamChatClient({
       const payload = (await response.json()) as TeamChannelDetail;
 
       if (isMounted) {
-        setChannel(payload);
+        setChannel((current) =>
+          current?.id === payload.id
+            ? {
+                ...payload,
+                messages: mergeTeamMessages(current.messages, payload.messages),
+              }
+            : payload,
+        );
       }
     }
 
     void refreshChannel();
+    const intervalId = window.setInterval(refreshChannel, 1200);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, [selectedChannelId]);
 
@@ -231,6 +250,36 @@ export function TeamChatClient({
       return;
     }
 
+    const clientMessageId = createClientId();
+    const previousReplyTarget = replyTarget;
+    const optimisticMessage: TeamMessage = {
+      author: user.displayName,
+      content: trimmedMessage,
+      createdAt: new Date().toISOString(),
+      id: clientMessageId,
+      replyTo: previousReplyTarget
+        ? {
+            author: previousReplyTarget.author,
+            content: previousReplyTarget.content,
+            id: previousReplyTarget.id,
+            userId: user.id,
+          }
+        : null,
+      senderKey: user.id,
+      userId: user.id,
+    };
+
+    setChannel((current) =>
+      current
+        ? {
+            ...current,
+            messages: mergeTeamMessages(current.messages, [optimisticMessage]),
+          }
+        : current,
+    );
+    setMessage("");
+    setReplyTarget(null);
+
     const response = await fetch("/api/team/messages", {
       method: "POST",
       headers: {
@@ -238,7 +287,7 @@ export function TeamChatClient({
       },
       body: JSON.stringify({
         message: trimmedMessage,
-        replyToMessageId: replyTarget?.id ?? null,
+        replyToMessageId: previousReplyTarget?.id ?? null,
         roomId: channel.id,
       }),
     });
@@ -250,6 +299,18 @@ export function TeamChatClient({
     };
 
     if (!response.ok || !payload.message) {
+      setChannel((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.filter(
+                (currentMessage) => currentMessage.id !== clientMessageId,
+              ),
+            }
+          : current,
+      );
+      setMessage(trimmedMessage);
+      setReplyTarget(previousReplyTarget);
       return;
     }
 
@@ -257,26 +318,20 @@ export function TeamChatClient({
       current
         ? {
             ...current,
-            messages: [
-              ...current.messages,
-              {
-                ...payload.message!,
-                replyTo: payload.message?.replyTo ?? (replyTarget
-                  ? {
-                      author: replyTarget.author,
-                      content: replyTarget.content,
-                      id: replyTarget.id,
-                      userId: user.id,
-                    }
-                  : null),
-              },
-              ...(payload.agentMessages ?? []),
-            ],
+            messages: replacePendingTeamMessage(
+              mergeTeamMessages(current.messages, [
+                {
+                  ...payload.message!,
+                  replyTo: payload.message?.replyTo ?? optimisticMessage.replyTo,
+                },
+                ...(payload.agentMessages ?? []),
+              ]),
+              clientMessageId,
+              payload.message!.id,
+            ),
           }
         : current,
     );
-    setMessage("");
-    setReplyTarget(null);
     router.refresh();
   }
 
@@ -464,4 +519,68 @@ export function TeamChatClient({
       </div>
     </section>
   );
+}
+
+function mergeTeamMessages(previous: TeamMessage[], incoming: TeamMessage[]) {
+  const byId = new Map<string, TeamMessage>();
+
+  [...previous, ...incoming].forEach((message) => {
+    byId.set(message.id, message);
+  });
+
+  return removeResolvedOptimisticTeamMessages(Array.from(byId.values())).sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+}
+
+function replacePendingTeamMessage(
+  messages: TeamMessage[],
+  pendingId: string,
+  persistedId: string,
+) {
+  if (messages.some((message) => message.id === persistedId)) {
+    return messages.filter((message) => message.id !== pendingId);
+  }
+
+  return messages;
+}
+
+function isOptimisticTeamMessage(message: TeamMessage) {
+  return message.id.startsWith("client-");
+}
+
+function isSameTeamUserMessage(left: TeamMessage, right: TeamMessage) {
+  if (left.userId !== right.userId || left.senderKey !== right.senderKey) {
+    return false;
+  }
+
+  if (left.content !== right.content) {
+    return false;
+  }
+
+  if ((left.replyTo?.id ?? null) !== (right.replyTo?.id ?? null)) {
+    return false;
+  }
+
+  return (
+    Math.abs(
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+    ) < 1000 * 60 * 2
+  );
+}
+
+function removeResolvedOptimisticTeamMessages(messages: TeamMessage[]) {
+  return messages.filter((message) => {
+    if (!isOptimisticTeamMessage(message)) {
+      return true;
+    }
+
+    return !messages.some(
+      (candidate) =>
+        candidate.id !== message.id &&
+        !isOptimisticTeamMessage(candidate) &&
+        isSameTeamUserMessage(message, candidate),
+    );
+  });
 }

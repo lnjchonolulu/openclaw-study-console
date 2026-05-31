@@ -1095,6 +1095,7 @@ button.primary-button {
 }
 
 .message-line {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 6px;
@@ -1188,6 +1189,9 @@ button.primary-button {
 }
 
 .message-reply-button {
+  position: absolute;
+  bottom: 18px;
+  z-index: 2;
   opacity: 0;
   pointer-events: none;
   min-height: 30px;
@@ -1199,6 +1203,14 @@ button.primary-button {
   cursor: pointer;
   font: 600 0.76rem/1 inherit;
   transition: opacity 140ms ease, background 140ms ease;
+}
+
+.message-line-user .message-reply-button {
+  right: 42px;
+}
+
+.message-line-other .message-reply-button {
+  left: 42px;
 }
 
 .message-reply-button:hover {

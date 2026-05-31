@@ -7,7 +7,7 @@ import type { AvatarViewModel } from "@/lib/profile";
 
 function createClientId() {
   if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
-    return globalThis.crypto.randomUUID();
+    return `client-${globalThis.crypto.randomUUID()}`;
   }
 
   return `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
