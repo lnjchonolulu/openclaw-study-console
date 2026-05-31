@@ -48,10 +48,14 @@ function addMonths(month: string, amount: number) {
 function getMonthCells(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const first = new Date(year, (monthNumber || 1) - 1, 1);
+  const last = new Date(year, monthNumber || 1, 0);
   const start = new Date(first);
   start.setDate(first.getDate() - first.getDay());
+  const end = new Date(last);
+  end.setDate(last.getDate() + (6 - last.getDay()));
+  const dayCount = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
 
-  return Array.from({ length: 42 }, (_, index) => {
+  return Array.from({ length: dayCount }, (_, index) => {
     const date = new Date(start);
     date.setDate(start.getDate() + index);
 
@@ -299,7 +303,9 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                           <div>
                             <strong>{invitation.event.title}</strong>
                             <span>
-                              Invited by {invitation.invitedBy} ·{" "}
+                              Invited by {invitation.invitedBy}
+                            </span>
+                            <span>
                               {formatInviteDate(invitation.event.startAt)}
                             </span>
                           </div>
@@ -361,7 +367,14 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
 
         {notice ? <div className="context-notice calendar-notice">{notice}</div> : null}
 
-        <div className="calendar-grid" onWheel={handleCalendarWheel} role="grid">
+        <div
+          className="calendar-grid"
+          onWheel={handleCalendarWheel}
+          role="grid"
+          style={{
+            gridTemplateRows: `32px repeat(${cells.length / 7}, minmax(0, 1fr))`,
+          }}
+        >
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
             <div className="calendar-weekday" key={day}>
               {day}
@@ -427,10 +440,6 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
             <div className="calendar-modal-scroll">
               <div className="team-modal-header">
                 <h2>{modalMode === "edit" ? "Edit Event" : "New Event"}</h2>
-                <p>
-                  Invitees get access only after they accept. Time changes send a fresh
-                  invitation request.
-                </p>
               </div>
               <div className="calendar-form-grid">
                 <label className="split-label calendar-field-wide">
@@ -451,20 +460,24 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   <span className="team-modal-input-wrap">
                     <input
                       className="team-modal-input settings-input"
+                      inputMode="numeric"
                       onChange={(event) => {
                         setStartDate(event.target.value);
                       }}
-                      type="date"
+                      placeholder="YYYY-MM-DD"
+                      type="text"
                       value={startDate}
                     />
                   </span>
                   <span className="team-modal-input-wrap">
                     <input
                       className="team-modal-input settings-input"
+                      inputMode="numeric"
                       onChange={(event) => {
                         setStartTime(event.target.value);
                       }}
-                      type="time"
+                      placeholder="HH:MM"
+                      type="text"
                       value={startTime}
                     />
                   </span>
@@ -474,20 +487,24 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   <span className="team-modal-input-wrap">
                     <input
                       className="team-modal-input settings-input"
+                      inputMode="numeric"
                       onChange={(event) => {
                         setEndDate(event.target.value);
                       }}
-                      type="date"
+                      placeholder="YYYY-MM-DD"
+                      type="text"
                       value={endDate}
                     />
                   </span>
                   <span className="team-modal-input-wrap">
                     <input
                       className="team-modal-input settings-input"
+                      inputMode="numeric"
                       onChange={(event) => {
                         setEndTime(event.target.value);
                       }}
-                      type="time"
+                      placeholder="HH:MM"
+                      type="text"
                       value={endTime}
                     />
                   </span>
