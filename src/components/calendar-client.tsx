@@ -38,6 +38,28 @@ function combineDateTime(date: string, time: string) {
   return new Date(`${date}T${time || "00:00"}`);
 }
 
+function parseLocalDateTime(date: string, time: string) {
+  const trimmedDate = date.trim();
+  const trimmedTime = time.trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate) || !/^\d{2}:\d{2}$/.test(trimmedTime)) {
+    return null;
+  }
+
+  const value = combineDateTime(trimmedDate, trimmedTime);
+
+  return Number.isNaN(value.getTime()) ? null : value;
+}
+
+function timeOptions() {
+  return Array.from({ length: 96 }, (_, index) => {
+    const hours = Math.floor(index / 4);
+    const minutes = String((index % 4) * 15).padStart(2, "0");
+
+    return `${String(hours).padStart(2, "0")}:${minutes}`;
+  });
+}
+
 function addMonths(month: string, amount: number) {
   const [year, monthNumber] = month.split("-").map(Number);
   const date = new Date(Date.UTC(year, (monthNumber || 1) - 1 + amount, 1));
@@ -124,6 +146,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
   const [endDate, setEndDate] = useState(dateInputValue(defaultRangeForDate().end));
   const [endTime, setEndTime] = useState(timeInputValue(defaultRangeForDate().end));
   const [invitedUserIds, setInvitedUserIds] = useState<string[]>([]);
+  const selectableTimes = useMemo(() => timeOptions(), []);
   const people = view.participants.filter(
     (participant) => participant.kind === "user" && participant.id !== view.currentUserId,
   );
@@ -187,37 +210,57 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     setIsSaving(true);
     setNotice(null);
 
-    const payload = {
-      description,
-      endAt: combineDateTime(endDate, endTime).toISOString(),
-      invitedUserIds,
-      location,
-      startAt: combineDateTime(startDate, startTime).toISOString(),
-      title,
-    };
-    const response = await fetch(
-      modalMode === "edit" && editingEventId
-        ? `/api/calendar/${encodeURIComponent(editingEventId)}`
-        : "/api/calendar",
-      {
-        body: JSON.stringify(payload),
-        headers: {
-          "Content-Type": "application/json",
+    try {
+      const startAt = parseLocalDateTime(startDate, startTime);
+      const endAt = parseLocalDateTime(endDate, endTime);
+
+      if (!title.trim()) {
+        setNotice("Event title is required.");
+        return;
+      }
+
+      if (!startAt || !endAt) {
+        setNotice("Use YYYY-MM-DD for dates and HH:MM for times.");
+        return;
+      }
+
+      if (endAt <= startAt) {
+        setNotice("End time must be after start time.");
+        return;
+      }
+
+      const payload = {
+        description,
+        endAt: endAt.toISOString(),
+        invitedUserIds,
+        location,
+        startAt: startAt.toISOString(),
+        title,
+      };
+      const response = await fetch(
+        modalMode === "edit" && editingEventId
+          ? `/api/calendar/${encodeURIComponent(editingEventId)}`
+          : "/api/calendar",
+        {
+          body: JSON.stringify(payload),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: modalMode === "edit" ? "PATCH" : "POST",
         },
-        method: modalMode === "edit" ? "PATCH" : "POST",
-      },
-    );
+      );
 
-    setIsSaving(false);
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setNotice(errorPayload?.error ?? "Event could not be saved.");
+        return;
+      }
 
-    if (!response.ok) {
-      const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
-      setNotice(errorPayload?.error ?? "Event could not be saved.");
-      return;
+      setIsEventModalOpen(false);
+      await loadMonth(view.month);
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsEventModalOpen(false);
-    await loadMonth(view.month);
   }
 
   async function respondToInvitation(invitationId: string, status: "ACCEPTED" | "DECLINED") {
@@ -441,6 +484,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
               <div className="team-modal-header">
                 <h2>{modalMode === "edit" ? "Edit Event" : "New Event"}</h2>
               </div>
+              {notice ? <div className="context-notice calendar-modal-notice">{notice}</div> : null}
               <div className="calendar-form-grid">
                 <label className="split-label calendar-field-wide">
                   Title
@@ -457,7 +501,8 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                 </label>
                 <fieldset className="calendar-date-group">
                   <legend>Start</legend>
-                  <span className="team-modal-input-wrap">
+                  <label className="calendar-date-input">
+                    <span>Date</span>
                     <input
                       className="team-modal-input settings-input"
                       inputMode="numeric"
@@ -468,23 +513,28 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                       type="text"
                       value={startDate}
                     />
-                  </span>
-                  <span className="team-modal-input-wrap">
-                    <input
+                  </label>
+                  <label className="calendar-date-input">
+                    <span>Time</span>
+                    <select
                       className="team-modal-input settings-input"
-                      inputMode="numeric"
                       onChange={(event) => {
                         setStartTime(event.target.value);
                       }}
-                      placeholder="HH:MM"
-                      type="text"
                       value={startTime}
-                    />
-                  </span>
+                    >
+                      {selectableTimes.map((time) => (
+                        <option key={time} value={time}>
+                          {time}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </fieldset>
                 <fieldset className="calendar-date-group">
                   <legend>End</legend>
-                  <span className="team-modal-input-wrap">
+                  <label className="calendar-date-input">
+                    <span>Date</span>
                     <input
                       className="team-modal-input settings-input"
                       inputMode="numeric"
@@ -495,19 +545,23 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                       type="text"
                       value={endDate}
                     />
-                  </span>
-                  <span className="team-modal-input-wrap">
-                    <input
+                  </label>
+                  <label className="calendar-date-input">
+                    <span>Time</span>
+                    <select
                       className="team-modal-input settings-input"
-                      inputMode="numeric"
                       onChange={(event) => {
                         setEndTime(event.target.value);
                       }}
-                      placeholder="HH:MM"
-                      type="text"
                       value={endTime}
-                    />
-                  </span>
+                    >
+                      {selectableTimes.map((time) => (
+                        <option key={time} value={time}>
+                          {time}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </fieldset>
                 <label className="split-label calendar-field-wide">
                   Location
