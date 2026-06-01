@@ -864,12 +864,11 @@ export function SettingsClient({
               <div className="settings-section-header">
                 <span className="context-label">Calendar Sharing</span>
                 <p>
-                  Choose when this agent may share your CyWorld Calendar details
-                  with other participants.
+                  Choose when your agent can share your CyWorld Calendar details
+                  with other users.
                 </p>
               </div>
-              <label className="split-label settings-field-span-2">
-                Sharing Policy
+              <div className="settings-field-span-2 settings-select-control">
                 <span className="settings-select-wrap">
                   <select
                     className="settings-select"
@@ -888,7 +887,7 @@ export function SettingsClient({
                   </select>
                   <span className="settings-select-icon">⌄</span>
                 </span>
-              </label>
+              </div>
             </section>
           </div>
         </article>
