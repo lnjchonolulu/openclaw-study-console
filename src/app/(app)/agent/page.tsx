@@ -4,6 +4,7 @@ import {
   readAgentMarkdownFile,
   readHeartbeatEnabled,
 } from "@/lib/agent-workspace";
+import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
 import { normalizeProfileConfig } from "@/lib/profile";
 
@@ -18,6 +19,7 @@ export default async function AgentPage() {
   ]);
   const userNameFromMd = extractMarkdownBulletValue(userMd, "Name");
   const agentNameFromMd = extractMarkdownBulletValue(identityMd, "Name");
+  const behaviorConfig = normalizeAgentBehaviorConfig(user.agent?.soulConfigJson);
 
   return (
     <SettingsClient
@@ -30,6 +32,7 @@ export default async function AgentPage() {
         `${user.username}-agent`,
         "agent",
       )}
+      initialCalendarSharingPolicy={behaviorConfig.calendarSharingPolicy}
       initialHeartbeatEnabled={heartbeatEnabled}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}

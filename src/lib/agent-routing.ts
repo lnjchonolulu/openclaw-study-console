@@ -1,4 +1,5 @@
 import {
+  calendarSharingOptions,
   normalizeAgentBehaviorConfig,
   type AgentBehaviorConfig,
 } from "@/lib/agent-behavior";
@@ -157,6 +158,23 @@ function labelForCommitment(
   }
 }
 
+function labelForCalendarSharing(value: AgentBehaviorConfig["calendarSharingPolicy"]) {
+  const option = calendarSharingOptions.find((candidate) => candidate.value === value);
+
+  return option?.label ?? "Ask me every time";
+}
+
+function instructionForCalendarSharing(value: AgentBehaviorConfig["calendarSharingPolicy"]) {
+  switch (value) {
+    case "never":
+      return "If a non-owner asks for your owner's calendar details, do not share them.";
+    case "ask_each_time":
+      return "If a non-owner asks for your owner's calendar details, ask your owner for permission first and do not reveal calendar details unless the owner explicitly approves or provides the details to share.";
+    case "always":
+      return "If a non-owner asks for your owner's calendar details, you may inspect and share the relevant CyWorld Calendar details when it helps the task.";
+  }
+}
+
 export function buildAgentRuntimeInstructions({
   agentDisplayName,
   audience,
@@ -230,6 +248,9 @@ export function buildAgentRuntimeInstructions({
     "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",
+    "If the user asks you to create a calendar event in CyWorld Calendar, use the study_create_calendar_event tool.",
+    `Owner calendar sharing policy: ${labelForCalendarSharing(normalized.calendarSharingPolicy)}.`,
+    `- ${instructionForCalendarSharing(normalized.calendarSharingPolicy)}`,
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
     "Use these study console tools only when you truly want the app to send or schedule a direct message to a human participant.",
     "Do not claim that pairing is required for study console human DMs. The study console tools are the supported delivery path.",

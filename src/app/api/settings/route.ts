@@ -4,6 +4,7 @@ import {
   writeAgentMarkdownFile,
   writeHeartbeatEnabled,
 } from "@/lib/agent-workspace";
+import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { getCurrentUser } from "@/lib/auth";
 import { deleteUserAvatarFiles, saveUserAvatarDataUrl } from "@/lib/avatar-storage";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +21,7 @@ export async function PATCH(request: Request) {
     agentId?: string;
     agentDisplayName?: string;
     agentProfileConfig?: unknown;
+    calendarSharingPolicy?: string;
     heartbeatEnabled?: boolean;
     identityMd?: string;
     soulMd?: string;
@@ -57,6 +59,15 @@ export async function PATCH(request: Request) {
     `${user.username}-agent`,
     "agent",
   );
+  const nextBehaviorConfig = normalizeAgentBehaviorConfig(user.agent.soulConfigJson);
+
+  if (
+    body.calendarSharingPolicy === "never" ||
+    body.calendarSharingPolicy === "ask_each_time" ||
+    body.calendarSharingPolicy === "always"
+  ) {
+    nextBehaviorConfig.calendarSharingPolicy = body.calendarSharingPolicy;
+  }
 
   if (typeof nextUserProfileConfig.imageDataUrl === "string") {
     const imageUrl = await saveUserAvatarDataUrl(
@@ -100,6 +111,7 @@ export async function PATCH(request: Request) {
       data: {
         displayName: agentDisplayName,
         profileConfigJson: nextAgentProfileConfig,
+        soulConfigJson: nextBehaviorConfig,
       },
     }),
   ]);

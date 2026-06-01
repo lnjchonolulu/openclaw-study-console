@@ -1,4 +1,9 @@
-import { listCalendarMonth, type CalendarEventView } from "@/lib/calendar";
+import {
+  createCalendarEvent,
+  listCalendarMonth,
+  type CalendarEventView,
+} from "@/lib/calendar";
+import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -30,6 +35,46 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
+    name: "study_create_calendar_event",
+    description:
+      "Create a CyWorld Calendar event for the current human participant. Use this when the user asks this agent to add, create, schedule, or put an event on their CyWorld Calendar.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        description: {
+          type: "string",
+          description: "Optional notes or agenda for the event.",
+        },
+        endAt: {
+          type: "string",
+          description: "Event end as an ISO 8601 datetime string.",
+        },
+        invitedUsernames: {
+          type: "array",
+          description:
+            "Optional CyWorld usernames to invite. Do not include the event creator.",
+          items: {
+            type: "string",
+          },
+        },
+        location: {
+          type: "string",
+          description: "Optional location or meeting link.",
+        },
+        startAt: {
+          type: "string",
+          description: "Event start as an ISO 8601 datetime string.",
+        },
+        title: {
+          type: "string",
+          description: "Event title.",
+        },
+      },
+      required: ["title", "startAt", "endAt"],
+    },
+  },
+  {
     name: "study_list_calendar",
     description:
       "List CyWorld Calendar events and pending invitations visible to the current human participant. Use this when the user asks to check their calendar, schedule, events, availability, invitations, or what's on their calendar.",
@@ -45,7 +90,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         username: {
           type: "string",
           description:
-            "Optional CyWorld username. For privacy, this must be omitted or match the current human participant.",
+            "Optional CyWorld username. Omit it for the current human participant. To inspect this agent owner's calendar while speaking with someone else, set it to the owner's username; the owner's calendar sharing policy will be enforced.",
         },
       },
       required: [],
@@ -107,6 +152,26 @@ function cleanMonth(value: unknown) {
   return /^\d{4}-\d{2}$/.test(month) ? month : null;
 }
 
+function cleanStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseDate(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function summarizeCalendarEvent(event: CalendarEventView) {
   return {
     createdBy: event.createdBy,
@@ -125,9 +190,11 @@ function summarizeCalendarEvent(event: CalendarEventView) {
 async function handleCalendarListTool({
   args,
   requesterUserId,
+  senderAgentOpenclawId,
 }: {
   args: Record<string, unknown>;
   requesterUserId?: string;
+  senderAgentOpenclawId: string;
 }) {
   if (!requesterUserId) {
     return JSON.stringify({
@@ -157,14 +224,76 @@ async function handleCalendarListTool({
   const requestedUsername = cleanUsername(args.username);
 
   if (requestedUsername && requestedUsername !== requester.username) {
+    const senderAgent = await prisma.agent.findUnique({
+      where: {
+        openclawAgentId: senderAgentOpenclawId,
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!senderAgent || senderAgent.user.username !== requestedUsername) {
+      return JSON.stringify({
+        ok: false,
+        reason: "calendar_access_is_limited_to_current_human",
+        currentHuman: {
+          displayName: requester.displayName,
+          username: requester.username,
+        },
+        requestedUsername,
+      });
+    }
+
+    const policy = normalizeAgentBehaviorConfig(
+      senderAgent.soulConfigJson,
+    ).calendarSharingPolicy;
+
+    if (policy !== "always") {
+      return JSON.stringify({
+        ok: false,
+        reason:
+          policy === "never"
+            ? "owner_calendar_sharing_disabled"
+            : "owner_calendar_permission_required",
+        owner: {
+          displayName: senderAgent.user.displayName,
+          username: senderAgent.user.username,
+        },
+        requestedUsername,
+      });
+    }
+
+    const ownerView = await listCalendarMonth(senderAgent.user.id, cleanMonth(args.month));
+
+    if (!ownerView) {
+      return JSON.stringify({
+        ok: false,
+        reason: "calendar_not_found",
+      });
+    }
+
     return JSON.stringify({
-      ok: false,
-      reason: "calendar_access_is_limited_to_current_human",
-      currentHuman: {
+      ok: true,
+      calendar: "CyWorld Calendar",
+      viewer: {
         displayName: requester.displayName,
         username: requester.username,
       },
-      requestedUsername,
+      sharedFrom: {
+        displayName: senderAgent.user.displayName,
+        username: senderAgent.user.username,
+      },
+      sharingPolicy: policy,
+      month: ownerView.month,
+      events: ownerView.events.slice(0, 40).map((event) => summarizeCalendarEvent(event)),
+      pendingInvitations: ownerView.invitations.slice(0, 20).map((invitation) => ({
+        event: summarizeCalendarEvent(invitation.event),
+        invitedBy: invitation.invitedBy,
+        status: invitation.status,
+      })),
+      totalEvents: ownerView.events.length,
+      totalPendingInvitations: ownerView.invitations.length,
     });
   }
 
@@ -193,6 +322,88 @@ async function handleCalendarListTool({
     })),
     totalEvents: view.events.length,
     totalPendingInvitations: view.invitations.length,
+  });
+}
+
+async function handleCalendarCreateTool({
+  args,
+  requesterUserId,
+}: {
+  args: Record<string, unknown>;
+  requesterUserId?: string;
+}) {
+  if (!requesterUserId) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_requester_user",
+    });
+  }
+
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  const startAt = parseDate(args.startAt);
+  const endAt = parseDate(args.endAt);
+
+  if (!title || !startAt || !endAt) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_or_invalid_title_startAt_or_endAt",
+    });
+  }
+
+  if (endAt.getTime() <= startAt.getTime()) {
+    return JSON.stringify({
+      ok: false,
+      reason: "endAt_must_be_after_startAt",
+    });
+  }
+
+  const invitedUsernames = cleanStringArray(args.invitedUsernames).map((username) =>
+    username.replace(/^@/, "").toLowerCase(),
+  );
+  const invitees = await prisma.user.findMany({
+    where: {
+      username: {
+        in: invitedUsernames.length > 0 ? invitedUsernames : ["__none__"],
+      },
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+      username: true,
+    },
+  });
+  let createError: string | null = null;
+  const created = await createCalendarEvent({
+    createdByUserId: requesterUserId,
+    description: typeof args.description === "string" ? args.description : undefined,
+    endAt,
+    invitedUserIds: invitees.map((invitee) => invitee.id),
+    location: typeof args.location === "string" ? args.location : undefined,
+    startAt,
+    title,
+  }).catch((error: unknown) => {
+    createError = error instanceof Error ? error.message : "Unknown error";
+    return null;
+  });
+
+  if (!created) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_event_create_failed",
+      error: createError,
+    });
+  }
+
+  return JSON.stringify({
+    ok: true,
+    calendar: "CyWorld Calendar",
+    event: {
+      endAt: created.endAt.toISOString(),
+      id: created.id,
+      invitedUsernames: invitees.map((invitee) => invitee.username),
+      startAt: created.startAt.toISOString(),
+      title: created.title,
+    },
   });
 }
 
@@ -288,6 +499,14 @@ export async function handleCyWorldAgentToolCall({
 
   if (call.name === "study_list_calendar") {
     return handleCalendarListTool({
+      args,
+      requesterUserId,
+      senderAgentOpenclawId,
+    });
+  }
+
+  if (call.name === "study_create_calendar_event") {
+    return handleCalendarCreateTool({
       args,
       requesterUserId,
     });

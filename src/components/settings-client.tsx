@@ -10,6 +10,10 @@ import {
 } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import {
+  calendarSharingOptions,
+  type CalendarSharingPolicy,
+} from "@/lib/agent-behavior";
+import {
   getAgentMeta,
   getUserMeta,
   rotateProfileConfig,
@@ -38,6 +42,7 @@ type SettingsClientProps = {
   agentId: string;
   initialAgentDisplayName: string;
   initialAgentProfile: ProfileConfig;
+  initialCalendarSharingPolicy: CalendarSharingPolicy;
   initialHeartbeatEnabled: boolean;
   initialIdentityMd: string;
   initialSoulMd: string;
@@ -470,6 +475,7 @@ export function SettingsClient({
   agentId,
   initialAgentDisplayName,
   initialAgentProfile,
+  initialCalendarSharingPolicy,
   initialHeartbeatEnabled,
   initialIdentityMd,
   initialSoulMd,
@@ -485,6 +491,9 @@ export function SettingsClient({
   const [userMd, setUserMd] = useState(initialUserMd);
   const [identityMd, setIdentityMd] = useState(initialIdentityMd);
   const [soulMd, setSoulMd] = useState(initialSoulMd);
+  const [calendarSharingPolicy, setCalendarSharingPolicy] = useState(
+    initialCalendarSharingPolicy,
+  );
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(initialHeartbeatEnabled);
   const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [agentProfile, setAgentProfile] = useState(initialAgentProfile);
@@ -510,6 +519,7 @@ export function SettingsClient({
         agentDisplayName,
         agentId,
         agentProfileConfig: agentProfile,
+        calendarSharingPolicy,
         heartbeatEnabled,
         identityMd,
         soulMd,
@@ -848,6 +858,37 @@ export function SettingsClient({
                   <span className="settings-toggle-knob" />
                 </button>
               </div>
+            </section>
+
+            <section className="settings-section-block">
+              <div className="settings-section-header">
+                <span className="context-label">Calendar Sharing</span>
+                <p>
+                  Choose when this agent may share your CyWorld Calendar details
+                  with other participants.
+                </p>
+              </div>
+              <label className="split-label settings-field-span-2">
+                Sharing Policy
+                <span className="settings-select-wrap">
+                  <select
+                    className="settings-select"
+                    onChange={(event) => {
+                      setCalendarSharingPolicy(
+                        event.target.value as CalendarSharingPolicy,
+                      );
+                    }}
+                    value={calendarSharingPolicy}
+                  >
+                    {calendarSharingOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="settings-select-icon">⌄</span>
+                </span>
+              </label>
             </section>
           </div>
         </article>
