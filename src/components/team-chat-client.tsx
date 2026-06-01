@@ -396,6 +396,30 @@ export function TeamChatClient({
                         className="message-avatar"
                       />
                     ) : null}
+                    {row.isOwnMessage ? (
+                      <span className="message-meta-stack message-meta-stack-user">
+                        <button
+                          className="message-reply-button"
+                          onClick={() =>
+                            setReplyTarget({
+                              author:
+                                memberMap.get(row.message.userId)?.name ??
+                                row.message.author,
+                              content: row.message.content,
+                              id: row.message.id,
+                            })
+                          }
+                          type="button"
+                        >
+                          Reply
+                        </button>
+                        {row.showTimestamp ? (
+                          <span className="message-timestamp message-timestamp-user">
+                            {formatMessageTime(row.message.createdAt)}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                     {!row.isOwnMessage ? (
                       <div className="team-message-stack">
                         <div className="team-message-author">
@@ -438,33 +462,32 @@ export function TeamChatClient({
                         <p>{row.message.content}</p>
                       </div>
                     )}
-                    <button
-                      className="message-reply-button"
-                      onClick={() =>
-                        setReplyTarget({
-                          author:
-                            memberMap.get(row.message.userId)?.name ??
-                            row.message.author,
-                          content: row.message.content,
-                          id: row.message.id,
-                        })
-                      }
-                      type="button"
-                    >
-                      Reply
-                    </button>
+                    {!row.isOwnMessage ? (
+                      <span className="message-meta-stack message-meta-stack-other">
+                        <button
+                          className="message-reply-button"
+                          onClick={() =>
+                            setReplyTarget({
+                              author:
+                                memberMap.get(row.message.userId)?.name ??
+                                row.message.author,
+                              content: row.message.content,
+                              id: row.message.id,
+                            })
+                          }
+                          type="button"
+                        >
+                          Reply
+                        </button>
+                        {row.showTimestamp ? (
+                          <span className="message-timestamp message-timestamp-other">
+                            {formatMessageTime(row.message.createdAt)}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                     {row.isOwnMessage ? (
                       <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
-                    ) : null}
-                    {row.showTimestamp && row.isOwnMessage ? (
-                      <span className="message-timestamp message-timestamp-user">
-                        {formatMessageTime(row.message.createdAt)}
-                      </span>
-                    ) : null}
-                    {row.showTimestamp && !row.isOwnMessage ? (
-                      <span className="message-timestamp message-timestamp-other">
-                        {formatMessageTime(row.message.createdAt)}
-                      </span>
                     ) : null}
                   </div>
                 </div>

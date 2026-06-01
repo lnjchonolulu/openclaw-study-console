@@ -526,9 +526,30 @@ export function ChatClient({
               {row.message.role !== "USER" && counterpart ? (
                 <ProfileAvatar avatar={counterpart.avatar} className="message-avatar" />
               ) : null}
-              {row.showTimestamp && row.message.role === "USER" ? (
-                <span className="message-timestamp message-timestamp-user">
-                  {formatMessageTime(row.message.createdAt)}
+              {row.message.role === "USER" ? (
+                <span className="message-meta-stack message-meta-stack-user">
+                  <button
+                    className="message-reply-button"
+                    onClick={() =>
+                      setReplyTarget({
+                        authorName:
+                          row.message.authorName ??
+                          (row.message.role === "USER"
+                            ? "You"
+                            : counterpart?.displayName ?? "Message"),
+                        content: row.message.content,
+                        id: row.message.id,
+                      })
+                    }
+                    type="button"
+                  >
+                    Reply
+                  </button>
+                  {row.showTimestamp ? (
+                    <span className="message-timestamp message-timestamp-user">
+                      {formatMessageTime(row.message.createdAt)}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
               <div
@@ -549,30 +570,34 @@ export function ChatClient({
                 ) : null}
                 <p>{row.message.content}</p>
               </div>
-              <button
-                className="message-reply-button"
-                onClick={() =>
-                  setReplyTarget({
-                    authorName:
-                      row.message.authorName ??
-                      (row.message.role === "USER"
-                        ? "You"
-                        : counterpart?.displayName ?? "Message"),
-                    content: row.message.content,
-                    id: row.message.id,
-                  })
-                }
-                type="button"
-              >
-                Reply
-              </button>
+              {row.message.role !== "USER" ? (
+                <span className="message-meta-stack message-meta-stack-other">
+                  <button
+                    className="message-reply-button"
+                    onClick={() =>
+                      setReplyTarget({
+                        authorName:
+                          row.message.authorName ??
+                          (row.message.role === "USER"
+                            ? "You"
+                            : counterpart?.displayName ?? "Message"),
+                        content: row.message.content,
+                        id: row.message.id,
+                      })
+                    }
+                    type="button"
+                  >
+                    Reply
+                  </button>
+                  {row.showTimestamp ? (
+                    <span className="message-timestamp message-timestamp-other">
+                      {formatMessageTime(row.message.createdAt)}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
               {row.message.role === "USER" ? (
                 <ProfileAvatar avatar={selfAvatar} className="message-avatar" />
-              ) : null}
-              {row.showTimestamp && row.message.role !== "USER" ? (
-                <span className="message-timestamp message-timestamp-other">
-                  {formatMessageTime(row.message.createdAt)}
-                </span>
               ) : null}
             </div>
           ),

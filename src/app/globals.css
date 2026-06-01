@@ -1637,12 +1637,9 @@ button.primary-button {
 }
 
 .message-reply-button {
-  position: absolute;
-  bottom: 18px;
-  z-index: 2;
   opacity: 0;
   pointer-events: none;
-  min-height: 30px;
+  min-height: 26px;
   padding: 0 10px;
   border: 1px solid rgba(17, 17, 17, 0.12);
   border-radius: 999px;
@@ -1653,12 +1650,22 @@ button.primary-button {
   transition: opacity 140ms ease, background 140ms ease;
 }
 
-.message-line-user .message-reply-button {
-  right: 42px;
+.message-meta-stack {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  align-self: flex-end;
+  min-width: 52px;
+  margin-bottom: 1px;
 }
 
-.message-line-other .message-reply-button {
-  left: 42px;
+.message-meta-stack-user {
+  align-items: flex-end;
+}
+
+.message-meta-stack-other {
+  align-items: flex-start;
 }
 
 .message-reply-button:hover {
