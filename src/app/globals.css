@@ -1353,6 +1353,7 @@ button.primary-button {
 }
 
 .calendar-date-input {
+  position: relative;
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -1373,7 +1374,7 @@ button.primary-button {
 }
 
 .calendar-date-input input,
-.calendar-date-input select {
+.calendar-time-button {
   appearance: none;
   -webkit-appearance: none;
   min-height: auto;
@@ -1385,7 +1386,47 @@ button.primary-button {
   color: var(--foreground);
   font: inherit;
   font-weight: 700;
+  line-height: 1.25;
   outline: 0;
+  text-align: left;
+}
+
+.calendar-time-button {
+  cursor: pointer;
+}
+
+.calendar-time-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: grid;
+  max-height: 220px;
+  padding: 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  overflow-y: auto;
+}
+
+.calendar-time-menu button {
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-time-menu button:hover,
+.calendar-time-option-active {
+  background: rgba(17, 17, 17, 0.08);
 }
 
 .calendar-invite-picker {

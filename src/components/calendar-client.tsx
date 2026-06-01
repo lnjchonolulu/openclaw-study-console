@@ -5,6 +5,7 @@ import { ProfileAvatar } from "@/components/profile-avatar";
 import type { CalendarEventView, CalendarMonthView } from "@/lib/calendar";
 
 type EventModalMode = "create" | "edit";
+type TimePickerTarget = "end" | "start";
 
 function monthLabel(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -135,6 +136,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isInvitePopoverOpen, setIsInvitePopoverOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [openTimePicker, setOpenTimePicker] = useState<TimePickerTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const wheelLockRef = useRef(0);
   const now = useMemo(() => new Date(), []);
@@ -180,6 +182,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
 
   function openCreateModal(date?: Date) {
     setNotice(null);
+    setOpenTimePicker(null);
     resetModalForCreate(date);
     setIsEventModalOpen(true);
   }
@@ -189,6 +192,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     const end = new Date(event.endAt);
 
     setNotice(null);
+    setOpenTimePicker(null);
     setModalMode("edit");
     setEditingEventId(event.id);
     setTitle(event.title);
@@ -467,6 +471,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
           className="team-modal-backdrop calendar-modal-backdrop"
           onClick={() => {
             if (!isSaving) {
+              setOpenTimePicker(null);
               setIsEventModalOpen(false);
             }
           }}
@@ -516,19 +521,32 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   </label>
                   <label className="calendar-date-input">
                     <span>Time</span>
-                    <select
-                      className="team-modal-input settings-input"
-                      onChange={(event) => {
-                        setStartTime(event.target.value);
+                    <button
+                      className="calendar-time-button"
+                      onClick={() => {
+                        setOpenTimePicker((current) => (current === "start" ? null : "start"));
                       }}
-                      value={startTime}
+                      type="button"
                     >
-                      {selectableTimes.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
+                      {startTime}
+                    </button>
+                    {openTimePicker === "start" ? (
+                      <div className="calendar-time-menu">
+                        {selectableTimes.map((time) => (
+                          <button
+                            className={time === startTime ? "calendar-time-option-active" : ""}
+                            key={time}
+                            onClick={() => {
+                              setStartTime(time);
+                              setOpenTimePicker(null);
+                            }}
+                            type="button"
+                          >
+                            {time}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </label>
                 </fieldset>
                 <fieldset className="calendar-date-group">
@@ -548,19 +566,32 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   </label>
                   <label className="calendar-date-input">
                     <span>Time</span>
-                    <select
-                      className="team-modal-input settings-input"
-                      onChange={(event) => {
-                        setEndTime(event.target.value);
+                    <button
+                      className="calendar-time-button"
+                      onClick={() => {
+                        setOpenTimePicker((current) => (current === "end" ? null : "end"));
                       }}
-                      value={endTime}
+                      type="button"
                     >
-                      {selectableTimes.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
+                      {endTime}
+                    </button>
+                    {openTimePicker === "end" ? (
+                      <div className="calendar-time-menu">
+                        {selectableTimes.map((time) => (
+                          <button
+                            className={time === endTime ? "calendar-time-option-active" : ""}
+                            key={time}
+                            onClick={() => {
+                              setEndTime(time);
+                              setOpenTimePicker(null);
+                            }}
+                            type="button"
+                          >
+                            {time}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </label>
                 </fieldset>
                 <label className="split-label calendar-field-wide">
@@ -621,6 +652,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                 className="secondary-button"
                 disabled={isSaving}
                 onClick={() => {
+                  setOpenTimePicker(null);
                   setIsEventModalOpen(false);
                 }}
                 type="button"
