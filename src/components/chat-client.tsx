@@ -553,22 +553,38 @@ export function ChatClient({
                 </span>
               ) : null}
               <div
-                className={`message-row ${
-                  row.message.role === "USER" ? "message-row-user" : "message-row-agent"
+                className={`message-content-stack ${
+                  row.message.role === "USER"
+                    ? "message-content-stack-user"
+                    : "message-content-stack-other"
                 }`}
               >
-                {row.message.replyTo ? (
-                  <div className="message-reply-preview">
-                    <span className="message-reply-author">
-                      {row.message.replyTo.authorName ??
-                        (row.message.replyTo.role === "USER" ? "You" : "Earlier message")}
-                    </span>
-                    <span className="message-reply-content">
-                      {truncateReplyPreview(row.message.replyTo.content)}
-                    </span>
-                  </div>
-                ) : null}
-                <p>{row.message.content}</p>
+                <div className="message-author-label">
+                  {row.message.authorName ??
+                    (row.message.role === "USER"
+                      ? "You"
+                      : counterpart?.displayName ?? "Message")}
+                </div>
+                <div
+                  className={`message-row ${
+                    row.message.role === "USER"
+                      ? "message-row-user"
+                      : "message-row-agent"
+                  }`}
+                >
+                  {row.message.replyTo ? (
+                    <div className="message-reply-preview">
+                      <span className="message-reply-author">
+                        {row.message.replyTo.authorName ??
+                          (row.message.replyTo.role === "USER" ? "You" : "Earlier message")}
+                      </span>
+                      <span className="message-reply-content">
+                        {truncateReplyPreview(row.message.replyTo.content)}
+                      </span>
+                    </div>
+                  ) : null}
+                  <p>{row.message.content}</p>
+                </div>
               </div>
               {row.message.role !== "USER" ? (
                 <span className="message-meta-stack message-meta-stack-other">

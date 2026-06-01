@@ -1545,7 +1545,7 @@ button.primary-button {
 .message-line {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 6px;
   width: 100%;
 }
@@ -1606,9 +1606,31 @@ button.primary-button {
   flex: 0 0 auto;
 }
 
-.team-message-stack {
+.message-content-stack {
   display: grid;
+  flex: 0 1 auto;
   gap: 6px;
+  width: fit-content;
+  max-width: min(680px, 78%);
+}
+
+.message-content-stack-user {
+  justify-items: end;
+}
+
+.message-content-stack-other {
+  justify-items: start;
+}
+
+.message-author-label {
+  color: var(--foreground);
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.message-content-stack .message-row {
+  max-width: 100%;
 }
 
 .message-row-user {

@@ -421,8 +421,8 @@ export function TeamChatClient({
                       </span>
                     ) : null}
                     {!row.isOwnMessage ? (
-                      <div className="team-message-stack">
-                        <div className="team-message-author">
+                      <div className="message-content-stack message-content-stack-other">
+                        <div className="message-author-label">
                           {memberMap.get(row.message.userId)?.name ?? row.message.author}
                         </div>
                         <div
@@ -445,21 +445,24 @@ export function TeamChatClient({
                       </div>
                     ) : (
                       <div
-                        className={`message-row ${
-                          row.isOwnMessage ? "message-row-user" : "message-row-agent"
-                        }`}
+                        className="message-content-stack message-content-stack-user"
                       >
-                        {row.message.replyTo ? (
-                          <div className="message-reply-preview">
-                            <span className="message-reply-author">
-                              {row.message.replyTo.author}
-                            </span>
-                            <span className="message-reply-content">
-                              {truncateReplyPreview(row.message.replyTo.content)}
-                            </span>
-                          </div>
-                        ) : null}
-                        <p>{row.message.content}</p>
+                        <div className="message-author-label">
+                          {memberMap.get(row.message.userId)?.name ?? row.message.author}
+                        </div>
+                        <div className="message-row message-row-user">
+                          {row.message.replyTo ? (
+                            <div className="message-reply-preview">
+                              <span className="message-reply-author">
+                                {row.message.replyTo.author}
+                              </span>
+                              <span className="message-reply-content">
+                                {truncateReplyPreview(row.message.replyTo.content)}
+                              </span>
+                            </div>
+                          ) : null}
+                          <p>{row.message.content}</p>
+                        </div>
                       </div>
                     )}
                     {!row.isOwnMessage ? (
