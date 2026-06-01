@@ -1375,8 +1375,13 @@ button.primary-button {
 .calendar-date-input input,
 .calendar-date-input select {
   appearance: none;
+  -webkit-appearance: none;
+  min-height: auto;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--foreground);
   font: inherit;
   font-weight: 700;
