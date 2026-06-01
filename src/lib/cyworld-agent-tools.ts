@@ -172,6 +172,21 @@ function parseDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function kstDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(date);
+}
+
+function mentionsTodayLikeDate(value: string) {
+  return /\b(today|this\s+morning|this\s+afternoon|this\s+evening|tonight)\b/i.test(
+    value,
+  );
+}
+
 function summarizeCalendarEvent(event: CalendarEventView) {
   return {
     createdBy: event.createdBy,
@@ -327,9 +342,11 @@ async function handleCalendarListTool({
 
 async function handleCalendarCreateTool({
   args,
+  objective,
   requesterUserId,
 }: {
   args: Record<string, unknown>;
+  objective?: string;
   requesterUserId?: string;
 }) {
   if (!requesterUserId) {
@@ -354,6 +371,21 @@ async function handleCalendarCreateTool({
     return JSON.stringify({
       ok: false,
       reason: "endAt_must_be_after_startAt",
+    });
+  }
+
+  if (
+    objective &&
+    mentionsTodayLikeDate(objective) &&
+    kstDateKey(startAt) !== kstDateKey(new Date())
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "relative_date_does_not_match_today_in_kst",
+      currentDateInKst: kstDateKey(new Date()),
+      requestedStartDateInKst: kstDateKey(startAt),
+      guidance:
+        "The user used today-like language. Recalculate the event date from the current KST date or ask a clarification before creating it.",
     });
   }
 
@@ -508,6 +540,7 @@ export async function handleCyWorldAgentToolCall({
   if (call.name === "study_create_calendar_event") {
     return handleCalendarCreateTool({
       args,
+      objective,
       requesterUserId,
     });
   }
