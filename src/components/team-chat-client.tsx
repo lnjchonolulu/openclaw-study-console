@@ -110,6 +110,13 @@ function buildRenderRows(
   return rows;
 }
 
+function isNearBottom(element: HTMLElement) {
+  const distanceFromBottom =
+    element.scrollHeight - element.scrollTop - element.clientHeight;
+
+  return distanceFromBottom < 96;
+}
+
 function TeamMembersIcon() {
   return (
     <svg
@@ -159,6 +166,8 @@ export function TeamChatClient({
   const [message, setMessage] = useState("");
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -167,6 +176,7 @@ export function TeamChatClient({
 
   useEffect(() => {
     setReplyTarget(null);
+    shouldStickToBottomRef.current = true;
   }, [selectedChannelId]);
 
   useEffect(() => {
@@ -189,6 +199,10 @@ export function TeamChatClient({
       const payload = (await response.json()) as TeamChannelDetail;
 
       if (isMounted) {
+        const messageList = messageListRef.current;
+        shouldStickToBottomRef.current = messageList
+          ? isNearBottom(messageList)
+          : shouldStickToBottomRef.current;
         setChannel((current) =>
           current?.id === payload.id
             ? {
@@ -234,7 +248,9 @@ export function TeamChatClient({
   );
 
   useLayoutEffect(() => {
-    messageEndRef.current?.scrollIntoView({ block: "end" });
+    if (shouldStickToBottomRef.current) {
+      messageEndRef.current?.scrollIntoView({ block: "end" });
+    }
   }, [renderRows]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -277,6 +293,7 @@ export function TeamChatClient({
           }
         : current,
     );
+    shouldStickToBottomRef.current = true;
     setMessage("");
     setReplyTarget(null);
 
@@ -369,7 +386,14 @@ export function TeamChatClient({
           ) : null}
         </div>
 
-        <div className="message-list" aria-live="polite">
+        <div
+          className="message-list"
+          aria-live="polite"
+          onScroll={(event) => {
+            shouldStickToBottomRef.current = isNearBottom(event.currentTarget);
+          }}
+          ref={messageListRef}
+        >
           {renderRows.length === 0 ? (
             <div className="team-empty-state">No messages yet.</div>
           ) : (
