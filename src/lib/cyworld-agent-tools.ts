@@ -1,3 +1,4 @@
+import { listCalendarMonth, type CalendarEventView } from "@/lib/calendar";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +27,28 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["toUsername", "message"],
+    },
+  },
+  {
+    name: "study_list_calendar",
+    description:
+      "List CyWorld Calendar events and pending invitations visible to the current human participant. Use this when the user asks to check their calendar, schedule, events, availability, invitations, or what's on their calendar.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        month: {
+          type: "string",
+          description:
+            "Optional month to inspect in YYYY-MM format. Defaults to the current month.",
+        },
+        username: {
+          type: "string",
+          description:
+            "Optional CyWorld username. For privacy, this must be omitted or match the current human participant.",
+        },
+      },
+      required: [],
     },
   },
   {
@@ -73,6 +96,104 @@ function cleanUsername(value: unknown) {
 
 function cleanMessage(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanMonth(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const month = value.trim();
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
+}
+
+function summarizeCalendarEvent(event: CalendarEventView) {
+  return {
+    createdBy: event.createdBy,
+    description: event.description,
+    endAt: event.endAt,
+    invitees: event.invitees.map((invitee) => ({
+      status: invitee.status,
+      username: invitee.username,
+    })),
+    location: event.location,
+    startAt: event.startAt,
+    title: event.title,
+  };
+}
+
+async function handleCalendarListTool({
+  args,
+  requesterUserId,
+}: {
+  args: Record<string, unknown>;
+  requesterUserId?: string;
+}) {
+  if (!requesterUserId) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_requester_user",
+    });
+  }
+
+  const requester = await prisma.user.findUnique({
+    where: {
+      id: requesterUserId,
+    },
+    select: {
+      displayName: true,
+      id: true,
+      username: true,
+    },
+  });
+
+  if (!requester) {
+    return JSON.stringify({
+      ok: false,
+      reason: "requester_not_found",
+    });
+  }
+
+  const requestedUsername = cleanUsername(args.username);
+
+  if (requestedUsername && requestedUsername !== requester.username) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_access_is_limited_to_current_human",
+      currentHuman: {
+        displayName: requester.displayName,
+        username: requester.username,
+      },
+      requestedUsername,
+    });
+  }
+
+  const view = await listCalendarMonth(requester.id, cleanMonth(args.month));
+
+  if (!view) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_not_found",
+    });
+  }
+
+  return JSON.stringify({
+    ok: true,
+    calendar: "CyWorld Calendar",
+    viewer: {
+      displayName: requester.displayName,
+      username: requester.username,
+    },
+    month: view.month,
+    events: view.events.slice(0, 40).map((event) => summarizeCalendarEvent(event)),
+    pendingInvitations: view.invitations.slice(0, 20).map((invitation) => ({
+      event: summarizeCalendarEvent(invitation.event),
+      invitedBy: invitation.invitedBy,
+      status: invitation.status,
+    })),
+    totalEvents: view.events.length,
+    totalPendingInvitations: view.invitations.length,
+  });
 }
 
 async function createToolTask({
@@ -162,6 +283,13 @@ export async function handleCyWorldAgentToolCall({
     return JSON.stringify({
       ok: false,
       reason: "invalid_json_arguments",
+    });
+  }
+
+  if (call.name === "study_list_calendar") {
+    return handleCalendarListTool({
+      args,
+      requesterUserId,
     });
   }
 
