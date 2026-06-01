@@ -3,26 +3,23 @@ import {
   normalizeAgentBehaviorConfig,
   type AgentBehaviorConfig,
 } from "@/lib/agent-behavior";
+import { dateKeyInTimeZone, normalizeTimeZone } from "@/lib/timezone";
 
 type AgentAudience = "direct_line" | "shared_spaces";
 
-function formatCurrentKstContext() {
+function formatCurrentTimeContext(timeZone: unknown) {
   const now = new Date();
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
   const formatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "full",
     timeStyle: "long",
-    timeZone: "Asia/Seoul",
-  });
-  const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
+    timeZone: normalizedTimeZone,
   });
 
   return {
     human: formatter.format(now),
-    isoDate: dateKeyFormatter.format(now),
+    isoDate: dateKeyInTimeZone(now, normalizedTimeZone),
+    timeZone: normalizedTimeZone,
   };
 }
 
@@ -200,8 +197,10 @@ export function buildAgentRuntimeInstructions({
   audience,
   behaviorConfig,
   counterpartLabel,
+  counterpartTimezone,
   availableHumanUsernames,
   ownerDisplayName,
+  ownerTimezone,
   ownerUsername,
   personaSummary,
 }: {
@@ -209,16 +208,20 @@ export function buildAgentRuntimeInstructions({
   audience: AgentAudience;
   behaviorConfig: unknown;
   counterpartLabel: string;
+  counterpartTimezone?: string | null;
   availableHumanUsernames: string[];
   ownerDisplayName: string;
+  ownerTimezone?: string | null;
   ownerUsername: string;
   personaSummary?: string | null;
 }) {
   const normalized = normalizeAgentBehaviorConfig(behaviorConfig);
-  const currentKst = formatCurrentKstContext();
+  const currentCounterpartTime = formatCurrentTimeContext(counterpartTimezone ?? ownerTimezone ?? null);
+  const normalizedOwnerTimezone = normalizeTimeZone(ownerTimezone);
   const lines = [
     `You are ${agentDisplayName}, the personal agent for ${ownerDisplayName} (@${ownerUsername}).`,
-    `Current date/time: ${currentKst.human} (Asia/Seoul, KST). Today's date is ${currentKst.isoDate}.`,
+    `Current date/time for the current human/context: ${currentCounterpartTime.human} (${currentCounterpartTime.timeZone}). Today's date there is ${currentCounterpartTime.isoDate}.`,
+    `Owner timezone: ${normalizedOwnerTimezone}. Use the current human/context timezone for interpreting "today", "this morning", and other relative scheduling language unless the user explicitly names a different timezone.`,
     personaSummary?.trim() ? `Baseline persona: ${personaSummary.trim()}` : null,
     "",
     "Core response style",
@@ -271,7 +274,7 @@ export function buildAgentRuntimeInstructions({
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",
     "If the user asks you to create a calendar event in CyWorld Calendar, use the study_create_calendar_event tool.",
-    "When creating calendar events, resolve relative dates like today, this morning, tomorrow, and next week using the Current date/time above. Use explicit ISO 8601 datetimes with a timezone offset, preferably +09:00 for KST, unless the user specifies another timezone.",
+    "When creating calendar events, resolve relative dates like today, this morning, tomorrow, and next week using the Current date/time above. Use explicit ISO 8601 datetimes with the correct timezone offset for that user's timezone unless the user specifies another timezone.",
     "If the requested date is ambiguous, ask a short clarification before creating the event instead of guessing a far-future date.",
     `Owner calendar sharing policy: ${labelForCalendarSharing(normalized.calendarSharingPolicy)}.`,
     `- ${instructionForCalendarSharing(normalized.calendarSharingPolicy)}`,

@@ -68,9 +68,11 @@ export type CreateOutboundAgentTaskInput = {
   explicitMessage?: string | null;
   kind: TaskDeliveryKind;
   ownerDisplayName: string;
+  ownerTimezone?: string | null;
   ownerUsername: string;
   personaSummary?: string | null;
   requesterDisplayName: string;
+  requesterTimezone?: string | null;
   requesterUserId: string;
   requesterUsername: string;
   sourceMessage: string;
@@ -430,7 +432,9 @@ async function resolveInboundTaskReply({
     availableHumanUsernames: [ownerUsername, replyingUsername],
     behaviorConfig,
     counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying in a Study Console DM`,
+    counterpartTimezone: null,
     ownerDisplayName,
+    ownerTimezone: null,
     ownerUsername,
     personaSummary,
   });
@@ -552,7 +556,9 @@ async function composeOutboundMessage({
       input.ownerUsername === input.requesterUsername
         ? `${input.requesterDisplayName} (@${input.requesterUsername})`
         : `${input.requesterDisplayName} (@${input.requesterUsername}), who is not the owner of this agent`,
+    counterpartTimezone: input.requesterTimezone,
     ownerDisplayName: input.ownerDisplayName,
+    ownerTimezone: input.ownerTimezone,
     ownerUsername: input.ownerUsername,
     personaSummary: input.personaSummary,
   });
@@ -716,9 +722,11 @@ export async function handleInboundTaskReply({
   agentOpenclawId,
   behaviorConfig,
   ownerDisplayName,
+  ownerTimezone,
   ownerUsername,
   personaSummary,
   replyingDisplayName,
+  replyingTimezone,
   roomId,
   replyingUserId,
   userMessageId,
@@ -729,9 +737,11 @@ export async function handleInboundTaskReply({
   agentOpenclawId: string;
   behaviorConfig: unknown;
   ownerDisplayName: string;
+  ownerTimezone?: string | null;
   ownerUsername: string;
   personaSummary?: string | null;
   replyingDisplayName: string;
+  replyingTimezone?: string | null;
   roomId: string;
   replyingUserId: string;
   userMessageId: string;
@@ -859,7 +869,9 @@ export async function handleInboundTaskReply({
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig,
     counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying to a Study Console task`,
+    counterpartTimezone: replyingTimezone,
     ownerDisplayName,
+    ownerTimezone,
     ownerUsername,
     personaSummary,
   });

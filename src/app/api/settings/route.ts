@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { deleteUserAvatarFiles, saveUserAvatarDataUrl } from "@/lib/avatar-storage";
 import { prisma } from "@/lib/prisma";
 import { normalizeProfileConfig } from "@/lib/profile";
+import { normalizeTimeZone } from "@/lib/timezone";
 
 export async function PATCH(request: Request) {
   const user = await getCurrentUser();
@@ -28,6 +29,7 @@ export async function PATCH(request: Request) {
     userDisplayName?: string;
     userMd?: string;
     userProfileConfig?: unknown;
+    userTimezone?: string;
   };
 
   const userMd = typeof body.userMd === "string" ? body.userMd : "";
@@ -41,6 +43,7 @@ export async function PATCH(request: Request) {
     extractMarkdownBulletValue(identityMd, "Name")?.trim() ||
     body.agentDisplayName?.trim() ||
     `${user.username}'s agent`;
+  const userTimezone = normalizeTimeZone(body.userTimezone ?? user.timezone);
   const agentId = body.agentId?.trim() || user.agent.openclawAgentId;
   const heartbeatEnabled = Boolean(body.heartbeatEnabled);
   const currentUserProfileConfig = normalizeProfileConfig(
@@ -102,6 +105,7 @@ export async function PATCH(request: Request) {
       data: {
         displayName: userDisplayName,
         profileConfigJson: nextUserProfileConfig,
+        timezone: userTimezone,
       },
     }),
     prisma.agent.update({

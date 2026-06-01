@@ -7,6 +7,11 @@ import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
+import {
+  dateKeyInTimeZone,
+  formatDateTimeInTimeZone,
+  normalizeTimeZone,
+} from "@/lib/timezone";
 
 export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
@@ -48,7 +53,8 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
         endAt: {
           type: "string",
-          description: "Event end as an ISO 8601 datetime string.",
+          description:
+            "Event end as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
         },
         invitedUsernames: {
           type: "array",
@@ -64,7 +70,8 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
         startAt: {
           type: "string",
-          description: "Event start as an ISO 8601 datetime string.",
+          description:
+            "Event start as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
         },
         title: {
           type: "string",
@@ -172,32 +179,31 @@ function parseDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function kstDateKey(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).format(date);
-}
-
 function mentionsTodayLikeDate(value: string) {
   return /\b(today|this\s+morning|this\s+afternoon|this\s+evening|tonight)\b/i.test(
     value,
   );
 }
 
-function summarizeCalendarEvent(event: CalendarEventView) {
+function summarizeCalendarEvent(event: CalendarEventView, timeZone: string) {
   return {
     createdBy: event.createdBy,
     description: event.description,
     endAt: event.endAt,
+    endLocal: formatDateTimeInTimeZone(event.endAt, timeZone, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
     invitees: event.invitees.map((invitee) => ({
       status: invitee.status,
       username: invitee.username,
     })),
     location: event.location,
     startAt: event.startAt,
+    startLocal: formatDateTimeInTimeZone(event.startAt, timeZone, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
     title: event.title,
   };
 }
@@ -225,6 +231,7 @@ async function handleCalendarListTool({
     select: {
       displayName: true,
       id: true,
+      timezone: true,
       username: true,
     },
   });
@@ -293,6 +300,7 @@ async function handleCalendarListTool({
       calendar: "CyWorld Calendar",
       viewer: {
         displayName: requester.displayName,
+        timezone: normalizeTimeZone(requester.timezone),
         username: requester.username,
       },
       sharedFrom: {
@@ -301,9 +309,10 @@ async function handleCalendarListTool({
       },
       sharingPolicy: policy,
       month: ownerView.month,
-      events: ownerView.events.slice(0, 40).map((event) => summarizeCalendarEvent(event)),
+      timeZone: ownerView.timeZone,
+      events: ownerView.events.slice(0, 40).map((event) => summarizeCalendarEvent(event, ownerView.timeZone)),
       pendingInvitations: ownerView.invitations.slice(0, 20).map((invitation) => ({
-        event: summarizeCalendarEvent(invitation.event),
+        event: summarizeCalendarEvent(invitation.event, ownerView.timeZone),
         invitedBy: invitation.invitedBy,
         status: invitation.status,
       })),
@@ -326,12 +335,14 @@ async function handleCalendarListTool({
     calendar: "CyWorld Calendar",
     viewer: {
       displayName: requester.displayName,
+      timezone: view.timeZone,
       username: requester.username,
     },
     month: view.month,
-    events: view.events.slice(0, 40).map((event) => summarizeCalendarEvent(event)),
+    timeZone: view.timeZone,
+    events: view.events.slice(0, 40).map((event) => summarizeCalendarEvent(event, view.timeZone)),
     pendingInvitations: view.invitations.slice(0, 20).map((invitation) => ({
-      event: summarizeCalendarEvent(invitation.event),
+      event: summarizeCalendarEvent(invitation.event, view.timeZone),
       invitedBy: invitation.invitedBy,
       status: invitation.status,
     })),
@@ -359,6 +370,15 @@ async function handleCalendarCreateTool({
   const title = typeof args.title === "string" ? args.title.trim() : "";
   const startAt = parseDate(args.startAt);
   const endAt = parseDate(args.endAt);
+  const requester = await prisma.user.findUnique({
+    where: {
+      id: requesterUserId,
+    },
+    select: {
+      timezone: true,
+    },
+  });
+  const requesterTimezone = normalizeTimeZone(requester?.timezone);
 
   if (!title || !startAt || !endAt) {
     return JSON.stringify({
@@ -377,15 +397,17 @@ async function handleCalendarCreateTool({
   if (
     objective &&
     mentionsTodayLikeDate(objective) &&
-    kstDateKey(startAt) !== kstDateKey(new Date())
+    dateKeyInTimeZone(startAt, requesterTimezone) !==
+      dateKeyInTimeZone(new Date(), requesterTimezone)
   ) {
     return JSON.stringify({
       ok: false,
-      reason: "relative_date_does_not_match_today_in_kst",
-      currentDateInKst: kstDateKey(new Date()),
-      requestedStartDateInKst: kstDateKey(startAt),
+      reason: "relative_date_does_not_match_today_in_requester_timezone",
+      currentDate: dateKeyInTimeZone(new Date(), requesterTimezone),
+      requestedStartDate: dateKeyInTimeZone(startAt, requesterTimezone),
+      requesterTimezone,
       guidance:
-        "The user used today-like language. Recalculate the event date from the current KST date or ask a clarification before creating it.",
+        "The user used today-like language. Recalculate the event date from the current human participant's timezone or ask a clarification before creating it.",
     });
   }
 
@@ -431,11 +453,20 @@ async function handleCalendarCreateTool({
     calendar: "CyWorld Calendar",
     event: {
       endAt: created.endAt.toISOString(),
+      endLocal: formatDateTimeInTimeZone(created.endAt, requesterTimezone, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
       id: created.id,
       invitedUsernames: invitees.map((invitee) => invitee.username),
       startAt: created.startAt.toISOString(),
+      startLocal: formatDateTimeInTimeZone(created.startAt, requesterTimezone, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
       title: created.title,
     },
+    timeZone: requesterTimezone,
   });
 }
 

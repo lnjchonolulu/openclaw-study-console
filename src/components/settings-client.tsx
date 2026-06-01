@@ -19,6 +19,7 @@ import {
   rotateProfileConfig,
   type ProfileConfig,
 } from "@/lib/profile";
+import { timeZoneOptions } from "@/lib/timezone";
 
 const AVATAR_CROP_SIZE = 160;
 const AVATAR_VIEWPORT_SIZE = 248;
@@ -49,6 +50,7 @@ type SettingsClientProps = {
   initialUserDisplayName: string;
   initialUserMd: string;
   initialUserProfile: ProfileConfig;
+  initialUserTimezone: string;
   username: string;
 };
 
@@ -482,11 +484,13 @@ export function SettingsClient({
   initialUserDisplayName,
   initialUserMd,
   initialUserProfile,
+  initialUserTimezone,
   username,
 }: SettingsClientProps) {
   const router = useRouter();
   const userFileInputRef = useRef<HTMLInputElement | null>(null);
   const [userDisplayName, setUserDisplayName] = useState(initialUserDisplayName);
+  const [userTimezone, setUserTimezone] = useState(initialUserTimezone);
   const [agentDisplayName, setAgentDisplayName] = useState(initialAgentDisplayName);
   const [userMd, setUserMd] = useState(initialUserMd);
   const [identityMd, setIdentityMd] = useState(initialIdentityMd);
@@ -526,6 +530,7 @@ export function SettingsClient({
         userDisplayName,
         userMd,
         userProfileConfig: userProfile,
+        userTimezone,
       }),
     });
 
@@ -703,6 +708,25 @@ export function SettingsClient({
                   type="text"
                   value={userDisplayName}
                 />
+              </span>
+            </label>
+            <label className="split-label">
+              Timezone
+              <span className="settings-select-wrap">
+                <select
+                  className="settings-select"
+                  onChange={(event) => {
+                    setUserTimezone(event.target.value);
+                  }}
+                  value={userTimezone}
+                >
+                  {timeZoneOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="settings-select-icon">⌄</span>
               </span>
             </label>
           </article>

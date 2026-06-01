@@ -47,6 +47,7 @@ async function upsertDemoUser(teamId, entry) {
       passwordHash,
       status: "ACTIVE",
       teamId,
+      timezone: "Asia/Seoul",
     },
     create: {
       username: entry.username,
@@ -54,6 +55,7 @@ async function upsertDemoUser(teamId, entry) {
       passwordHash,
       status: "ACTIVE",
       teamId,
+      timezone: "Asia/Seoul",
     },
   });
 

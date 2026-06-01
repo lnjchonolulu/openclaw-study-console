@@ -124,7 +124,9 @@ export async function POST(request: Request) {
         audience === "direct_line"
           ? `${user.displayName} (@${user.username})`
           : `${user.displayName} (@${user.username}), who is not the owner of this agent`,
+      counterpartTimezone: user.timezone,
       ownerDisplayName: dmRoom.targetAgent.user.displayName,
+      ownerTimezone: dmRoom.targetAgent.user.timezone,
       ownerUsername: dmRoom.targetAgent.user.username,
       personaSummary: dmRoom.targetAgent.personaSummary,
     });
@@ -151,9 +153,11 @@ export async function POST(request: Request) {
           agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
           behaviorConfig: dmRoom.targetAgent.soulConfigJson,
           ownerDisplayName: dmRoom.targetAgent.user.displayName,
+          ownerTimezone: dmRoom.targetAgent.user.timezone,
           ownerUsername: dmRoom.targetAgent.user.username,
           personaSummary: dmRoom.targetAgent.personaSummary,
           replyingDisplayName: user.displayName,
+          replyingTimezone: user.timezone,
           roomId: dmRoom.room.id,
           replyingUserId: user.id,
           userMessageId: createdUserMessage.id,

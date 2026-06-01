@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
+import {
+  monthBoundaryUtc,
+  normalizeMonthKey,
+  normalizeTimeZone,
+} from "@/lib/timezone";
 
 type CalendarAccessConfig = {
   participantKeys: string[];
@@ -69,6 +74,7 @@ export type CalendarMonthView = {
   month: string;
   participants: TeamParticipant[];
   currentUserId: string;
+  timeZone: string;
 };
 
 export function calendarUserKey(userId: string) {
@@ -151,24 +157,6 @@ async function getAccessKeysForUserIds(userIds: string[]) {
   return users.flatMap((user) => getUserAccessKeys(user));
 }
 
-function startOfMonth(month: string) {
-  const [year, monthIndex] = month.split("-").map((value) => Number(value));
-
-  if (!year || !monthIndex || monthIndex < 1 || monthIndex > 12) {
-    return new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  }
-
-  return new Date(Date.UTC(year, monthIndex - 1, 1));
-}
-
-function addMonths(date: Date, months: number) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
-}
-
-function toMonthKey(date: Date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
 function mapEvent(event: CalendarEventRecord, viewerUserId: string): CalendarEventView {
   const titleOverride = event.titleOverrides?.find((override) => override.userId === viewerUserId);
 
@@ -202,8 +190,9 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
     return null;
   }
 
-  const monthStart = startOfMonth(requestedMonth ?? "");
-  const monthEnd = addMonths(monthStart, 1);
+  const timeZone = normalizeTimeZone(user.timezone);
+  const monthKey = normalizeMonthKey(requestedMonth, timeZone);
+  const { end: monthEnd, start: monthStart } = monthBoundaryUtc(monthKey, timeZone);
   const accessKeys = getUserAccessKeys(user);
   const [participants, events, invitations] = await Promise.all([
     listTeamParticipants(userId),
@@ -275,8 +264,9 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
       invitedBy: invitation.invitedBy?.displayName ?? "Someone",
       status: invitation.status,
     })),
-    month: toMonthKey(monthStart),
+    month: monthKey,
     participants,
+    timeZone,
   } satisfies CalendarMonthView;
 }
 

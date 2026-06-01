@@ -7,6 +7,7 @@ import {
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
 import { normalizeProfileConfig } from "@/lib/profile";
+import { normalizeTimeZone } from "@/lib/timezone";
 
 export default async function AgentPage() {
   const user = await requireUser();
@@ -43,6 +44,7 @@ export default async function AgentPage() {
         user.username,
         "user",
       )}
+      initialUserTimezone={normalizeTimeZone(user.timezone)}
       username={user.username}
     />
   );

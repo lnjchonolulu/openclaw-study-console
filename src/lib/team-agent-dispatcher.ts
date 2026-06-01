@@ -207,7 +207,9 @@ export async function runTeamAgentDispatch({
       availableHumanUsernames: activeHumans.map((human) => human.username),
       behaviorConfig: agent.soulConfigJson,
       counterpartLabel: `Team channel "${room.name}" with ${triggeringMessage.user.displayName} (@${triggeringMessage.user.username}) speaking most recently`,
+      counterpartTimezone: triggeringUser.timezone,
       ownerDisplayName: agent.user.displayName,
+      ownerTimezone: agent.user.timezone,
       ownerUsername: agent.user.username,
       personaSummary: agent.personaSummary,
     });

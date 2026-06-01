@@ -87,6 +87,7 @@ model User {
   username               String                       @unique
   passwordHash           String
   displayName            String
+  timezone               String                       @default("Asia/Seoul")
   profileConfigJson      Json?
   role                   UserRole                     @default(PARTICIPANT)
   status                 UserStatus                   @default(ACTIVE)

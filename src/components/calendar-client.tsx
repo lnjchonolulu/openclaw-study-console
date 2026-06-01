@@ -3,6 +3,14 @@
 import { useMemo, useRef, useState, type WheelEvent } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { CalendarEventView, CalendarMonthView } from "@/lib/calendar";
+import {
+  addMonthsToMonthKey,
+  dateKeyInTimeZone,
+  formatDateTimeInTimeZone,
+  monthKeyInTimeZone,
+  timeInputValueInTimeZone,
+  zonedDateTimeToUtc,
+} from "@/lib/timezone";
 
 type EventModalMode = "create" | "edit";
 type TimePickerTarget = "end" | "start";
@@ -16,10 +24,6 @@ function monthLabel(month: string) {
   }).format(new Date(year, (monthNumber || 1) - 1, 1));
 }
 
-function monthKeyFromDate(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function dateInputValue(date: Date) {
   return [
     date.getFullYear(),
@@ -28,18 +32,7 @@ function dateInputValue(date: Date) {
   ].join("-");
 }
 
-function timeInputValue(date: Date) {
-  return [
-    String(date.getHours()).padStart(2, "0"),
-    String(date.getMinutes()).padStart(2, "0"),
-  ].join(":");
-}
-
-function combineDateTime(date: string, time: string) {
-  return new Date(`${date}T${time || "00:00"}`);
-}
-
-function parseLocalDateTime(date: string, time: string) {
+function parseZonedDateTime(date: string, time: string, timeZone: string) {
   const trimmedDate = date.trim();
   const trimmedTime = time.trim();
 
@@ -47,9 +40,9 @@ function parseLocalDateTime(date: string, time: string) {
     return null;
   }
 
-  const value = combineDateTime(trimmedDate, trimmedTime);
+  const value = zonedDateTimeToUtc(trimmedDate, trimmedTime, timeZone);
 
-  return Number.isNaN(value.getTime()) ? null : value;
+  return value && !Number.isNaN(value.getTime()) ? value : null;
 }
 
 function timeOptions() {
@@ -62,10 +55,7 @@ function timeOptions() {
 }
 
 function addMonths(month: string, amount: number) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const date = new Date(Date.UTC(year, (monthNumber || 1) - 1 + amount, 1));
-
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  return addMonthsToMonthKey(month, amount);
 }
 
 function getMonthCells(month: string) {
@@ -86,32 +76,24 @@ function getMonthCells(month: string) {
   });
 }
 
-function sameLocalDay(left: Date, right: Date) {
-  return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
-  );
-}
-
-function timeLabel(isoString: string, allDay: boolean) {
+function timeLabel(isoString: string, allDay: boolean, timeZone: string) {
   if (allDay) {
     return "All day";
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return formatDateTimeInTimeZone(isoString, timeZone, {
     hour: "numeric",
     minute: "2-digit",
-  }).format(new Date(isoString));
+  });
 }
 
-function formatInviteDate(isoString: string) {
-  return new Intl.DateTimeFormat("en-US", {
+function formatInviteDate(isoString: string, timeZone: string) {
+  return formatDateTimeInTimeZone(isoString, timeZone, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  }).format(new Date(isoString));
+  });
 }
 
 function defaultRangeForDate(date?: Date) {
@@ -131,6 +113,7 @@ function defaultRangeForDate(date?: Date) {
 
 export function CalendarClient({ initialView }: { initialView: CalendarMonthView }) {
   const [view, setView] = useState(initialView);
+  const timeZone = view.timeZone;
   const [modalMode, setModalMode] = useState<EventModalMode>("create");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
@@ -143,10 +126,18 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
-  const [startDate, setStartDate] = useState(dateInputValue(defaultRangeForDate().start));
-  const [startTime, setStartTime] = useState(timeInputValue(defaultRangeForDate().start));
-  const [endDate, setEndDate] = useState(dateInputValue(defaultRangeForDate().end));
-  const [endTime, setEndTime] = useState(timeInputValue(defaultRangeForDate().end));
+  const [startDate, setStartDate] = useState(
+    dateKeyInTimeZone(defaultRangeForDate().start, initialView.timeZone),
+  );
+  const [startTime, setStartTime] = useState(
+    timeInputValueInTimeZone(defaultRangeForDate().start, initialView.timeZone),
+  );
+  const [endDate, setEndDate] = useState(
+    dateKeyInTimeZone(defaultRangeForDate().end, initialView.timeZone),
+  );
+  const [endTime, setEndTime] = useState(
+    timeInputValueInTimeZone(defaultRangeForDate().end, initialView.timeZone),
+  );
   const [invitedUserIds, setInvitedUserIds] = useState<string[]>([]);
   const selectableTimes = useMemo(() => timeOptions(), []);
   const people = view.participants.filter(
@@ -173,10 +164,10 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     setTitle("");
     setDescription("");
     setLocation("");
-    setStartDate(dateInputValue(range.start));
-    setStartTime(timeInputValue(range.start));
-    setEndDate(dateInputValue(range.end));
-    setEndTime(timeInputValue(range.end));
+    setStartDate(date ? dateInputValue(date) : dateKeyInTimeZone(range.start, timeZone));
+    setStartTime(date ? "10:00" : timeInputValueInTimeZone(range.start, timeZone));
+    setEndDate(date ? dateInputValue(date) : dateKeyInTimeZone(range.end, timeZone));
+    setEndTime(date ? "11:00" : timeInputValueInTimeZone(range.end, timeZone));
     setInvitedUserIds([]);
   }
 
@@ -198,10 +189,10 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     setTitle(event.title);
     setDescription(event.description);
     setLocation(event.location);
-    setStartDate(dateInputValue(start));
-    setStartTime(timeInputValue(start));
-    setEndDate(dateInputValue(end));
-    setEndTime(timeInputValue(end));
+    setStartDate(dateKeyInTimeZone(start, timeZone));
+    setStartTime(timeInputValueInTimeZone(start, timeZone));
+    setEndDate(dateKeyInTimeZone(end, timeZone));
+    setEndTime(timeInputValueInTimeZone(end, timeZone));
     setInvitedUserIds(
       event.invitees
         .filter((invitee) => invitee.status !== "CANCELED")
@@ -215,8 +206,8 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     setNotice(null);
 
     try {
-      const startAt = parseLocalDateTime(startDate, startTime);
-      const endAt = parseLocalDateTime(endDate, endTime);
+      const startAt = parseZonedDateTime(startDate, startTime, timeZone);
+      const endAt = parseZonedDateTime(endDate, endTime, timeZone);
 
       if (!title.trim()) {
         setNotice("Event title is required.");
@@ -354,7 +345,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                               Invited by {invitation.invitedBy}
                             </span>
                             <span>
-                              {formatInviteDate(invitation.event.startAt)}
+                              {formatInviteDate(invitation.event.startAt, timeZone)}
                             </span>
                           </div>
                           <div className="calendar-invite-actions">
@@ -396,7 +387,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
               </button>
               <button
                 className="secondary-button calendar-today-button"
-                onClick={() => void loadMonth(monthKeyFromDate(new Date()))}
+                onClick={() => void loadMonth(monthKeyInTimeZone(new Date(), timeZone))}
                 type="button"
               >
                 Today
@@ -429,11 +420,12 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
             </div>
           ))}
           {cells.map((cell) => {
-            const cellEvents = view.events.filter((event) =>
-              sameLocalDay(new Date(event.startAt), cell),
+            const cellDateKey = dateInputValue(cell);
+            const cellEvents = view.events.filter(
+              (event) => dateKeyInTimeZone(new Date(event.startAt), timeZone) === cellDateKey,
             );
             const isOutside = cell.getMonth() !== Number(view.month.split("-")[1]) - 1;
-            const isToday = sameLocalDay(cell, now);
+            const isToday = cellDateKey === dateKeyInTimeZone(now, timeZone);
 
             return (
               <div
@@ -456,7 +448,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                       }}
                       type="button"
                     >
-                      <span>{timeLabel(event.startAt, event.allDay)}</span>
+                      <span>{timeLabel(event.startAt, event.allDay, timeZone)}</span>
                       <strong>{event.title}</strong>
                     </button>
                   ))}
