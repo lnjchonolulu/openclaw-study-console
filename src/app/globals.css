@@ -487,7 +487,24 @@ button.primary-button {
 }
 
 .nav-title {
+  min-width: 0;
+  flex: 1 1 auto;
   font-weight: 600;
+}
+
+.nav-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #050505;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .nav-icon {

@@ -79,6 +79,7 @@ function NavIcon({ name }: { name: IconName }) {
 
 export function AppShell({
   availableDmTargets,
+  calendarPendingInvitationCount,
   children,
   dmConversations,
   initialTeamChannels,
@@ -86,6 +87,7 @@ export function AppShell({
   user,
 }: {
   availableDmTargets: DmItem[];
+  calendarPendingInvitationCount: number;
   children: React.ReactNode;
   dmConversations: DmItem[];
   initialTeamChannels: TeamChannelSummary[];
@@ -102,6 +104,7 @@ export function AppShell({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [availableDms, setAvailableDms] = useState(availableDmTargets);
+  const [calendarPendingCount, setCalendarPendingCount] = useState(calendarPendingInvitationCount);
   const [contextNotice, setContextNotice] = useState<string | null>(null);
   const [dmItems, setDmItems] = useState(dmConversations);
   const [teamChannels, setTeamChannels] = useState(initialTeamChannels);
@@ -144,6 +147,33 @@ export function AppShell({
   useEffect(() => {
     setParticipants(teamParticipants);
   }, [teamParticipants]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function refreshCalendarPendingCount() {
+      const response = await fetch("/api/calendar/invitations");
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = (await response.json()) as { pendingCount?: number };
+
+      if (isMounted && typeof payload.pendingCount === "number") {
+        setCalendarPendingCount(payload.pendingCount);
+      }
+    }
+
+    const intervalId = window.setInterval(refreshCalendarPendingCount, 5000);
+    window.addEventListener("calendar-pending-should-refresh", refreshCalendarPendingCount);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("calendar-pending-should-refresh", refreshCalendarPendingCount);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -383,6 +413,7 @@ export function AppShell({
           <nav className="nav-list" aria-label="Primary">
             {primaryNavItems.map((item) => {
               const isActive = pathname === item.href;
+              const badgeCount = item.href === "/calendar" ? calendarPendingCount : 0;
 
               return (
                 <Link
@@ -392,6 +423,11 @@ export function AppShell({
                 >
                   <NavIcon name={item.icon} />
                   <span className="nav-title">{item.title}</span>
+                  {badgeCount > 0 ? (
+                    <span className="nav-unread-badge">
+                      {badgeCount >= 10 ? "10+" : badgeCount}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}

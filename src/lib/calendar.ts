@@ -280,6 +280,15 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
   } satisfies CalendarMonthView;
 }
 
+export async function countPendingCalendarInvitations(userId: string) {
+  return prisma.calendarInvitation.count({
+    where: {
+      invitedUserId: userId,
+      status: "PENDING",
+    },
+  });
+}
+
 export async function createCalendarEvent(args: {
   allDay?: boolean;
   createdByUserId: string;

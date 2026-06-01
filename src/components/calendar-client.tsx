@@ -281,6 +281,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
       return;
     }
 
+    window.dispatchEvent(new Event("calendar-pending-should-refresh"));
     await loadMonth(view.month);
   }
 
