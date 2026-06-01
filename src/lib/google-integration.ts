@@ -1,5 +1,4 @@
 import { type Prisma } from "@prisma/client";
-import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 
 const GOOGLE_SCOPES = [
@@ -10,10 +9,16 @@ const GOOGLE_SCOPES = [
 
 type GoogleTokenJson = {
   access_token?: string;
+  expires_in?: number;
   expiry_date?: number;
   refresh_token?: string;
   scope?: string;
   token_type?: string;
+};
+
+type GoogleAccess = {
+  accessToken: string;
+  accountEmail: string | null;
 };
 
 function getGoogleRedirectUri() {
@@ -32,7 +37,7 @@ function getGoogleRedirectUri() {
   return `${baseUrl.replace(/\/$/, "")}/api/integrations/google/callback`;
 }
 
-function getOAuthClient() {
+function getGoogleClientConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 
@@ -40,7 +45,11 @@ function getOAuthClient() {
     throw new Error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET.");
   }
 
-  return new google.auth.OAuth2(clientId, clientSecret, getGoogleRedirectUri());
+  return {
+    clientId,
+    clientSecret,
+    redirectUri: getGoogleRedirectUri(),
+  };
 }
 
 function toTokenJson(value: unknown): GoogleTokenJson {
@@ -51,16 +60,94 @@ function toTokenJson(value: unknown): GoogleTokenJson {
   return value as GoogleTokenJson;
 }
 
-export function googleAuthUrl(state: string) {
-  const client = getOAuthClient();
+async function googleJson<T>(url: string, init: RequestInit) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as T & { error?: string; error_description?: string }) : null;
 
-  return client.generateAuthUrl({
-    access_type: "offline",
-    include_granted_scopes: true,
-    prompt: "consent",
-    scope: GOOGLE_SCOPES,
-    state,
+  if (!response.ok) {
+    const message = data?.error_description || data?.error || response.statusText;
+    throw new Error(`Google API request failed: ${message}`);
+  }
+
+  return data as T;
+}
+
+export function googleAuthUrl(state: string) {
+  const { clientId, redirectUri } = getGoogleClientConfig();
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
+  url.searchParams.set("state", state);
+
+  return url.toString();
+}
+
+async function exchangeGoogleCode(code: string) {
+  const { clientId, clientSecret, redirectUri } = getGoogleClientConfig();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
   });
+
+  return googleJson<GoogleTokenJson>("https://oauth2.googleapis.com/token", {
+    body,
+    method: "POST",
+  });
+}
+
+async function refreshGoogleToken(tokens: GoogleTokenJson) {
+  if (!tokens.refresh_token) {
+    throw new Error("Google refresh token is missing. Reconnect Google.");
+  }
+
+  const { clientId, clientSecret } = getGoogleClientConfig();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: tokens.refresh_token,
+  });
+
+  const refreshed = await googleJson<GoogleTokenJson>(
+    "https://oauth2.googleapis.com/token",
+    {
+      body,
+      method: "POST",
+    },
+  );
+
+  return {
+    ...tokens,
+    ...refreshed,
+    expiry_date: refreshed.expires_in
+      ? Date.now() + refreshed.expires_in * 1000
+      : refreshed.expiry_date,
+    refresh_token: refreshed.refresh_token ?? tokens.refresh_token,
+  } satisfies GoogleTokenJson;
+}
+
+async function fetchGoogleUserEmail(accessToken: string) {
+  const profile = await googleJson<{ email?: string }>(
+    "https://www.googleapis.com/oauth2/v2/userinfo",
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      method: "GET",
+    },
+  );
+
+  return profile.email ?? null;
 }
 
 export async function saveGoogleAuthCode({
@@ -70,11 +157,7 @@ export async function saveGoogleAuthCode({
   code: string;
   connectedById: string;
 }) {
-  const client = getOAuthClient();
-  const { tokens } = await client.getToken(code);
-  client.setCredentials(tokens);
-  const oauth2 = google.oauth2({ auth: client, version: "v2" });
-  const profile = await oauth2.userinfo.get();
+  const tokens = await exchangeGoogleCode(code);
   const existing = await prisma.externalIntegration.findUnique({
     where: {
       provider: "GOOGLE",
@@ -87,22 +170,28 @@ export async function saveGoogleAuthCode({
   const nextTokens = {
     ...currentTokens,
     ...tokens,
+    expiry_date: tokens.expires_in
+      ? Date.now() + tokens.expires_in * 1000
+      : tokens.expiry_date,
     refresh_token: tokens.refresh_token ?? currentTokens.refresh_token,
   };
+  const accountEmail = nextTokens.access_token
+    ? await fetchGoogleUserEmail(nextTokens.access_token)
+    : null;
 
   await prisma.externalIntegration.upsert({
     where: {
       provider: "GOOGLE",
     },
     update: {
-      accountEmail: profile.data.email ?? null,
+      accountEmail,
       connectedAt: new Date(),
       connectedById,
       scopes: GOOGLE_SCOPES,
       tokenJson: nextTokens as Prisma.InputJsonValue,
     },
     create: {
-      accountEmail: profile.data.email ?? null,
+      accountEmail,
       connectedById,
       provider: "GOOGLE",
       scopes: GOOGLE_SCOPES,
@@ -139,7 +228,7 @@ export async function disconnectGoogleIntegration() {
   });
 }
 
-export async function getAuthorizedGoogleClient() {
+async function getGoogleAccess(): Promise<GoogleAccess | null> {
   const integration = await prisma.externalIntegration.findUnique({
     where: {
       provider: "GOOGLE",
@@ -150,35 +239,49 @@ export async function getAuthorizedGoogleClient() {
     return null;
   }
 
-  const client = getOAuthClient();
-  client.setCredentials(toTokenJson(integration.tokenJson));
-  client.on("tokens", (tokens) => {
-    const current = toTokenJson(integration.tokenJson);
-    void prisma.externalIntegration.update({
+  let tokens = toTokenJson(integration.tokenJson);
+
+  if (
+    !tokens.access_token ||
+    !tokens.expiry_date ||
+    tokens.expiry_date < Date.now() + 60_000
+  ) {
+    tokens = await refreshGoogleToken(tokens);
+    await prisma.externalIntegration.update({
       where: {
         provider: "GOOGLE",
       },
       data: {
-        tokenJson: {
-          ...current,
-          ...tokens,
-          refresh_token: tokens.refresh_token ?? current.refresh_token,
-        } as Prisma.InputJsonValue,
+        tokenJson: tokens as Prisma.InputJsonValue,
       },
     });
-  });
+  }
 
-  return client;
+  if (!tokens.access_token) {
+    return null;
+  }
+
+  return {
+    accessToken: tokens.access_token,
+    accountEmail: integration.accountEmail,
+  };
 }
 
 function getCalendarId() {
   return process.env.GOOGLE_CALENDAR_ID?.trim() || "primary";
 }
 
-export async function upsertGoogleCalendarEvent(eventId: string) {
-  const auth = await getAuthorizedGoogleClient();
+function googleCalendarEventUrl(eventId?: string) {
+  const calendarId = encodeURIComponent(getCalendarId());
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`;
 
-  if (!auth) {
+  return eventId ? `${base}/${encodeURIComponent(eventId)}` : base;
+}
+
+export async function upsertGoogleCalendarEvent(eventId: string) {
+  const access = await getGoogleAccess();
+
+  if (!access) {
     return { ok: false, reason: "google_not_connected" };
   }
 
@@ -200,8 +303,6 @@ export async function upsertGoogleCalendarEvent(eventId: string) {
     return { ok: false, reason: "event_not_found" };
   }
 
-  const calendar = google.calendar({ auth, version: "v3" });
-  const calendarId = getCalendarId();
   const descriptionLines = [
     event.description,
     "",
@@ -226,37 +327,47 @@ export async function upsertGoogleCalendarEvent(eventId: string) {
   };
 
   if (event.externalProvider === "google" && event.externalEventId) {
-    const updated = await calendar.events.update({
-      calendarId,
-      eventId: event.externalEventId,
-      requestBody,
-    });
+    const updated = await googleJson<{ id?: string }>(
+      googleCalendarEventUrl(event.externalEventId),
+      {
+        body: JSON.stringify(requestBody),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "PUT",
+      },
+    );
 
     return {
-      externalEventId: updated.data.id ?? event.externalEventId,
+      externalEventId: updated.id ?? event.externalEventId,
       ok: true,
     };
   }
 
-  const created = await calendar.events.insert({
-    calendarId,
-    requestBody,
+  const created = await googleJson<{ id?: string }>(googleCalendarEventUrl(), {
+    body: JSON.stringify(requestBody),
+    headers: {
+      Authorization: `Bearer ${access.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
   });
 
-  if (created.data.id) {
+  if (created.id) {
     await prisma.calendarEvent.update({
       where: {
         id: event.id,
       },
       data: {
-        externalEventId: created.data.id,
+        externalEventId: created.id,
         externalProvider: "google",
       },
     });
   }
 
   return {
-    externalEventId: created.data.id ?? null,
+    externalEventId: created.id ?? null,
     ok: true,
   };
 }
@@ -282,20 +393,18 @@ export async function sendSharedGmail({
   subject: string;
   to: string;
 }) {
-  const auth = await getAuthorizedGoogleClient();
+  const access = await getGoogleAccess();
 
-  if (!auth) {
+  if (!access) {
     return {
       ok: false,
       reason: "google_not_connected",
     };
   }
 
-  const integration = await getGoogleIntegrationStatus();
-  const gmail = google.gmail({ auth, version: "v1" });
   const message = [
     `To: ${sanitizeHeader(to)}`,
-    integration.accountEmail ? `From: ${sanitizeHeader(integration.accountEmail)}` : null,
+    access.accountEmail ? `From: ${sanitizeHeader(access.accountEmail)}` : null,
     `Subject: ${sanitizeHeader(subject)}`,
     "Content-Type: text/plain; charset=utf-8",
     "",
@@ -303,16 +412,23 @@ export async function sendSharedGmail({
   ]
     .filter((line): line is string => line !== null)
     .join("\r\n");
-  const result = await gmail.users.messages.send({
-    requestBody: {
-      raw: base64UrlEncode(message),
+  const result = await googleJson<{ id?: string }>(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      body: JSON.stringify({
+        raw: base64UrlEncode(message),
+      }),
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
     },
-    userId: "me",
-  });
+  );
 
   return {
-    accountEmail: integration.accountEmail,
-    messageId: result.data.id ?? null,
+    accountEmail: access.accountEmail,
+    messageId: result.id ?? null,
     ok: true,
   };
 }
