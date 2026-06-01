@@ -82,6 +82,10 @@ enum CalendarInvitationStatus {
   CANCELED
 }
 
+enum IntegrationProvider {
+  GOOGLE
+}
+
 model User {
   id                     String                       @id @default(cuid())
   username               String                       @unique
@@ -110,6 +114,7 @@ model User {
   calendarInvites        CalendarInvitation[]         @relation("CalendarInvitationInvitee")
   sentCalendarInvites    CalendarInvitation[]         @relation("CalendarInvitationInviter")
   calendarTitleOverrides CalendarEventTitleOverride[]
+  connectedIntegrations  ExternalIntegration[]
 }
 
 model Team {
@@ -377,4 +382,17 @@ model CalendarInvitation {
 
   @@unique([eventId, invitedUserId])
   @@index([invitedUserId, status])
+}
+
+model ExternalIntegration {
+  id            String              @id @default(cuid())
+  provider      IntegrationProvider @unique
+  accountEmail  String?
+  scopes        String[]
+  tokenJson     Json
+  connectedById String?
+  connectedAt   DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  connectedBy   User?               @relation(fields: [connectedById], references: [id], onDelete: SetNull)
 }

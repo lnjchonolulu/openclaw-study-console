@@ -44,6 +44,7 @@ type SettingsClientProps = {
   initialAgentDisplayName: string;
   initialAgentProfile: ProfileConfig;
   initialCalendarSharingPolicy: CalendarSharingPolicy;
+  initialGoogleIntegration: GoogleIntegrationStatus;
   initialHeartbeatEnabled: boolean;
   initialIdentityMd: string;
   initialSoulMd: string;
@@ -52,6 +53,13 @@ type SettingsClientProps = {
   initialUserProfile: ProfileConfig;
   initialUserTimezone: string;
   username: string;
+};
+
+type GoogleIntegrationStatus = {
+  accountEmail: string | null;
+  connected: boolean;
+  connectedAt: string | null;
+  scopes: string[];
 };
 
 function UploadIcon() {
@@ -478,6 +486,7 @@ export function SettingsClient({
   initialAgentDisplayName,
   initialAgentProfile,
   initialCalendarSharingPolicy,
+  initialGoogleIntegration,
   initialHeartbeatEnabled,
   initialIdentityMd,
   initialSoulMd,
@@ -498,6 +507,8 @@ export function SettingsClient({
   const [calendarSharingPolicy, setCalendarSharingPolicy] = useState(
     initialCalendarSharingPolicy,
   );
+  const [googleIntegration, setGoogleIntegration] = useState(initialGoogleIntegration);
+  const [isDisconnectingGoogle, setIsDisconnectingGoogle] = useState(false);
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(initialHeartbeatEnabled);
   const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [agentProfile, setAgentProfile] = useState(initialAgentProfile);
@@ -576,6 +587,31 @@ export function SettingsClient({
     setConfirmPassword("");
     setPasswordNotice("Password updated.");
     setIsUpdatingPassword(false);
+  }
+
+  async function handleGoogleDisconnect() {
+    setIsDisconnectingGoogle(true);
+    setNotice(null);
+
+    const response = await fetch("/api/integrations/google/status", {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      setNotice("Google could not be disconnected.");
+      setIsDisconnectingGoogle(false);
+      return;
+    }
+
+    setGoogleIntegration({
+      accountEmail: null,
+      connected: false,
+      connectedAt: null,
+      scopes: [],
+    });
+    setNotice("Google disconnected.");
+    setIsDisconnectingGoogle(false);
+    router.refresh();
   }
 
   async function handleUserPhotoSelection(file: File | null) {
@@ -790,6 +826,53 @@ export function SettingsClient({
               >
                 {isUpdatingPassword ? "Updating..." : "Change Password"}
               </button>
+            </div>
+          </article>
+
+          <article className="content-card settings-card settings-card-user">
+            <div className="settings-card-header">
+              <div>
+                <h2>Google Integration</h2>
+              </div>
+            </div>
+            <div className="settings-google-copy">
+              <p>
+                Connect one shared Google account for CyWorld Calendar mirroring
+                and shared Gmail sending.
+              </p>
+              {googleIntegration.connected ? (
+                <p>
+                  Connected as{" "}
+                  <strong>{googleIntegration.accountEmail ?? "Google account"}</strong>
+                </p>
+              ) : (
+                <p>Not connected yet.</p>
+              )}
+            </div>
+            <div className="settings-inline-actions">
+              <span />
+              {googleIntegration.connected ? (
+                <button
+                  className="secondary-button"
+                  disabled={isDisconnectingGoogle}
+                  onClick={() => {
+                    void handleGoogleDisconnect();
+                  }}
+                  type="button"
+                >
+                  {isDisconnectingGoogle ? "Disconnecting..." : "Disconnect Google"}
+                </button>
+              ) : (
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    window.location.href = "/api/integrations/google/start";
+                  }}
+                  type="button"
+                >
+                  Connect Google
+                </button>
+              )}
             </div>
           </article>
         </div>

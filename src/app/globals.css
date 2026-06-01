@@ -2246,6 +2246,18 @@ button.primary-button {
   font-size: 0.9rem;
 }
 
+.settings-google-copy {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.settings-google-copy strong {
+  color: var(--foreground);
+}
+
 .settings-textarea {
   min-height: 180px;
 }

@@ -6,17 +6,19 @@ import {
 } from "@/lib/agent-workspace";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
+import { getGoogleIntegrationStatus } from "@/lib/google-integration";
 import { normalizeProfileConfig } from "@/lib/profile";
 import { normalizeTimeZone } from "@/lib/timezone";
 
 export default async function AgentPage() {
   const user = await requireUser();
   const agentId = user.agent?.openclawAgentId ?? user.username;
-  const [userMd, identityMd, soulMd, heartbeatEnabled] = await Promise.all([
+  const [userMd, identityMd, soulMd, heartbeatEnabled, googleIntegration] = await Promise.all([
     readAgentMarkdownFile(agentId, "USER.md"),
     readAgentMarkdownFile(agentId, "IDENTITY.md"),
     readAgentMarkdownFile(agentId, "SOUL.md"),
     readHeartbeatEnabled(agentId),
+    getGoogleIntegrationStatus(),
   ]);
   const userNameFromMd = extractMarkdownBulletValue(userMd, "Name");
   const agentNameFromMd = extractMarkdownBulletValue(identityMd, "Name");
@@ -34,6 +36,7 @@ export default async function AgentPage() {
         "agent",
       )}
       initialCalendarSharingPolicy={behaviorConfig.calendarSharingPolicy}
+      initialGoogleIntegration={googleIntegration}
       initialHeartbeatEnabled={heartbeatEnabled}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}

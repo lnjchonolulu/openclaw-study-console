@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { upsertGoogleCalendarEvent } from "@/lib/google-integration";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
 import {
   monthBoundaryUtc,
@@ -324,7 +325,7 @@ export async function createCalendarEvent(args: {
   });
   const validInviteeIds = validInvitees.map((invitee) => invitee.id);
 
-  return prisma.calendarEvent.create({
+  const event = await prisma.calendarEvent.create({
     data: {
       accessConfigJson: {
         participantKeys: getUserAccessKeys(user),
@@ -346,6 +347,12 @@ export async function createCalendarEvent(args: {
       title: args.title.trim(),
     },
   });
+
+  void upsertGoogleCalendarEvent(event.id).catch((error: unknown) => {
+    console.error("[google-calendar] event mirror failed", error);
+  });
+
+  return event;
 }
 
 export async function updateCalendarEvent(args: {
@@ -493,6 +500,10 @@ export async function updateCalendarEvent(args: {
       });
     }
   });
+
+  void upsertGoogleCalendarEvent(event.id).catch((error: unknown) => {
+    console.error("[google-calendar] event mirror failed", error);
+  });
 }
 
 export async function respondToCalendarInvitation(args: {
@@ -529,7 +540,7 @@ export async function respondToCalendarInvitation(args: {
   const currentAccess = parseCalendarAccessConfig(invitation.event.accessConfigJson);
   const acceptedKeys = await getUserAndAgentAccessKeys(args.userId);
 
-  return prisma.$transaction([
+  const result = await prisma.$transaction([
     prisma.calendarEvent.update({
       where: {
         id: invitation.eventId,
@@ -549,4 +560,10 @@ export async function respondToCalendarInvitation(args: {
       },
     }),
   ]);
+
+  void upsertGoogleCalendarEvent(invitation.eventId).catch((error: unknown) => {
+    console.error("[google-calendar] event mirror failed", error);
+  });
+
+  return result;
 }

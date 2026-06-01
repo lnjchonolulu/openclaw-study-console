@@ -4,6 +4,7 @@ import {
   type CalendarEventView,
 } from "@/lib/calendar";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import { sendSharedGmail } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -132,6 +133,30 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
       required: ["toUsername", "message", "delayMinutes"],
     },
   },
+  {
+    name: "study_send_email",
+    description:
+      "Send an email through the shared CyWorld Gmail account. Use only when a user explicitly asks or approves sending an email. This Gmail address is shared by CyWorld agents; it is not this agent's personal address.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        body: {
+          type: "string",
+          description: "The email body to send.",
+        },
+        subject: {
+          type: "string",
+          description: "The email subject.",
+        },
+        to: {
+          type: "string",
+          description: "The recipient email address.",
+        },
+      },
+      required: ["to", "subject", "body"],
+    },
+  },
 ];
 
 function parseToolArguments(call: OpenClawFunctionCall) {
@@ -148,6 +173,16 @@ function cleanUsername(value: unknown) {
 
 function cleanMessage(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanEmail(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const email = value.trim();
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
 function cleanMonth(value: unknown) {
@@ -573,6 +608,31 @@ export async function handleCyWorldAgentToolCall({
       args,
       objective,
       requesterUserId,
+    });
+  }
+
+  if (call.name === "study_send_email") {
+    const to = cleanEmail(args.to);
+    const subject = cleanMessage(args.subject);
+    const body = cleanMessage(args.body);
+
+    if (!to || !subject || !body) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_or_invalid_to_subject_or_body",
+      });
+    }
+
+    const result = await sendSharedGmail({
+      body,
+      subject,
+      to,
+    });
+
+    return JSON.stringify({
+      ...result,
+      senderPolicy:
+        "Email is sent through the shared CyWorld Gmail account, not a personal agent address.",
     });
   }
 
