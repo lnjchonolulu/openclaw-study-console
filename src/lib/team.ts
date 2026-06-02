@@ -17,7 +17,6 @@ export type TeamParticipant = {
 };
 
 export type TeamChannelSummary = {
-  agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
   createdBy: string | null;
   id: string;
   memberCount: number;
@@ -26,7 +25,6 @@ export type TeamChannelSummary = {
 };
 
 export type TeamChannelDetail = {
-  agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
   createdBy: string | null;
   id: string;
   members: TeamParticipant[];
@@ -383,7 +381,6 @@ export async function listTeamChannels(userId: string): Promise<TeamChannelSumma
   });
 
   return rooms.map((room) => ({
-    agentMode: room.agentMode,
     createdBy: room.ownerUserId,
     id: room.id,
     memberCount: room.members.length + room.agents.length,
@@ -521,7 +518,6 @@ export async function getTeamChannelDetail(
     }
 
     return {
-      agentMode: fallbackRoom.agentMode,
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
       members: buildChannelParticipants({
@@ -555,7 +551,6 @@ export async function getTeamChannelDetail(
   }
 
   return {
-    agentMode: room.agentMode,
     createdBy: room.ownerUserId,
     id: room.id,
     members: buildChannelParticipants({
@@ -594,7 +589,6 @@ export async function createTeamChannel(
   invitedUserIds: string[],
   invitedAgentIds: string[],
   purpose?: string | null,
-  agentMode?: TeamChannelSummary["agentMode"],
 ) {
   const context = await getTeamContext(userId);
 
@@ -618,7 +612,6 @@ export async function createTeamChannel(
       type: "TEAM",
       name,
       purpose: purpose?.trim() || null,
-      agentMode: agentMode ?? "ASSISTIVE",
       ownerUserId: userId,
       teamId: context.team.id,
       members: {
@@ -651,7 +644,6 @@ export async function updateTeamChannel(
   invitedUserIds: string[],
   invitedAgentIds: string[],
   purpose?: string | null,
-  agentMode?: TeamChannelSummary["agentMode"],
 ) {
   const context = await getTeamContext(userId);
 
@@ -697,7 +689,6 @@ export async function updateTeamChannel(
     data: {
       name,
       purpose: purpose?.trim() || null,
-      ...(agentMode ? { agentMode } : {}),
     },
   });
 

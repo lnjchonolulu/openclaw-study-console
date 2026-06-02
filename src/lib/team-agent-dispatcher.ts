@@ -132,7 +132,6 @@ function selectDispatchCandidates({
   triggeringMessage,
 }: {
   room: {
-    agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
     agents: DispatchCandidate["roomAgent"][];
   };
   triggeringMessage: {
@@ -169,26 +168,16 @@ function selectDispatchCandidates({
       continue;
     }
 
-    if (room.agentMode === "ASSISTIVE" || room.agentMode === "PROACTIVE") {
-      const recentlyInvoked = minutesSince(roomAgent.lastInvokedAt) < 2;
+    const recentlyInvoked = minutesSince(roomAgent.lastInvokedAt) < 2;
 
-      if (!recentlyInvoked) {
-        candidates.push({
-          roomAgent,
-          reason:
-            "The channel allows assistive agent participation; speak only if the contribution is clearly useful.",
-          strength: "ambient",
-        });
-      }
+    if (!recentlyInvoked) {
+      candidates.push({
+        roomAgent,
+        reason:
+          "This agent is a channel participant; speak only if the contribution is clearly useful.",
+        strength: "ambient",
+      });
     }
-  }
-
-  if (room.agentMode === "MANUAL") {
-    return candidates.filter((candidate) => candidate.strength === "explicit");
-  }
-
-  if (room.agentMode === "MENTIONED") {
-    return candidates.filter((candidate) => candidate.strength !== "ambient");
   }
 
   return candidates.sort((left, right) => {
@@ -371,7 +360,7 @@ export async function runTeamAgentDispatch({
   const dispatchCandidates = selectDispatchCandidates({
     room,
     triggeringMessage,
-  }).slice(0, room.agentMode === "PROACTIVE" ? 6 : 4);
+  }).slice(0, 4);
 
   for (const candidate of dispatchCandidates) {
     const roomAgent = candidate.roomAgent;
@@ -397,11 +386,10 @@ export async function runTeamAgentDispatch({
 You are participating in a CyWorld Team Chat channel.
 - Channel name: ${room.name}
 - Channel purpose: ${room.purpose?.trim() || "No explicit purpose has been set yet."}
-- Channel agent participation mode: ${room.agentMode}
 - Why CyWorld is asking you to evaluate this turn: ${candidate.reason}
 - Your room role note: ${roomAgent.roleNote?.trim() || "No special room-specific role note."}
 - Decide whether this agent should speak now or stay quiet.
-- If the participation reason is ambient, speak only when your contribution is clearly useful and not duplicative.
+- Speak only when your contribution is clearly useful, context-aware, and not duplicative.
 - If the message is about your owner, help the collaboration from your owner's perspective, but do not impersonate your owner.
 - If you speak, write the exact message that should appear in the team channel.
 - If you need to DM or schedule a DM to a human participant, use the provided CyWorld tool, then decide whether a channel message is still useful.

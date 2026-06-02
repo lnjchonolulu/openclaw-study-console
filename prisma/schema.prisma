@@ -46,13 +46,6 @@ enum RoomAgentRole {
   COLLABORATOR
 }
 
-enum TeamAgentMode {
-  MANUAL
-  MENTIONED
-  ASSISTIVE
-  PROACTIVE
-}
-
 enum ScheduledMessageStatus {
   PENDING
   SENT
@@ -186,7 +179,6 @@ model Room {
   type              RoomType
   name              String             @default("Untitled room")
   purpose           String?
-  agentMode         TeamAgentMode      @default(ASSISTIVE)
   defaultReportMode String             @default("CHANNEL")
   teamId            String?
   ownerUserId       String?

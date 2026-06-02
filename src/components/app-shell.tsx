@@ -112,8 +112,6 @@ export function AppShell({
   const [participants, setParticipants] = useState(teamParticipants);
   const [isNewDmOpen, setIsNewDmOpen] = useState(false);
   const [isTeamChannelModalOpen, setIsTeamChannelModalOpen] = useState(false);
-  const [teamAgentMode, setTeamAgentMode] =
-    useState<TeamChannelSummary["agentMode"]>("ASSISTIVE");
   const [teamChannelName, setTeamChannelName] = useState("");
   const [teamChannelPurpose, setTeamChannelPurpose] = useState("");
   const [teamInviteKeys, setTeamInviteKeys] = useState<string[]>([]);
@@ -289,7 +287,6 @@ export function AppShell({
   }
 
   function resetTeamChannelModal() {
-    setTeamAgentMode("ASSISTIVE");
     setTeamChannelName("");
     setTeamChannelPurpose("");
     setTeamInviteKeys([]);
@@ -321,7 +318,6 @@ export function AppShell({
     const detail = (await response.json()) as TeamChannelDetail;
 
     setTeamModalMode(mode);
-    setTeamAgentMode(detail.agentMode);
     setTeamChannelName(detail.title);
     setTeamChannelPurpose(detail.purpose ?? "");
     setTeamInviteKeys(
@@ -360,7 +356,6 @@ export function AppShell({
         body: JSON.stringify({
           invitedAgentIds,
           invitedUserIds,
-          agentMode: teamAgentMode,
           name: trimmedName,
           purpose: teamChannelPurpose.trim(),
         }),
@@ -705,25 +700,6 @@ export function AppShell({
                       }}
                       rows={2}
                     />
-                  </span>
-                </label>
-                <label className="split-label">
-                  Agent Participation
-                  <span className="team-modal-input-wrap">
-                    <select
-                      className="team-modal-input"
-                      value={teamAgentMode}
-                      onChange={(event) => {
-                        setTeamAgentMode(
-                          event.target.value as TeamChannelSummary["agentMode"],
-                        );
-                      }}
-                    >
-                      <option value="MANUAL">Manual only</option>
-                      <option value="MENTIONED">When mentioned</option>
-                      <option value="ASSISTIVE">Assistive</option>
-                      <option value="PROACTIVE">Proactive</option>
-                    </select>
                   </span>
                 </label>
               </div>
