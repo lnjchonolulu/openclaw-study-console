@@ -268,13 +268,62 @@ function matchesRecipientCommand(text: string, aliases: string[]) {
   });
 }
 
-async function inferExplicitDmRecipientUsername(text: string) {
-  const trimmed = text.trim();
+type HumanRecipientCandidate = {
+  aliases: string[];
+  displayName: string;
+  username: string;
+};
 
-  if (!trimmed) {
-    return null;
-  }
+type DmRecipientResolution =
+  | {
+      status: "accepted";
+      toUsername: string;
+    }
+  | {
+      explicitUsername: string;
+      requestedUsername: string;
+      status: "corrected";
+      toUsername: string;
+    }
+  | {
+      candidates: string[];
+      requestedUsername: string;
+      status: "ambiguous";
+    };
 
+function aliasesForUser(user: { displayName: string; username: string }) {
+  return [
+    user.username,
+    user.displayName,
+    user.displayName.split(/\s+/)[0] ?? "",
+  ].filter((value) => value.trim().length > 0);
+}
+
+function mentionsCandidate(text: string, candidate: HumanRecipientCandidate) {
+  const normalized = text.toLowerCase();
+
+  return candidate.aliases.some((alias) => {
+    const pattern = aliasPattern(alias);
+
+    if (!pattern) {
+      return false;
+    }
+
+    return new RegExp(`(?:^|[^a-z0-9_-])@?${pattern}(?=$|[^a-z0-9_-])`, "i").test(
+      normalized,
+    );
+  });
+}
+
+function explicitRecipientMatches(text: string, candidates: HumanRecipientCandidate[]) {
+  return candidates.filter((candidate) => matchesRecipientCommand(text, candidate.aliases));
+}
+
+function mentionedRecipients(text: string, candidates: HumanRecipientCandidate[]) {
+  return candidates.filter((candidate) => mentionsCandidate(text, candidate));
+}
+
+async function listHumanRecipientCandidates() {
   const users = await prisma.user.findMany({
     where: {
       status: "ACTIVE",
@@ -288,17 +337,11 @@ async function inferExplicitDmRecipientUsername(text: string) {
     },
   });
 
-  const matches = users.filter((user) => {
-    const aliases = [
-      user.username,
-      user.displayName,
-      user.displayName.split(/\s+/)[0] ?? "",
-    ].filter((value) => value.trim().length > 0);
-
-    return matchesRecipientCommand(trimmed, aliases);
-  });
-
-  return matches.length === 1 ? matches[0].username : null;
+  return users.map((user) => ({
+    aliases: aliasesForUser(user),
+    displayName: user.displayName,
+    username: user.username,
+  }));
 }
 
 async function resolveDmTargetUsername({
@@ -307,14 +350,49 @@ async function resolveDmTargetUsername({
 }: {
   objective?: string;
   requestedUsername: string;
-}) {
+}): Promise<DmRecipientResolution> {
   if (!objective?.trim()) {
-    return requestedUsername;
+    return {
+      status: "accepted",
+      toUsername: requestedUsername,
+    };
   }
 
-  const inferredUsername = await inferExplicitDmRecipientUsername(objective);
+  const candidates = await listHumanRecipientCandidates();
+  const explicitMatches = explicitRecipientMatches(objective, candidates);
 
-  return inferredUsername ?? requestedUsername;
+  if (explicitMatches.length === 1) {
+    const explicitUsername = explicitMatches[0].username;
+
+    if (explicitUsername !== requestedUsername) {
+      return {
+        explicitUsername,
+        requestedUsername,
+        status: "corrected",
+        toUsername: explicitUsername,
+      };
+    }
+
+    return {
+      status: "accepted",
+      toUsername: requestedUsername,
+    };
+  }
+
+  const mentioned = mentionedRecipients(objective, candidates);
+
+  if (explicitMatches.length > 1 || mentioned.length > 1) {
+    return {
+      candidates: [...new Set(mentioned.map((candidate) => candidate.username))],
+      requestedUsername,
+      status: "ambiguous",
+    };
+  }
+
+  return {
+    status: "accepted",
+    toUsername: requestedUsername,
+  };
 }
 
 function cleanEmail(value: unknown) {
@@ -1142,14 +1220,27 @@ export async function handleCyWorldAgentToolCall({
   }
 
   const requestedToUsername = cleanUsername(args.toUsername);
-  const toUsername = await resolveDmTargetUsername({
+  const recipientResolution = await resolveDmTargetUsername({
     objective,
     requestedUsername: requestedToUsername,
   });
+  const toUsername =
+    recipientResolution.status === "ambiguous" ? "" : recipientResolution.toUsername;
   const message = cleanMessage(args.message);
   const expectReply = args.expectReply === true;
 
   if (!requestedToUsername || !toUsername || !message) {
+    if (recipientResolution.status === "ambiguous") {
+      return JSON.stringify({
+        ok: false,
+        reason: "ambiguous_dm_recipient",
+        candidates: recipientResolution.candidates.map((username) => `@${username}`),
+        requestedToUsername: recipientResolution.requestedUsername,
+        guidance:
+          "Do not send yet. Ask the user which human participant should receive the DM, then call study_send_dm again with that exact username.",
+      });
+    }
+
     return JSON.stringify({
       ok: false,
       reason: "missing_toUsername_or_message",
@@ -1191,7 +1282,10 @@ export async function handleCyWorldAgentToolCall({
       });
     }
 
-    return JSON.stringify(result);
+    return JSON.stringify({
+      ...result,
+      recipientResolution,
+    });
   }
 
   if (call.name === "study_schedule_dm") {
@@ -1227,7 +1321,10 @@ export async function handleCyWorldAgentToolCall({
       });
     }
 
-    return JSON.stringify(result);
+    return JSON.stringify({
+      ...result,
+      recipientResolution,
+    });
   }
 
   return JSON.stringify({
