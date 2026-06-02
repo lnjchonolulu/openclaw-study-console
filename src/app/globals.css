@@ -2258,6 +2258,16 @@ button.primary-button {
   color: var(--foreground);
 }
 
+.admin-settings-page {
+  display: grid;
+  align-content: start;
+  min-height: 100%;
+}
+
+.admin-settings-card {
+  max-width: 720px;
+}
+
 .settings-textarea {
   min-height: 180px;
 }

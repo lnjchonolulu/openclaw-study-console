@@ -22,6 +22,10 @@ export async function GET() {
     return NextResponse.redirect(new URL("/login", process.env.APP_BASE_URL ?? "http://localhost:3000"));
   }
 
+  if (user.role !== "ADMIN") {
+    return NextResponse.redirect(new URL("/chat", process.env.APP_BASE_URL ?? "http://localhost:3000"));
+  }
+
   const state = randomBytes(32).toString("hex");
   const response = NextResponse.redirect(googleAuthUrl(state));
 

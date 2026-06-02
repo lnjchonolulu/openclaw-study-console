@@ -96,6 +96,7 @@ export function AppShell({
     agentId: string | null;
     displayName: string;
     id: string;
+    role: "ADMIN" | "PARTICIPANT";
     username: string;
     teamName: string | null;
   };
@@ -435,6 +436,15 @@ export function AppShell({
         </div>
 
         <nav className="nav-list sidebar-bottom-nav" aria-label="Secondary">
+          {user.role === "ADMIN" ? (
+            <Link
+              className={`nav-item${pathname === "/admin" ? " nav-item-active" : ""}`}
+              href="/admin"
+            >
+              <NavIcon name="setting" />
+              <span className="nav-title">Admin Setting</span>
+            </Link>
+          ) : null}
           {secondaryNavItems.map((item) => {
             const isActive = pathname === item.href;
 

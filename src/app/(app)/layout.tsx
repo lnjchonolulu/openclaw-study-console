@@ -31,6 +31,7 @@ export default async function AuthenticatedLayout({
       user={{
         id: user.id,
         displayName: user.displayName,
+        role: user.role,
         username: user.username,
         teamName: user.team?.name ?? null,
         agentId: user.agent?.openclawAgentId ?? null,

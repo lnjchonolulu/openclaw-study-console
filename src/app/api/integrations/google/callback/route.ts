@@ -18,6 +18,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(appUrl("/login", request.url));
   }
 
+  if (user.role !== "ADMIN") {
+    return NextResponse.redirect(appUrl("/chat", request.url));
+  }
+
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
   const expectedState = cookieStore.get(GOOGLE_OAUTH_STATE_COOKIE)?.value;
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(appUrl("/agent?google=error", request.url));
+    return NextResponse.redirect(appUrl("/admin?google=error", request.url));
   }
 
   try {
@@ -35,10 +39,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[google-oauth] callback failed", error);
-    return NextResponse.redirect(appUrl("/agent?google=error", request.url));
+    return NextResponse.redirect(appUrl("/admin?google=error", request.url));
   }
 
-  const response = NextResponse.redirect(appUrl("/agent?google=connected", request.url));
+  const response = NextResponse.redirect(appUrl("/admin?google=connected", request.url));
   response.cookies.set(GOOGLE_OAUTH_STATE_COOKIE, "", {
     expires: new Date(0),
     path: "/",
