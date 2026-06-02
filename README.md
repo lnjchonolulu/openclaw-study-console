@@ -112,11 +112,12 @@ OPENCLAW_GATEWAY_TOKEN="..."
 
 This keeps local web development fast while still using the real Hetzner-hosted agent state.
 
-## Shared Google integration
+## Shared Gmail integration
 
-CyWorld connects one shared Google account in the app backend. Agents should use CyWorld
-tools for calendar and email actions; they should not treat the Google account as their own
-personal account.
+CyWorld connects one shared Google account in the app backend for outbound email.
+Agents should use CyWorld tools for calendar and email actions; they should not treat the
+Google account as their own personal account. CyWorld Calendar remains the source of truth
+inside the app and is not mirrored to Google Calendar.
 
 Create a Google OAuth client and add these environment variables:
 
@@ -124,12 +125,10 @@ Create a Google OAuth client and add these environment variables:
 GOOGLE_CLIENT_ID="..."
 GOOGLE_CLIENT_SECRET="..."
 GOOGLE_REDIRECT_URI="http://SERVER_IP:3000/api/integrations/google/callback"
-GOOGLE_CALENDAR_ID="primary"
 ```
 
 The OAuth client needs these scopes:
 
-- `https://www.googleapis.com/auth/calendar.events`
 - `https://www.googleapis.com/auth/gmail.send`
 - `https://www.googleapis.com/auth/userinfo.email`
 

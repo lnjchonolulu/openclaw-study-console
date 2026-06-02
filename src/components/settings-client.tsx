@@ -837,8 +837,7 @@ export function SettingsClient({
             </div>
             <div className="settings-google-copy">
               <p>
-                Connect one shared Google account for CyWorld Calendar mirroring
-                and shared Gmail sending.
+                Connect one shared Google account for CyWorld email sending.
               </p>
               {googleIntegration.connected ? (
                 <p>

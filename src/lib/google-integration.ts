@@ -2,7 +2,6 @@ import { type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
@@ -264,111 +263,6 @@ async function getGoogleAccess(): Promise<GoogleAccess | null> {
   return {
     accessToken: tokens.access_token,
     accountEmail: integration.accountEmail,
-  };
-}
-
-function getCalendarId() {
-  return process.env.GOOGLE_CALENDAR_ID?.trim() || "primary";
-}
-
-function googleCalendarEventUrl(eventId?: string) {
-  const calendarId = encodeURIComponent(getCalendarId());
-  const base = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`;
-
-  return eventId ? `${base}/${encodeURIComponent(eventId)}` : base;
-}
-
-export async function upsertGoogleCalendarEvent(eventId: string) {
-  const access = await getGoogleAccess();
-
-  if (!access) {
-    return { ok: false, reason: "google_not_connected" };
-  }
-
-  const event = await prisma.calendarEvent.findUnique({
-    where: {
-      id: eventId,
-    },
-    include: {
-      createdBy: true,
-      invitations: {
-        include: {
-          invitedUser: true,
-        },
-      },
-    },
-  });
-
-  if (!event) {
-    return { ok: false, reason: "event_not_found" };
-  }
-
-  const descriptionLines = [
-    event.description,
-    "",
-    "Created from CyWorld.",
-    event.createdBy ? `CyWorld creator: ${event.createdBy.displayName} (@${event.createdBy.username})` : null,
-    event.invitations.length
-      ? `CyWorld invitees: ${event.invitations
-          .map((invitation) => `@${invitation.invitedUser.username} (${invitation.status})`)
-          .join(", ")}`
-      : null,
-  ].filter((line): line is string => Boolean(line));
-  const requestBody = {
-    description: descriptionLines.join("\n"),
-    end: {
-      dateTime: event.endAt.toISOString(),
-    },
-    location: event.location ?? undefined,
-    start: {
-      dateTime: event.startAt.toISOString(),
-    },
-    summary: event.title,
-  };
-
-  if (event.externalProvider === "google" && event.externalEventId) {
-    const updated = await googleJson<{ id?: string }>(
-      googleCalendarEventUrl(event.externalEventId),
-      {
-        body: JSON.stringify(requestBody),
-        headers: {
-          Authorization: `Bearer ${access.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        method: "PUT",
-      },
-    );
-
-    return {
-      externalEventId: updated.id ?? event.externalEventId,
-      ok: true,
-    };
-  }
-
-  const created = await googleJson<{ id?: string }>(googleCalendarEventUrl(), {
-    body: JSON.stringify(requestBody),
-    headers: {
-      Authorization: `Bearer ${access.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-
-  if (created.id) {
-    await prisma.calendarEvent.update({
-      where: {
-        id: event.id,
-      },
-      data: {
-        externalEventId: created.id,
-        externalProvider: "google",
-      },
-    });
-  }
-
-  return {
-    externalEventId: created.id ?? null,
-    ok: true,
   };
 }
 

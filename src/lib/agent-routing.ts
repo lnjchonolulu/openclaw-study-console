@@ -274,7 +274,7 @@ export function buildAgentRuntimeInstructions({
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",
     "If the user asks you to create a calendar event in CyWorld Calendar, use the study_create_calendar_event tool.",
-    "CyWorld may mirror CyWorld Calendar events to a shared Google Calendar behind the scenes. Keep using CyWorld Calendar tools; do not look for Google Calendar tools yourself.",
+    "CyWorld Calendar is the source of truth. Google Calendar mirroring is not used here; keep using CyWorld Calendar tools.",
     "When creating calendar events, resolve relative dates like today, this morning, tomorrow, and next week using the Current date/time above. Use explicit ISO 8601 datetimes with the correct timezone offset for that user's timezone unless the user specifies another timezone.",
     "If the requested date is ambiguous, ask a short clarification before creating the event instead of guessing a far-future date.",
     "If the user explicitly asks or approves sending email, use the study_send_email tool. Email is sent through one shared CyWorld Gmail account, not your personal email address, so explain that when it matters.",

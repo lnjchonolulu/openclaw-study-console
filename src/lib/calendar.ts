@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { upsertGoogleCalendarEvent } from "@/lib/google-integration";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
 import {
   monthBoundaryUtc,
@@ -348,10 +347,6 @@ export async function createCalendarEvent(args: {
     },
   });
 
-  void upsertGoogleCalendarEvent(event.id).catch((error: unknown) => {
-    console.error("[google-calendar] event mirror failed", error);
-  });
-
   return event;
 }
 
@@ -501,9 +496,6 @@ export async function updateCalendarEvent(args: {
     }
   });
 
-  void upsertGoogleCalendarEvent(event.id).catch((error: unknown) => {
-    console.error("[google-calendar] event mirror failed", error);
-  });
 }
 
 export async function respondToCalendarInvitation(args: {
@@ -560,10 +552,6 @@ export async function respondToCalendarInvitation(args: {
       },
     }),
   ]);
-
-  void upsertGoogleCalendarEvent(invitation.eventId).catch((error: unknown) => {
-    console.error("[google-calendar] event mirror failed", error);
-  });
 
   return result;
 }
