@@ -46,6 +46,7 @@ type SettingsClientProps = {
   initialCalendarSharingPolicy: CalendarSharingPolicy;
   initialGoogleIntegration: GoogleIntegrationStatus;
   initialHeartbeatEnabled: boolean;
+  isAdmin: boolean;
   initialIdentityMd: string;
   initialSoulMd: string;
   initialUserDisplayName: string;
@@ -488,6 +489,7 @@ export function SettingsClient({
   initialCalendarSharingPolicy,
   initialGoogleIntegration,
   initialHeartbeatEnabled,
+  isAdmin,
   initialIdentityMd,
   initialSoulMd,
   initialUserDisplayName,
@@ -829,51 +831,51 @@ export function SettingsClient({
             </div>
           </article>
 
-          <article className="content-card settings-card settings-card-user">
-            <div className="settings-card-header">
-              <div>
-                <h2>Google Integration</h2>
+          {isAdmin ? (
+            <article className="content-card settings-card settings-card-user">
+              <div className="settings-card-header">
+                <div>
+                  <h2>Google Integration</h2>
+                </div>
               </div>
-            </div>
-            <div className="settings-google-copy">
-              <p>
-                Connect one shared Google account for CyWorld email sending.
-              </p>
-              {googleIntegration.connected ? (
-                <p>
-                  Connected as{" "}
-                  <strong>{googleIntegration.accountEmail ?? "Google account"}</strong>
-                </p>
-              ) : (
-                <p>Not connected yet.</p>
-              )}
-            </div>
-            <div className="settings-inline-actions">
-              <span />
-              {googleIntegration.connected ? (
-                <button
-                  className="secondary-button"
-                  disabled={isDisconnectingGoogle}
-                  onClick={() => {
-                    void handleGoogleDisconnect();
-                  }}
-                  type="button"
-                >
-                  {isDisconnectingGoogle ? "Disconnecting..." : "Disconnect Google"}
-                </button>
-              ) : (
-                <button
-                  className="primary-button"
-                  onClick={() => {
-                    window.location.href = "/api/integrations/google/start";
-                  }}
-                  type="button"
-                >
-                  Connect Google
-                </button>
-              )}
-            </div>
-          </article>
+              <div className="settings-google-copy">
+                <p>Connect one shared Google account for CyWorld email sending.</p>
+                {googleIntegration.connected ? (
+                  <p>
+                    Connected as{" "}
+                    <strong>{googleIntegration.accountEmail ?? "Google account"}</strong>
+                  </p>
+                ) : (
+                  <p>Not connected yet.</p>
+                )}
+              </div>
+              <div className="settings-inline-actions">
+                <span />
+                {googleIntegration.connected ? (
+                  <button
+                    className="secondary-button"
+                    disabled={isDisconnectingGoogle}
+                    onClick={() => {
+                      void handleGoogleDisconnect();
+                    }}
+                    type="button"
+                  >
+                    {isDisconnectingGoogle ? "Disconnecting..." : "Disconnect Google"}
+                  </button>
+                ) : (
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      window.location.href = "/api/integrations/google/start";
+                    }}
+                    type="button"
+                  >
+                    Connect Google
+                  </button>
+                )}
+              </div>
+            </article>
+          ) : null}
         </div>
 
         <article className="content-card settings-card settings-card-agent">

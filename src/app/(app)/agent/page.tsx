@@ -38,6 +38,7 @@ export default async function AgentPage() {
       initialCalendarSharingPolicy={behaviorConfig.calendarSharingPolicy}
       initialGoogleIntegration={googleIntegration}
       initialHeartbeatEnabled={heartbeatEnabled}
+      isAdmin={user.role === "ADMIN"}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}
       initialUserDisplayName={userNameFromMd ?? user.displayName}
