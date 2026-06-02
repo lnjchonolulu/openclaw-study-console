@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { updateCalendarEvent } from "@/lib/calendar";
+import { deleteCalendarEventForUser, updateCalendarEvent } from "@/lib/calendar";
 
 export async function PATCH(
   request: Request,
@@ -48,6 +48,39 @@ export async function PATCH(
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Event could not be updated.",
+      },
+      { status: 400 },
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ eventId: string }> },
+) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const { eventId } = await params;
+  const body = (await request.json().catch(() => ({}))) as {
+    mode?: "DECLINE" | "HIDE";
+  };
+
+  try {
+    await deleteCalendarEventForUser({
+      eventId,
+      mode: body.mode === "DECLINE" ? "DECLINE" : "HIDE",
+      userId: user.id,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Event could not be deleted.",
       },
       { status: 400 },
     );

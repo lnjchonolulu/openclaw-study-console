@@ -205,6 +205,11 @@ export async function listCalendarMonth(userId: string, requestedMonth?: string 
         endAt: {
           gte: monthStart,
         },
+        hiddenForUsers: {
+          none: {
+            userId,
+          },
+        },
       },
       include: {
         createdBy: true,
@@ -496,6 +501,110 @@ export async function updateCalendarEvent(args: {
     }
   });
 
+}
+
+export async function deleteCalendarEventForUser(args: {
+  eventId: string;
+  mode: "DECLINE" | "HIDE";
+  userId: string;
+}) {
+  const user = await getCalendarUser(args.userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  const event = await prisma.calendarEvent.findUnique({
+    where: {
+      id: args.eventId,
+    },
+    include: {
+      invitations: true,
+    },
+  });
+
+  if (!event || !hasAccess(event, getUserAccessKeys(user))) {
+    throw new Error("Event not found.");
+  }
+
+  if (args.mode === "HIDE") {
+    return prisma.calendarEventHidden.upsert({
+      where: {
+        eventId_userId: {
+          eventId: event.id,
+          userId: user.id,
+        },
+      },
+      update: {},
+      create: {
+        eventId: event.id,
+        userId: user.id,
+      },
+    });
+  }
+
+  const invitation = event.invitations.find(
+    (candidate) =>
+      candidate.invitedUserId === user.id &&
+      candidate.status !== "CANCELED" &&
+      candidate.status !== "DECLINED",
+  );
+
+  if (!invitation) {
+    return prisma.calendarEventHidden.upsert({
+      where: {
+        eventId_userId: {
+          eventId: event.id,
+          userId: user.id,
+        },
+      },
+      update: {},
+      create: {
+        eventId: event.id,
+        userId: user.id,
+      },
+    });
+  }
+
+  const currentAccess = parseCalendarAccessConfig(event.accessConfigJson);
+  const declinedKeys = getUserAccessKeys(user);
+  const nextAccessKeys = currentAccess.participantKeys.filter(
+    (key) => !declinedKeys.includes(key),
+  );
+
+  return prisma.$transaction([
+    prisma.calendarEvent.update({
+      where: {
+        id: event.id,
+      },
+      data: {
+        accessConfigJson: {
+          participantKeys: uniq(nextAccessKeys),
+        },
+      },
+    }),
+    prisma.calendarInvitation.update({
+      where: {
+        id: invitation.id,
+      },
+      data: {
+        status: "DECLINED",
+      },
+    }),
+    prisma.calendarEventHidden.upsert({
+      where: {
+        eventId_userId: {
+          eventId: event.id,
+          userId: user.id,
+        },
+      },
+      update: {},
+      create: {
+        eventId: event.id,
+        userId: user.id,
+      },
+    }),
+  ]);
 }
 
 export async function respondToCalendarInvitation(args: {

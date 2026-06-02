@@ -118,6 +118,8 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isInvitePopoverOpen, setIsInvitePopoverOpen] = useState(false);
+  const [isDeletePromptOpen, setIsDeletePromptOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [openTimePicker, setOpenTimePicker] = useState<TimePickerTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -161,6 +163,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
 
     setModalMode("create");
     setEditingEventId(null);
+    setIsDeletePromptOpen(false);
     setTitle("");
     setDescription("");
     setLocation("");
@@ -186,6 +189,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     setOpenTimePicker(null);
     setModalMode("edit");
     setEditingEventId(event.id);
+    setIsDeletePromptOpen(false);
     setTitle(event.title);
     setDescription(event.description);
     setLocation(event.location);
@@ -255,6 +259,38 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
       await loadMonth(view.month);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function deleteEvent(mode: "DECLINE" | "HIDE") {
+    if (!editingEventId) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`/api/calendar/${encodeURIComponent(editingEventId)}`, {
+        body: JSON.stringify({ mode }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setNotice(errorPayload?.error ?? "Event could not be deleted.");
+        return;
+      }
+
+      setIsDeletePromptOpen(false);
+      setIsEventModalOpen(false);
+      window.dispatchEvent(new Event("calendar-pending-should-refresh"));
+      await loadMonth(view.month);
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -463,7 +499,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
         <div
           className="team-modal-backdrop calendar-modal-backdrop"
           onClick={() => {
-            if (!isSaving) {
+            if (!isSaving && !isDeleting) {
               setOpenTimePicker(null);
               setIsEventModalOpen(false);
             }
@@ -639,27 +675,82 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   ))}
                 </div>
               </div>
+              {modalMode === "edit" && isDeletePromptOpen ? (
+                <div className="calendar-delete-panel">
+                  <div>
+                    <strong>Delete this event?</strong>
+                    <span>
+                      Remove it only from your calendar, or decline the RSVP so
+                      others see that you are not attending.
+                    </span>
+                  </div>
+                  <div className="calendar-delete-panel-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={isDeleting}
+                      onClick={() => {
+                        void deleteEvent("HIDE");
+                      }}
+                      type="button"
+                    >
+                      Delete from my calendar
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={isDeleting}
+                      onClick={() => {
+                        void deleteEvent("DECLINE");
+                      }}
+                      type="button"
+                    >
+                      Decline RSVP
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="team-modal-actions calendar-modal-actions">
-              <button
-                className="secondary-button"
-                disabled={isSaving}
-                onClick={() => {
-                  setOpenTimePicker(null);
-                  setIsEventModalOpen(false);
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="primary-button"
-                disabled={isSaving}
-                onClick={() => void saveEvent()}
-                type="button"
-              >
-                {isSaving ? "Saving..." : modalMode === "edit" ? "Save Event" : "Create Event"}
-              </button>
+              <div>
+                {modalMode === "edit" ? (
+                  <button
+                    className="secondary-button calendar-delete-button"
+                    disabled={isSaving || isDeleting}
+                    onClick={() => {
+                      setIsDeletePromptOpen((current) => !current);
+                    }}
+                    type="button"
+                  >
+                    Delete Event
+                  </button>
+                ) : null}
+              </div>
+              <div className="calendar-modal-action-group">
+                <button
+                  className="secondary-button"
+                  disabled={isSaving || isDeleting}
+                  onClick={() => {
+                    setOpenTimePicker(null);
+                    setIsEventModalOpen(false);
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={isSaving || isDeleting}
+                  onClick={() => void saveEvent()}
+                  type="button"
+                >
+                  {isSaving
+                    ? "Saving..."
+                    : isDeleting
+                      ? "Deleting..."
+                      : modalMode === "edit"
+                        ? "Save Event"
+                        : "Create Event"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

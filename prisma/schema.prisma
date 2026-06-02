@@ -111,6 +111,7 @@ model User {
   requestedTasks         AgentTask[]                  @relation("AgentTaskRequester")
   targetTasks            AgentTask[]                  @relation("AgentTaskTargetUser")
   calendarEvents         CalendarEvent[]              @relation("CalendarEventCreator")
+  hiddenCalendarEvents   CalendarEventHidden[]
   calendarInvites        CalendarInvitation[]         @relation("CalendarInvitationInvitee")
   sentCalendarInvites    CalendarInvitation[]         @relation("CalendarInvitationInviter")
   calendarTitleOverrides CalendarEventTitleOverride[]
@@ -402,12 +403,24 @@ model CalendarEvent {
   updatedAt        DateTime                     @updatedAt
   team             Team?                        @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdBy        User?                        @relation("CalendarEventCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  hiddenForUsers    CalendarEventHidden[]
   invitations      CalendarInvitation[]
   titleOverrides   CalendarEventTitleOverride[]
 
   @@index([teamId, startAt])
   @@index([createdByUserId, startAt])
   @@index([source, externalProvider, externalEventId])
+}
+
+model CalendarEventHidden {
+  eventId   String
+  userId    String
+  createdAt DateTime      @default(now())
+  event     CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
 }
 
 model CalendarEventTitleOverride {

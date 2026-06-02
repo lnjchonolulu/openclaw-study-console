@@ -1451,11 +1451,55 @@ button.primary-button {
   overflow-y: auto;
 }
 
-.calendar-modal-actions {
+.calendar-delete-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 16px;
+  background: rgba(17, 17, 17, 0.035);
+}
+
+.calendar-delete-panel div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.calendar-delete-panel strong {
+  color: var(--foreground);
+  font-size: 0.95rem;
+}
+
+.calendar-delete-panel span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.calendar-delete-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-modal-actions.calendar-modal-actions {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 16px 22px 22px;
   border-top: 1px solid var(--surface-border);
   background: var(--surface-strong);
+}
+
+.calendar-modal-action-group {
+  display: flex;
+  gap: 10px;
+}
+
+.calendar-delete-button {
+  color: #9f1d1d;
 }
 
 .team-grid {
