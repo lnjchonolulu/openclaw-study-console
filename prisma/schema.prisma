@@ -195,6 +195,7 @@ model Room {
   scheduledMessages ScheduledMessage[]
   agentTasks        AgentTask[]
   emailThreads      EmailThread[]      @relation("EmailThreadSourceRoom")
+  teamAgentChains   TeamAgentChain[]
 
   @@index([ownerUserId, type])
   @@index([teamId, type])
@@ -373,6 +374,52 @@ model RoomAgent {
   agent          Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@id([roomId, agentId])
+}
+
+model AppSetting {
+  key       String   @id
+  valueJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamAgentChain {
+  id                 String               @id @default(cuid())
+  roomId             String
+  rootMessageId      String
+  lastMessageId      String?
+  status             String               @default("ACTIVE")
+  turnCount          Int                  @default(0)
+  openItemsJson      Json?
+  lastSpeakerAgentId String?
+  stopReason         String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  room               Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  turns              TeamAgentChainTurn[]
+
+  @@index([roomId, status, updatedAt])
+  @@index([rootMessageId])
+  @@index([lastMessageId])
+}
+
+model TeamAgentChainTurn {
+  id               String         @id @default(cuid())
+  chainId          String
+  agentId          String
+  messageId        String?
+  decision         String
+  contributionType String?
+  newValue         String?
+  openItem         String?
+  reason           String?
+  arbiterVerdict   String?
+  createdAt        DateTime       @default(now())
+  chain            TeamAgentChain @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  @@index([chainId, createdAt])
+  @@index([chainId, agentId, createdAt])
+  @@index([messageId])
 }
 
 model Session {
