@@ -284,17 +284,20 @@ function wrapBase64(value: string) {
 
 function buildPlainTextMessage({
   body,
+  cc,
   from,
   subject,
   to,
 }: {
   body: string;
+  cc?: string | null;
   from: string | null;
   subject: string;
   to: string;
 }) {
   return [
     `To: ${sanitizeHeader(to)}`,
+    cc ? `Cc: ${sanitizeHeader(cc)}` : null,
     from ? `From: ${sanitizeHeader(from)}` : null,
     `Subject: ${sanitizeHeader(subject)}`,
     "Content-Type: text/plain; charset=utf-8",
@@ -308,6 +311,7 @@ function buildPlainTextMessage({
 function buildMultipartMessage({
   attachments,
   body,
+  cc,
   from,
   subject,
   to,
@@ -318,6 +322,7 @@ function buildMultipartMessage({
     filename: string;
   }[];
   body: string;
+  cc?: string | null;
   from: string | null;
   subject: string;
   to: string;
@@ -326,6 +331,7 @@ function buildMultipartMessage({
   const parts = [
     [
       `To: ${sanitizeHeader(to)}`,
+      cc ? `Cc: ${sanitizeHeader(cc)}` : null,
       from ? `From: ${sanitizeHeader(from)}` : null,
       `Subject: ${sanitizeHeader(subject)}`,
       "MIME-Version: 1.0",
@@ -357,6 +363,7 @@ function buildMultipartMessage({
 export async function sendSharedGmail({
   attachments = [],
   body,
+  cc,
   subject,
   to,
 }: {
@@ -366,6 +373,7 @@ export async function sendSharedGmail({
     filename: string;
   }[];
   body: string;
+  cc?: string | null;
   subject: string;
   to: string;
 }) {
@@ -383,12 +391,14 @@ export async function sendSharedGmail({
       ? buildMultipartMessage({
           attachments,
           body,
+          cc,
           from: access.accountEmail,
           subject,
           to,
         })
       : buildPlainTextMessage({
           body,
+          cc,
           from: access.accountEmail,
           subject,
           to,

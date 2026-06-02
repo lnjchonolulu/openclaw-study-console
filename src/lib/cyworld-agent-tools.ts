@@ -145,6 +145,11 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
           type: "string",
           description: "The email body to send.",
         },
+        cc: {
+          type: "string",
+          description:
+            "Optional comma-separated CC recipient email addresses.",
+        },
         subject: {
           type: "string",
           description: "The email subject.",
@@ -168,6 +173,13 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         description: {
           type: "string",
           description: "Optional agenda or context for the calendar invite.",
+        },
+        ccEmails: {
+          type: "array",
+          description: "Optional external CC recipient email addresses.",
+          items: {
+            type: "string",
+          },
         },
         endAt: {
           type: "string",
@@ -237,6 +249,14 @@ function cleanEmailArray(value: unknown) {
   }
 
   return Array.from(new Set(value.map(cleanEmail).filter(Boolean)));
+}
+
+function cleanEmailListString(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return Array.from(new Set(value.split(",").map(cleanEmail).filter(Boolean))).join(", ");
 }
 
 function cleanMonth(value: unknown) {
@@ -652,6 +672,7 @@ async function handleExternalCalendarInviteTool({
 
   const title = typeof args.title === "string" ? args.title.trim() : "";
   const toEmails = cleanEmailArray(args.toEmails);
+  const ccEmails = cleanEmailArray(args.ccEmails);
   const startAt = parseDate(args.startAt);
   const endAt = parseDate(args.endAt);
   const description = typeof args.description === "string" ? args.description.trim() : "";
@@ -774,6 +795,7 @@ async function handleExternalCalendarInviteTool({
       },
     ],
     body,
+    cc: ccEmails.join(", ") || null,
     subject: `Calendar invite: ${title}`,
     to: toEmails.join(", "),
   });
@@ -799,6 +821,7 @@ async function handleExternalCalendarInviteTool({
     externalInviteTracking: "not_tracked_in_cyworld",
     explanation:
       "External email recipients receive an .ics invite they can add to Google Calendar, Apple Calendar, Outlook, or another calendar app. CyWorld does not receive or display their accept/decline RSVP status.",
+    ccRecipients: ccEmails,
     recipients: toEmails,
     senderPolicy:
       "Invite email is sent through the shared CyWorld Gmail account, not a personal agent address.",
@@ -922,6 +945,7 @@ export async function handleCyWorldAgentToolCall({
 
   if (call.name === "study_send_email") {
     const to = cleanEmail(args.to);
+    const cc = cleanEmailListString(args.cc);
     const subject = cleanMessage(args.subject);
     const body = cleanMessage(args.body);
 
@@ -934,12 +958,14 @@ export async function handleCyWorldAgentToolCall({
 
     const result = await sendSharedGmail({
       body,
+      cc: cc || null,
       subject,
       to,
     });
 
     return JSON.stringify({
       ...result,
+      ccRecipients: cc ? cc.split(", ") : [],
       senderPolicy:
         "Email is sent through the shared CyWorld Gmail account, not a personal agent address.",
     });
