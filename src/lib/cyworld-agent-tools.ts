@@ -157,6 +157,52 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
       required: ["to", "subject", "body"],
     },
   },
+  {
+    name: "study_send_calendar_invite_email",
+    description:
+      "Send an external calendar invitation email with an .ics attachment through the shared CyWorld Gmail account. Use when the user asks to invite someone outside CyWorld, send a calendar invite to a personal email address, or make an event usable in Google Calendar, Apple Calendar, Outlook, or another outside calendar. External email invite acceptance/decline is not tracked inside CyWorld.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        description: {
+          type: "string",
+          description: "Optional agenda or context for the calendar invite.",
+        },
+        endAt: {
+          type: "string",
+          description:
+            "Event end as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
+        },
+        location: {
+          type: "string",
+          description: "Optional location or meeting link.",
+        },
+        putOnCyWorldCalendar: {
+          type: "boolean",
+          description:
+            "Set true unless the user explicitly only wants to send an external invite email without adding the event to their CyWorld Calendar.",
+        },
+        startAt: {
+          type: "string",
+          description:
+            "Event start as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
+        },
+        title: {
+          type: "string",
+          description: "Event title.",
+        },
+        toEmails: {
+          type: "array",
+          description: "External recipient email addresses.",
+          items: {
+            type: "string",
+          },
+        },
+      },
+      required: ["toEmails", "title", "startAt", "endAt"],
+    },
+  },
 ];
 
 function parseToolArguments(call: OpenClawFunctionCall) {
@@ -183,6 +229,14 @@ function cleanEmail(value: unknown) {
   const email = value.trim();
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function cleanEmailArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.map(cleanEmail).filter(Boolean)));
 }
 
 function cleanMonth(value: unknown) {
@@ -218,6 +272,81 @@ function mentionsTodayLikeDate(value: string) {
   return /\b(today|this\s+morning|this\s+afternoon|this\s+evening|tonight)\b/i.test(
     value,
   );
+}
+
+function escapeIcsText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function formatIcsDate(date: Date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function foldIcsLine(line: string) {
+  const chunks = line.match(/.{1,74}/g);
+  return chunks ? chunks.map((chunk, index) => (index === 0 ? chunk : ` ${chunk}`)).join("\r\n") : line;
+}
+
+function safeIcsFilename(title: string) {
+  const cleaned = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+  return `${cleaned || "cyworld-invite"}.ics`;
+}
+
+function buildCalendarInviteIcs({
+  description,
+  endAt,
+  location,
+  organizerEmail,
+  startAt,
+  title,
+  toEmails,
+  uid,
+}: {
+  description?: string;
+  endAt: Date;
+  location?: string;
+  organizerEmail?: string | null;
+  startAt: Date;
+  title: string;
+  toEmails: string[];
+  uid: string;
+}) {
+  const organizerLine = organizerEmail
+    ? `ORGANIZER;CN=CyWorld:mailto:${organizerEmail}`
+    : null;
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//CyWorld//CyWorld Calendar//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:REQUEST",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${formatIcsDate(new Date())}`,
+    `DTSTART:${formatIcsDate(startAt)}`,
+    `DTEND:${formatIcsDate(endAt)}`,
+    `SUMMARY:${escapeIcsText(title)}`,
+    description?.trim() ? `DESCRIPTION:${escapeIcsText(description.trim())}` : null,
+    location?.trim() ? `LOCATION:${escapeIcsText(location.trim())}` : null,
+    organizerLine,
+    ...toEmails.map(
+      (email) =>
+        `ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${email}`,
+    ),
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter((line): line is string => line !== null);
+
+  return lines.map(foldIcsLine).join("\r\n");
 }
 
 function summarizeCalendarEvent(event: CalendarEventView, timeZone: string) {
@@ -505,6 +634,178 @@ async function handleCalendarCreateTool({
   });
 }
 
+async function handleExternalCalendarInviteTool({
+  args,
+  objective,
+  requesterUserId,
+}: {
+  args: Record<string, unknown>;
+  objective?: string;
+  requesterUserId?: string;
+}) {
+  if (!requesterUserId) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_requester_user",
+    });
+  }
+
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  const toEmails = cleanEmailArray(args.toEmails);
+  const startAt = parseDate(args.startAt);
+  const endAt = parseDate(args.endAt);
+  const description = typeof args.description === "string" ? args.description.trim() : "";
+  const location = typeof args.location === "string" ? args.location.trim() : "";
+  const requester = await prisma.user.findUnique({
+    where: {
+      id: requesterUserId,
+    },
+    select: {
+      displayName: true,
+      timezone: true,
+      username: true,
+    },
+  });
+  const requesterTimezone = normalizeTimeZone(requester?.timezone);
+
+  if (!requester) {
+    return JSON.stringify({
+      ok: false,
+      reason: "requester_not_found",
+    });
+  }
+
+  if (!title || toEmails.length === 0 || !startAt || !endAt) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_or_invalid_toEmails_title_startAt_or_endAt",
+    });
+  }
+
+  if (endAt.getTime() <= startAt.getTime()) {
+    return JSON.stringify({
+      ok: false,
+      reason: "endAt_must_be_after_startAt",
+    });
+  }
+
+  if (
+    objective &&
+    mentionsTodayLikeDate(objective) &&
+    dateKeyInTimeZone(startAt, requesterTimezone) !==
+      dateKeyInTimeZone(new Date(), requesterTimezone)
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "relative_date_does_not_match_today_in_requester_timezone",
+      currentDate: dateKeyInTimeZone(new Date(), requesterTimezone),
+      requestedStartDate: dateKeyInTimeZone(startAt, requesterTimezone),
+      requesterTimezone,
+      guidance:
+        "The user used today-like language. Recalculate the event date from the current human participant's timezone or ask a clarification before sending the external invite.",
+    });
+  }
+
+  let createdEvent: Awaited<ReturnType<typeof createCalendarEvent>> | null = null;
+  let createError: string | null = null;
+
+  if (args.putOnCyWorldCalendar !== false) {
+    createdEvent = await createCalendarEvent({
+      createdByUserId: requesterUserId,
+      description: description || undefined,
+      endAt,
+      invitedUserIds: [],
+      location: location || undefined,
+      startAt,
+      title,
+    }).catch((error: unknown) => {
+      createError = error instanceof Error ? error.message : "Unknown error";
+      return null;
+    });
+
+    if (!createdEvent) {
+      return JSON.stringify({
+        ok: false,
+        reason: "calendar_event_create_failed",
+        error: createError,
+      });
+    }
+  }
+
+  const startLocal = formatDateTimeInTimeZone(startAt, requesterTimezone, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const endLocal = formatDateTimeInTimeZone(endAt, requesterTimezone, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const uid = `cyworld-${createdEvent?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}@cyworld.hjjy.app`;
+  const body = [
+    `You've been invited to: ${title}`,
+    "",
+    `Time: ${startLocal} - ${endLocal} (${requesterTimezone})`,
+    location ? `Location: ${location}` : null,
+    description ? "" : null,
+    description || null,
+    "",
+    `Sent by ${requester.displayName} (@${requester.username}) through CyWorld.`,
+    "",
+    "Note: this external calendar invite can be added to your calendar app, but CyWorld does not track whether external email recipients accept or decline it.",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  const ics = buildCalendarInviteIcs({
+    description,
+    endAt,
+    location,
+    organizerEmail: null,
+    startAt,
+    title,
+    toEmails,
+    uid,
+  });
+  const result = await sendSharedGmail({
+    attachments: [
+      {
+        content: ics,
+        contentType: "text/calendar; charset=utf-8; method=REQUEST",
+        filename: safeIcsFilename(title),
+      },
+    ],
+    body,
+    subject: `Calendar invite: ${title}`,
+    to: toEmails.join(", "),
+  });
+
+  if (!result.ok) {
+    return JSON.stringify(result);
+  }
+
+  return JSON.stringify({
+    ...result,
+    calendar: "CyWorld Calendar",
+    cyWorldEvent: createdEvent
+      ? {
+          endAt: createdEvent.endAt.toISOString(),
+          endLocal,
+          id: createdEvent.id,
+          startAt: createdEvent.startAt.toISOString(),
+          startLocal,
+          title: createdEvent.title,
+        }
+      : null,
+    externalCalendarInvite: true,
+    externalInviteTracking: "not_tracked_in_cyworld",
+    explanation:
+      "External email recipients receive an .ics invite they can add to Google Calendar, Apple Calendar, Outlook, or another calendar app. CyWorld does not receive or display their accept/decline RSVP status.",
+    recipients: toEmails,
+    senderPolicy:
+      "Invite email is sent through the shared CyWorld Gmail account, not a personal agent address.",
+    timeZone: requesterTimezone,
+  });
+}
+
 async function createToolTask({
   expectReply,
   kind,
@@ -605,6 +906,14 @@ export async function handleCyWorldAgentToolCall({
 
   if (call.name === "study_create_calendar_event") {
     return handleCalendarCreateTool({
+      args,
+      objective,
+      requesterUserId,
+    });
+  }
+
+  if (call.name === "study_send_calendar_invite_email") {
+    return handleExternalCalendarInviteTool({
       args,
       objective,
       requesterUserId,

@@ -278,11 +278,93 @@ function sanitizeHeader(value: string) {
   return value.replace(/[\r\n]+/g, " ").trim();
 }
 
+function wrapBase64(value: string) {
+  return value.match(/.{1,76}/g)?.join("\r\n") ?? value;
+}
+
+function buildPlainTextMessage({
+  body,
+  from,
+  subject,
+  to,
+}: {
+  body: string;
+  from: string | null;
+  subject: string;
+  to: string;
+}) {
+  return [
+    `To: ${sanitizeHeader(to)}`,
+    from ? `From: ${sanitizeHeader(from)}` : null,
+    `Subject: ${sanitizeHeader(subject)}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    body,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\r\n");
+}
+
+function buildMultipartMessage({
+  attachments,
+  body,
+  from,
+  subject,
+  to,
+}: {
+  attachments: {
+    content: string;
+    contentType: string;
+    filename: string;
+  }[];
+  body: string;
+  from: string | null;
+  subject: string;
+  to: string;
+}) {
+  const boundary = `cyworld-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const parts = [
+    [
+      `To: ${sanitizeHeader(to)}`,
+      from ? `From: ${sanitizeHeader(from)}` : null,
+      `Subject: ${sanitizeHeader(subject)}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      body,
+    ]
+      .filter((line): line is string => line !== null)
+      .join("\r\n"),
+    ...attachments.map((attachment) =>
+      [
+        `--${boundary}`,
+        `Content-Type: ${attachment.contentType}; name="${sanitizeHeader(attachment.filename)}"`,
+        `Content-Disposition: attachment; filename="${sanitizeHeader(attachment.filename)}"`,
+        "Content-Transfer-Encoding: base64",
+        "",
+        wrapBase64(Buffer.from(attachment.content, "utf8").toString("base64")),
+      ].join("\r\n"),
+    ),
+    `--${boundary}--`,
+  ];
+
+  return parts.join("\r\n");
+}
+
 export async function sendSharedGmail({
+  attachments = [],
   body,
   subject,
   to,
 }: {
+  attachments?: {
+    content: string;
+    contentType: string;
+    filename: string;
+  }[];
   body: string;
   subject: string;
   to: string;
@@ -296,16 +378,21 @@ export async function sendSharedGmail({
     };
   }
 
-  const message = [
-    `To: ${sanitizeHeader(to)}`,
-    access.accountEmail ? `From: ${sanitizeHeader(access.accountEmail)}` : null,
-    `Subject: ${sanitizeHeader(subject)}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    body,
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\r\n");
+  const message =
+    attachments.length > 0
+      ? buildMultipartMessage({
+          attachments,
+          body,
+          from: access.accountEmail,
+          subject,
+          to,
+        })
+      : buildPlainTextMessage({
+          body,
+          from: access.accountEmail,
+          subject,
+          to,
+        });
   const result = await googleJson<{ id?: string }>(
     "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
     {
