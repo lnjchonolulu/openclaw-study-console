@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CyWorld shared Gmail reply polling every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=20s
+Unit=cyworld-email-replies.service
+
+[Install]
+WantedBy=timers.target

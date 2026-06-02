@@ -115,6 +115,7 @@ model User {
   sentCalendarInvites    CalendarInvitation[]         @relation("CalendarInvitationInviter")
   calendarTitleOverrides CalendarEventTitleOverride[]
   connectedIntegrations  ExternalIntegration[]
+  requestedEmailThreads  EmailThread[]                @relation("EmailThreadRequester")
 }
 
 model Team {
@@ -144,6 +145,7 @@ model Agent {
   roomAgents        RoomAgent[]
   scheduledMessages ScheduledMessage[]
   tasks             AgentTask[]
+  emailThreads      EmailThread[]
 }
 
 model FileRecord {
@@ -189,6 +191,7 @@ model Room {
   typingStates      TypingState[]
   scheduledMessages ScheduledMessage[]
   agentTasks        AgentTask[]
+  emailThreads      EmailThread[]      @relation("EmailThreadSourceRoom")
 
   @@index([ownerUserId, type])
   @@index([teamId, type])
@@ -258,10 +261,56 @@ model AgentTask {
   messages          Message[]
   scheduledMessages ScheduledMessage[]
   events            AgentTaskEvent[]
+  emailThreads      EmailThread[]
 
   @@index([agentId, status])
   @@index([requesterUserId, status])
   @@index([targetUserId, status])
+}
+
+model EmailThread {
+  id                 String         @id @default(cuid())
+  agentId            String
+  requesterUserId    String
+  sourceRoomId       String?
+  taskId             String?
+  gmailThreadId      String         @unique
+  lastGmailMessageId String?
+  subject            String
+  to                 String
+  cc                 String?
+  status             String         @default("OPEN")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  agent              Agent          @relation(fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+  requester          User           @relation("EmailThreadRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  sourceRoom         Room?          @relation("EmailThreadSourceRoom", fields: [sourceRoomId], references: [id], onDelete: SetNull)
+  task               AgentTask?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  messages           EmailMessage[]
+
+  @@index([agentId, status])
+  @@index([requesterUserId, status])
+  @@index([sourceRoomId])
+  @@index([taskId])
+}
+
+model EmailMessage {
+  id             String      @id @default(cuid())
+  emailThreadId  String
+  gmailMessageId String      @unique
+  direction      String
+  from           String?
+  to             String?
+  cc             String?
+  subject        String?
+  snippet        String?
+  body           String?
+  receivedAt     DateTime?
+  payloadJson    Json?
+  createdAt      DateTime    @default(now())
+  emailThread    EmailThread @relation(fields: [emailThreadId], references: [id], onDelete: Cascade)
+
+  @@index([emailThreadId, createdAt])
 }
 
 model AgentTaskEvent {

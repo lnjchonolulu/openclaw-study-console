@@ -259,6 +259,57 @@ function cleanEmailListString(value: unknown) {
   return Array.from(new Set(value.split(",").map(cleanEmail).filter(Boolean))).join(", ");
 }
 
+async function registerOutboundEmailThread({
+  agentId,
+  cc,
+  gmailMessageId,
+  gmailThreadId,
+  requesterUserId,
+  sourceRoomId,
+  subject,
+  taskId,
+  to,
+}: {
+  agentId: string;
+  cc?: string | null;
+  gmailMessageId?: string | null;
+  gmailThreadId?: string | null;
+  requesterUserId?: string;
+  sourceRoomId?: string | null;
+  subject: string;
+  taskId?: string | null;
+  to: string;
+}) {
+  if (!gmailThreadId || !requesterUserId) {
+    return null;
+  }
+
+  return prisma.emailThread.upsert({
+    where: {
+      gmailThreadId,
+    },
+    update: {
+      cc: cc || null,
+      lastGmailMessageId: gmailMessageId ?? undefined,
+      sourceRoomId: sourceRoomId ?? undefined,
+      subject,
+      taskId: taskId ?? undefined,
+      to,
+    },
+    create: {
+      agentId,
+      cc: cc || null,
+      gmailThreadId,
+      lastGmailMessageId: gmailMessageId ?? null,
+      requesterUserId,
+      sourceRoomId: sourceRoomId ?? null,
+      subject,
+      taskId: taskId ?? null,
+      to,
+    },
+  });
+}
+
 function cleanMonth(value: unknown) {
   if (typeof value !== "string") {
     return null;
@@ -658,10 +709,16 @@ async function handleExternalCalendarInviteTool({
   args,
   objective,
   requesterUserId,
+  senderAgentOpenclawId,
+  sourceRoomId,
+  taskId,
 }: {
   args: Record<string, unknown>;
   objective?: string;
   requesterUserId?: string;
+  senderAgentOpenclawId: string;
+  sourceRoomId?: string;
+  taskId?: string | null;
 }) {
   if (!requesterUserId) {
     return JSON.stringify({
@@ -804,6 +861,18 @@ async function handleExternalCalendarInviteTool({
     return JSON.stringify(result);
   }
 
+  await registerOutboundEmailThread({
+    agentId: senderAgentOpenclawId,
+    cc: ccEmails.join(", ") || null,
+    gmailMessageId: result.messageId,
+    gmailThreadId: result.threadId,
+    requesterUserId,
+    sourceRoomId,
+    subject: `Calendar invite: ${title}`,
+    taskId,
+    to: toEmails.join(", "),
+  });
+
   return JSON.stringify({
     ...result,
     calendar: "CyWorld Calendar",
@@ -940,6 +1009,9 @@ export async function handleCyWorldAgentToolCall({
       args,
       objective,
       requesterUserId,
+      senderAgentOpenclawId,
+      sourceRoomId,
+      taskId,
     });
   }
 
@@ -962,6 +1034,20 @@ export async function handleCyWorldAgentToolCall({
       subject,
       to,
     });
+
+    if (result.ok) {
+      await registerOutboundEmailThread({
+        agentId: senderAgentOpenclawId,
+        cc: cc || null,
+        gmailMessageId: result.messageId,
+        gmailThreadId: result.threadId,
+        requesterUserId,
+        sourceRoomId,
+        subject,
+        taskId,
+        to,
+      });
+    }
 
     return JSON.stringify({
       ...result,

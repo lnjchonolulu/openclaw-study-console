@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
@@ -18,6 +19,19 @@ type GoogleTokenJson = {
 type GoogleAccess = {
   accessToken: string;
   accountEmail: string | null;
+};
+
+export type GmailMessageView = {
+  body: string;
+  cc: string | null;
+  date: Date | null;
+  from: string | null;
+  id: string;
+  internalDate: Date | null;
+  snippet: string;
+  subject: string | null;
+  threadId: string;
+  to: string | null;
 };
 
 function getGoogleRedirectUri() {
@@ -266,6 +280,68 @@ async function getGoogleAccess(): Promise<GoogleAccess | null> {
   };
 }
 
+function getHeader(headers: Array<{ name?: string; value?: string }> | undefined, name: string) {
+  return (
+    headers?.find((header) => header.name?.toLowerCase() === name.toLowerCase())?.value ??
+    null
+  );
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(normalized, "base64").toString("utf8");
+}
+
+function extractMessageBody(payload: unknown): string {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const candidate = payload as {
+    body?: { data?: string };
+    mimeType?: string;
+    parts?: unknown[];
+  };
+
+  if (candidate.mimeType === "text/plain" && candidate.body?.data) {
+    return decodeBase64Url(candidate.body.data).trim();
+  }
+
+  if (Array.isArray(candidate.parts)) {
+    const plain = candidate.parts
+      .map((part) => extractMessageBody(part))
+      .find((part) => part.trim());
+
+    if (plain) {
+      return plain;
+    }
+  }
+
+  if (candidate.body?.data) {
+    return decodeBase64Url(candidate.body.data).trim();
+  }
+
+  return "";
+}
+
+function parseGoogleDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseInternalDate(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+}
+
 function base64UrlEncode(value: string) {
   return Buffer.from(value)
     .toString("base64")
@@ -420,6 +496,85 @@ export async function sendSharedGmail({
   return {
     accountEmail: access.accountEmail,
     messageId: result.id ?? null,
+    threadId: (result as { threadId?: string }).threadId ?? null,
+    ok: true,
+  };
+}
+
+export async function listSharedGmailInboxMessages({
+  maxResults = 25,
+  query = "in:inbox newer_than:14d",
+}: {
+  maxResults?: number;
+  query?: string;
+} = {}) {
+  const access = await getGoogleAccess();
+
+  if (!access) {
+    return {
+      messages: [] as GmailMessageView[],
+      ok: false,
+      reason: "google_not_connected",
+    };
+  }
+
+  const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+  listUrl.searchParams.set("maxResults", String(maxResults));
+  listUrl.searchParams.set("q", query);
+
+  const list = await googleJson<{ messages?: Array<{ id?: string; threadId?: string }> }>(
+    listUrl.toString(),
+    {
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+      },
+      method: "GET",
+    },
+  );
+
+  const messages = await Promise.all(
+    (list.messages ?? [])
+      .filter((message): message is { id: string; threadId: string } =>
+        Boolean(message.id && message.threadId),
+      )
+      .map(async (message) => {
+        const detailUrl = new URL(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
+        );
+        detailUrl.searchParams.set("format", "full");
+        const detail = await googleJson<{
+          id?: string;
+          internalDate?: string;
+          payload?: {
+            headers?: Array<{ name?: string; value?: string }>;
+          };
+          snippet?: string;
+          threadId?: string;
+        }>(detailUrl.toString(), {
+          headers: {
+            Authorization: `Bearer ${access.accessToken}`,
+          },
+          method: "GET",
+        });
+        const headers = detail.payload?.headers;
+
+        return {
+          body: extractMessageBody(detail.payload),
+          cc: getHeader(headers, "Cc"),
+          date: parseGoogleDate(getHeader(headers, "Date")),
+          from: getHeader(headers, "From"),
+          id: detail.id ?? message.id,
+          internalDate: parseInternalDate(detail.internalDate),
+          snippet: detail.snippet ?? "",
+          subject: getHeader(headers, "Subject"),
+          threadId: detail.threadId ?? message.threadId,
+          to: getHeader(headers, "To"),
+        } satisfies GmailMessageView;
+      }),
+  );
+
+  return {
+    messages,
     ok: true,
   };
 }
