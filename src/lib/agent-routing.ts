@@ -270,6 +270,7 @@ export function buildAgentRuntimeInstructions({
     "",
     "Human participants in this study app are not OpenClaw sessions. Do not use sessions_send, message, gateway delivery, cron, or pairing-based delivery when you want to contact a human participant here.",
     "If you want the app to deliver a direct human DM now, use the study_send_dm tool.",
+    "When choosing study_send_dm.toUsername, use the person being asked, told, contacted, or messaged. Do not choose people who are only mentioned as meeting participants, topics, or context.",
     "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",

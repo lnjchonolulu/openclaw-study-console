@@ -51,6 +51,18 @@ function truncateReplyPreview(value: string, maxLength = 120) {
   return `${compact.slice(0, maxLength - 1)}…`;
 }
 
+function teamAuthorLabel(
+  message: TeamMessage,
+  memberMap: Map<string, TeamChannelDetail["members"][number]>,
+  isOwnMessage: boolean,
+) {
+  if (isOwnMessage) {
+    return "You";
+  }
+
+  return memberMap.get(message.userId)?.name ?? message.author;
+}
+
 type ReplyTarget = {
   author: string;
   content: string;
@@ -426,9 +438,11 @@ export function TeamChatClient({
                           className="message-reply-button"
                           onClick={() =>
                             setReplyTarget({
-                              author:
-                                memberMap.get(row.message.userId)?.name ??
-                                row.message.author,
+                              author: teamAuthorLabel(
+                                row.message,
+                                memberMap,
+                                row.isOwnMessage,
+                              ),
                               content: row.message.content,
                               id: row.message.id,
                             })
@@ -447,7 +461,7 @@ export function TeamChatClient({
                     {!row.isOwnMessage ? (
                       <div className="message-content-stack message-content-stack-other">
                         <div className="message-author-label">
-                          {memberMap.get(row.message.userId)?.name ?? row.message.author}
+                          {teamAuthorLabel(row.message, memberMap, row.isOwnMessage)}
                         </div>
                         <div
                           className={`message-row ${
@@ -472,7 +486,7 @@ export function TeamChatClient({
                         className="message-content-stack message-content-stack-user"
                       >
                         <div className="message-author-label">
-                          {memberMap.get(row.message.userId)?.name ?? row.message.author}
+                          {teamAuthorLabel(row.message, memberMap, row.isOwnMessage)}
                         </div>
                         <div className="message-row message-row-user">
                           {row.message.replyTo ? (
@@ -495,9 +509,11 @@ export function TeamChatClient({
                           className="message-reply-button"
                           onClick={() =>
                             setReplyTarget({
-                              author:
-                                memberMap.get(row.message.userId)?.name ??
-                                row.message.author,
+                              author: teamAuthorLabel(
+                                row.message,
+                                memberMap,
+                                row.isOwnMessage,
+                              ),
                               content: row.message.content,
                               id: row.message.id,
                             })

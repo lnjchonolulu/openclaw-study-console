@@ -569,7 +569,10 @@ async function composeOutboundMessage({
     instructions: `${instructions}
 
 You are composing a Study Console outbound DM.
+- You are writing as ${input.agentDisplayName}, not as ${input.requesterDisplayName}.
 - Return only the exact message body that should be delivered to @${input.targetUsername}.
+- Do not impersonate the requester. Never write "${input.requesterDisplayName} here", "this is ${input.requesterDisplayName}", or similar unless the requester gave that exact quoted text.
+- If context is needed, say that ${input.requesterDisplayName} asked you to check or ask something, while keeping ${input.agentDisplayName} as the speaker.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
 - Do not wrap the message in quotes or markdown fences.
 - Make the message natural, concise, and appropriate for the relationship.

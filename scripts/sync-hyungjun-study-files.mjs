@@ -124,10 +124,18 @@ function parseAccessConfig(input) {
   const maybeKeys = input.participantKeys;
 
   return {
+    createdByParticipantKey:
+      typeof input.createdByParticipantKey === "string"
+        ? input.createdByParticipantKey
+        : undefined,
     participantKeys: Array.isArray(maybeKeys)
       ? maybeKeys.filter((value) => typeof value === "string" && value.length > 0)
       : [],
     systemManaged: Boolean(input.systemManaged),
+    updatedByParticipantKey:
+      typeof input.updatedByParticipantKey === "string"
+        ? input.updatedByParticipantKey
+        : undefined,
   };
 }
 
@@ -234,8 +242,14 @@ async function agentRevisionFilename(parentId, originalFilename, agentDisplayNam
 
 function serializeAccessConfig(config) {
   return {
+    ...(config.createdByParticipantKey
+      ? { createdByParticipantKey: config.createdByParticipantKey }
+      : {}),
     participantKeys: [...new Set(config.participantKeys ?? [])].sort(),
     systemManaged: Boolean(config.systemManaged),
+    ...(config.updatedByParticipantKey
+      ? { updatedByParticipantKey: config.updatedByParticipantKey }
+      : {}),
   };
 }
 
@@ -879,7 +893,11 @@ async function syncExistingWorkspaceEdits({
         sizeBytes: localStat.size,
         visibility: "TEAM",
         sourceType: "AGENT_REVISION_FILE",
-        accessConfigJson: record.accessConfigJson ?? undefined,
+        accessConfigJson: serializeAccessConfig({
+          ...parseAccessConfig(record.accessConfigJson),
+          createdByParticipantKey: agentParticipantKey,
+          updatedByParticipantKey: agentParticipantKey,
+        }),
       },
     });
 
@@ -980,7 +998,9 @@ async function createRecordsForNewWorkspaceEntries({
           visibility: "TEAM",
           sourceType: "AGENT_CREATED_FOLDER",
           accessConfigJson: serializeAccessConfig({
+            createdByParticipantKey: agentParticipantKey,
             participantKeys,
+            updatedByParticipantKey: agentParticipantKey,
           }),
         },
       });
@@ -1016,7 +1036,9 @@ async function createRecordsForNewWorkspaceEntries({
         visibility: "TEAM",
         sourceType: "AGENT_CREATED_FILE",
         accessConfigJson: serializeAccessConfig({
+          createdByParticipantKey: agentParticipantKey,
           participantKeys,
+          updatedByParticipantKey: agentParticipantKey,
         }),
       },
     });

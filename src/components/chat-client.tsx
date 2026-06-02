@@ -51,6 +51,17 @@ function truncateReplyPreview(value: string, maxLength = 120) {
   return `${compact.slice(0, maxLength - 1)}…`;
 }
 
+function authorLabelForMessage(
+  message: ChatMessage,
+  counterpart: { displayName: string } | null,
+) {
+  if (message.role === "USER") {
+    return "You";
+  }
+
+  return message.authorName ?? counterpart?.displayName ?? "Message";
+}
+
 type ReplyTarget = {
   authorName: string | null;
   content: string;
@@ -532,11 +543,7 @@ export function ChatClient({
                     className="message-reply-button"
                     onClick={() =>
                       setReplyTarget({
-                        authorName:
-                          row.message.authorName ??
-                          (row.message.role === "USER"
-                            ? "You"
-                            : counterpart?.displayName ?? "Message"),
+                        authorName: authorLabelForMessage(row.message, counterpart),
                         content: row.message.content,
                         id: row.message.id,
                       })
@@ -560,10 +567,7 @@ export function ChatClient({
                 }`}
               >
                 <div className="message-author-label">
-                  {row.message.authorName ??
-                    (row.message.role === "USER"
-                      ? "You"
-                      : counterpart?.displayName ?? "Message")}
+                  {authorLabelForMessage(row.message, counterpart)}
                 </div>
                 <div
                   className={`message-row ${
@@ -592,11 +596,7 @@ export function ChatClient({
                     className="message-reply-button"
                     onClick={() =>
                       setReplyTarget({
-                        authorName:
-                          row.message.authorName ??
-                          (row.message.role === "USER"
-                            ? "You"
-                            : counterpart?.displayName ?? "Message"),
+                        authorName: authorLabelForMessage(row.message, counterpart),
                         content: row.message.content,
                         id: row.message.id,
                       })

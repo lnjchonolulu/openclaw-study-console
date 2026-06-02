@@ -88,21 +88,18 @@ export default async function ChatPage({
     room.messages.reverse();
   }
 
-  const initialMessages =
-    room?.messages.length
-      ? serializeChatMessages(room.messages, user.id)
-      : [
+  const initialMessages = room?.messages.length
+    ? serializeChatMessages(room.messages, user.id)
+    : agentDmRoom
+      ? [
           {
             id: "welcome-agent",
             role: "AGENT" as const,
-            content: `Hi. You are now talking with ${
-              personDmRoom?.targetUser.displayName ??
-              agentDmRoom?.targetAgent.displayName ??
-              "your agent"
-            }.`,
+            content: `Hi. You are now talking with ${agentDmRoom.targetAgent.displayName}.`,
             createdAt: new Date().toISOString(),
           },
-        ];
+        ]
+      : [];
 
   return (
     <section className="chat-page">

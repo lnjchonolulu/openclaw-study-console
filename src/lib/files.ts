@@ -5,8 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
 
 type FileAccessConfig = {
+  createdByParticipantKey?: string;
   participantKeys: string[];
   systemManaged?: boolean;
+  updatedByParticipantKey?: string;
 };
 
 type FileRecordLite = {
@@ -23,6 +25,7 @@ type FileRecordLite = {
   parentId: string | null;
   sizeBytes: number | null;
   storageKey: string;
+  sourceType: string;
   systemKey: string | null;
   teamId: string | null;
   updatedAt: Date;
@@ -119,15 +122,31 @@ function parseAccessConfig(input: unknown): FileAccessConfig {
     : [];
 
   return {
+    createdByParticipantKey:
+      typeof (input as { createdByParticipantKey?: unknown }).createdByParticipantKey ===
+      "string"
+        ? (input as { createdByParticipantKey: string }).createdByParticipantKey
+        : undefined,
     participantKeys,
     systemManaged: Boolean((input as { systemManaged?: unknown }).systemManaged),
+    updatedByParticipantKey:
+      typeof (input as { updatedByParticipantKey?: unknown }).updatedByParticipantKey ===
+      "string"
+        ? (input as { updatedByParticipantKey: string }).updatedByParticipantKey
+        : undefined,
   };
 }
 
 function serializeAccessConfig(config: FileAccessConfig) {
   return {
+    ...(config.createdByParticipantKey
+      ? { createdByParticipantKey: config.createdByParticipantKey }
+      : {}),
     participantKeys: [...new Set(config.participantKeys)].sort(),
     systemManaged: Boolean(config.systemManaged),
+    ...(config.updatedByParticipantKey
+      ? { updatedByParticipantKey: config.updatedByParticipantKey }
+      : {}),
   };
 }
 
@@ -358,13 +377,20 @@ function mapEntry(
   );
   const canAccess = hasExplicitAccess(accessConfig, context.currentUserKey);
   const isLocked = accessConfig.participantKeys.length > 0 && !canAccess;
+  const inferredAgentActorKey = entry.sourceType.startsWith("AGENT_")
+    ? accessConfig.participantKeys.find((key) => key.startsWith("agent:"))
+    : undefined;
+  const createdByKey = accessConfig.createdByParticipantKey ?? inferredAgentActorKey;
+  const updatedByKey = accessConfig.updatedByParticipantKey ?? inferredAgentActorKey;
 
   return {
     accessCount: accessParticipants.length,
     accessParticipants,
     canAccess,
     createdAt: entry.createdAt.toISOString(),
-    createdByName: entry.owner?.displayName ?? "Unknown",
+    createdByName: createdByKey
+      ? participantNameForKey(createdByKey, context)
+      : entry.owner?.displayName ?? "Unknown",
     filename: entry.filename,
     id: entry.id,
     isFolder: entry.isFolder,
@@ -373,7 +399,9 @@ function mapEntry(
     mimeType: entry.mimeType,
     sizeBytes: entry.sizeBytes,
     updatedAt: entry.updatedAt.toISOString(),
-    updatedByName: entry.owner?.displayName ?? "Unknown",
+    updatedByName: updatedByKey
+      ? participantNameForKey(updatedByKey, context)
+      : entry.owner?.displayName ?? "Unknown",
   };
 }
 
@@ -471,6 +499,7 @@ export async function buildStudyFilesRuntimeContext({
       parentId: true,
       sizeBytes: true,
       storageKey: true,
+      sourceType: true,
       systemKey: true,
       teamId: true,
       updatedAt: true,
@@ -568,6 +597,7 @@ export async function listWorkspaceFolder(
         parentId: true,
         sizeBytes: true,
         storageKey: true,
+        sourceType: true,
         systemKey: true,
         teamId: true,
         updatedAt: true,
@@ -664,6 +694,7 @@ export async function createWorkspaceFolder({
       parentId: true,
       sizeBytes: true,
       storageKey: true,
+      sourceType: true,
       systemKey: true,
       teamId: true,
       updatedAt: true,
@@ -766,6 +797,7 @@ export async function uploadWorkspaceFiles({
             parentId: true,
             sizeBytes: true,
             storageKey: true,
+            sourceType: true,
             systemKey: true,
             teamId: true,
             updatedAt: true,
@@ -800,6 +832,7 @@ export async function uploadWorkspaceFiles({
             parentId: true,
             sizeBytes: true,
             storageKey: true,
+            sourceType: true,
             systemKey: true,
             teamId: true,
             updatedAt: true,
@@ -858,6 +891,7 @@ export async function updateWorkspaceFolderAccess(
       parentId: true,
       sizeBytes: true,
       storageKey: true,
+      sourceType: true,
       systemKey: true,
       teamId: true,
       updatedAt: true,
@@ -923,6 +957,7 @@ export async function renameWorkspaceEntry(userId: string, fileId: string, name:
       parentId: true,
       sizeBytes: true,
       storageKey: true,
+      sourceType: true,
       systemKey: true,
       teamId: true,
       updatedAt: true,

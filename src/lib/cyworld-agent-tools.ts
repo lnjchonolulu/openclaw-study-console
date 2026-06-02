@@ -233,6 +233,90 @@ function cleanMessage(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function aliasPattern(alias: string) {
+  return escapeRegExp(alias.trim().replace(/^@/, "").toLowerCase()).replace(/\s+/g, "\\s+");
+}
+
+function matchesRecipientCommand(text: string, aliases: string[]) {
+  const normalized = text.toLowerCase();
+
+  return aliases.some((alias) => {
+    const pattern = aliasPattern(alias);
+
+    if (!pattern) {
+      return false;
+    }
+
+    const boundaryStart = "(?:^|[^a-z0-9_-])";
+    const boundaryEnd = "(?=$|[^a-z0-9_-])";
+    const commandPatterns = [
+      `${boundaryStart}(?:ask|tell|message|dm|contact)\\s+@?${pattern}${boundaryEnd}`,
+      `${boundaryStart}ask\\s+(?:it|this|that|my\\s+message|the\\s+message)\\s+to\\s+@?${pattern}${boundaryEnd}`,
+      `${boundaryStart}check\\s+with\\s+@?${pattern}${boundaryEnd}`,
+      `${boundaryStart}send\\s+(?:it|this|that|my\\s+message|the\\s+message)\\s+to\\s+@?${pattern}${boundaryEnd}`,
+      `${boundaryStart}send\\s+to\\s+@?${pattern}${boundaryEnd}`,
+      `${boundaryStart}@?${pattern}(?:에게|한테)`,
+    ];
+
+    return commandPatterns.some((commandPattern) =>
+      new RegExp(commandPattern, "i").test(normalized),
+    );
+  });
+}
+
+async function inferExplicitDmRecipientUsername(text: string) {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    orderBy: {
+      username: "asc",
+    },
+    select: {
+      displayName: true,
+      username: true,
+    },
+  });
+
+  const matches = users.filter((user) => {
+    const aliases = [
+      user.username,
+      user.displayName,
+      user.displayName.split(/\s+/)[0] ?? "",
+    ].filter((value) => value.trim().length > 0);
+
+    return matchesRecipientCommand(trimmed, aliases);
+  });
+
+  return matches.length === 1 ? matches[0].username : null;
+}
+
+async function resolveDmTargetUsername({
+  objective,
+  requestedUsername,
+}: {
+  objective?: string;
+  requestedUsername: string;
+}) {
+  if (!objective?.trim()) {
+    return requestedUsername;
+  }
+
+  const inferredUsername = await inferExplicitDmRecipientUsername(objective);
+
+  return inferredUsername ?? requestedUsername;
+}
+
 function cleanEmail(value: unknown) {
   if (typeof value !== "string") {
     return "";
@@ -1057,11 +1141,15 @@ export async function handleCyWorldAgentToolCall({
     });
   }
 
-  const toUsername = cleanUsername(args.toUsername);
+  const requestedToUsername = cleanUsername(args.toUsername);
+  const toUsername = await resolveDmTargetUsername({
+    objective,
+    requestedUsername: requestedToUsername,
+  });
   const message = cleanMessage(args.message);
   const expectReply = args.expectReply === true;
 
-  if (!toUsername || !message) {
+  if (!requestedToUsername || !toUsername || !message) {
     return JSON.stringify({
       ok: false,
       reason: "missing_toUsername_or_message",
