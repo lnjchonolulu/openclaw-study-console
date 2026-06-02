@@ -112,7 +112,10 @@ export function AppShell({
   const [participants, setParticipants] = useState(teamParticipants);
   const [isNewDmOpen, setIsNewDmOpen] = useState(false);
   const [isTeamChannelModalOpen, setIsTeamChannelModalOpen] = useState(false);
+  const [teamAgentMode, setTeamAgentMode] =
+    useState<TeamChannelSummary["agentMode"]>("ASSISTIVE");
   const [teamChannelName, setTeamChannelName] = useState("");
+  const [teamChannelPurpose, setTeamChannelPurpose] = useState("");
   const [teamInviteKeys, setTeamInviteKeys] = useState<string[]>([]);
   const [channelMenuId, setChannelMenuId] = useState<string | null>(null);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
@@ -286,7 +289,9 @@ export function AppShell({
   }
 
   function resetTeamChannelModal() {
+    setTeamAgentMode("ASSISTIVE");
     setTeamChannelName("");
+    setTeamChannelPurpose("");
     setTeamInviteKeys([]);
     setEditingChannelId(null);
     setTeamModalMode("create");
@@ -316,7 +321,9 @@ export function AppShell({
     const detail = (await response.json()) as TeamChannelDetail;
 
     setTeamModalMode(mode);
+    setTeamAgentMode(detail.agentMode);
     setTeamChannelName(detail.title);
+    setTeamChannelPurpose(detail.purpose ?? "");
     setTeamInviteKeys(
       detail.members
         .filter((member) => !(member.kind === "user" && member.id === user.id))
@@ -353,7 +360,9 @@ export function AppShell({
         body: JSON.stringify({
           invitedAgentIds,
           invitedUserIds,
+          agentMode: teamAgentMode,
           name: trimmedName,
+          purpose: teamChannelPurpose.trim(),
         }),
       },
     );
@@ -669,20 +678,55 @@ export function AppShell({
               </p>
             </div>
             {teamModalMode !== "members" ? (
-              <label className="split-label">
-                Channel Name
-                <span className="team-modal-input-wrap">
-                  <input
-                    className="team-modal-input"
-                    placeholder="e.g. planning, design review, launch prep"
-                    value={teamChannelName}
-                    onChange={(event) => {
-                      setTeamChannelName(event.target.value);
-                    }}
-                    type="text"
-                  />
-                </span>
-              </label>
+              <div className="team-modal-field-grid">
+                <label className="split-label">
+                  Channel Name
+                  <span className="team-modal-input-wrap">
+                    <input
+                      className="team-modal-input"
+                      placeholder="e.g. planning, design review, launch prep"
+                      value={teamChannelName}
+                      onChange={(event) => {
+                        setTeamChannelName(event.target.value);
+                      }}
+                      type="text"
+                    />
+                  </span>
+                </label>
+                <label className="split-label">
+                  Purpose
+                  <span className="team-modal-input-wrap team-modal-textarea-wrap">
+                    <textarea
+                      className="team-modal-input team-modal-textarea"
+                      placeholder="What is this channel for?"
+                      value={teamChannelPurpose}
+                      onChange={(event) => {
+                        setTeamChannelPurpose(event.target.value);
+                      }}
+                      rows={2}
+                    />
+                  </span>
+                </label>
+                <label className="split-label">
+                  Agent Participation
+                  <span className="team-modal-input-wrap">
+                    <select
+                      className="team-modal-input"
+                      value={teamAgentMode}
+                      onChange={(event) => {
+                        setTeamAgentMode(
+                          event.target.value as TeamChannelSummary["agentMode"],
+                        );
+                      }}
+                    >
+                      <option value="MANUAL">Manual only</option>
+                      <option value="MENTIONED">When mentioned</option>
+                      <option value="ASSISTIVE">Assistive</option>
+                      <option value="PROACTIVE">Proactive</option>
+                    </select>
+                  </span>
+                </label>
+              </div>
             ) : null}
             {teamModalMode !== "rename" ? (
               <div className="team-modal-section">

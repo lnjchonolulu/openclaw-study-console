@@ -17,13 +17,16 @@ export type TeamParticipant = {
 };
 
 export type TeamChannelSummary = {
+  agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
   createdBy: string | null;
   id: string;
   memberCount: number;
+  purpose: string | null;
   title: string;
 };
 
 export type TeamChannelDetail = {
+  agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
   createdBy: string | null;
   id: string;
   members: TeamParticipant[];
@@ -41,6 +44,7 @@ export type TeamChannelDetail = {
     senderKey: string;
     userId: string;
   }[];
+  purpose: string | null;
   title: string;
 };
 
@@ -379,9 +383,11 @@ export async function listTeamChannels(userId: string): Promise<TeamChannelSumma
   });
 
   return rooms.map((room) => ({
+    agentMode: room.agentMode,
     createdBy: room.ownerUserId,
     id: room.id,
     memberCount: room.members.length + room.agents.length,
+    purpose: room.purpose,
     title: room.name,
   }));
 }
@@ -515,6 +521,7 @@ export async function getTeamChannelDetail(
     }
 
     return {
+      agentMode: fallbackRoom.agentMode,
       createdBy: fallbackRoom.ownerUserId,
       id: fallbackRoom.id,
       members: buildChannelParticipants({
@@ -542,11 +549,13 @@ export async function getTeamChannelDetail(
         senderKey: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
         userId: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
       })),
+      purpose: fallbackRoom.purpose,
       title: fallbackRoom.name,
     };
   }
 
   return {
+    agentMode: room.agentMode,
     createdBy: room.ownerUserId,
     id: room.id,
     members: buildChannelParticipants({
@@ -574,6 +583,7 @@ export async function getTeamChannelDetail(
       senderKey: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
       userId: message.userId ?? `agent:${message.agentId ?? "unknown"}`,
     })),
+    purpose: room.purpose,
     title: room.name,
   };
 }
@@ -583,6 +593,8 @@ export async function createTeamChannel(
   name: string,
   invitedUserIds: string[],
   invitedAgentIds: string[],
+  purpose?: string | null,
+  agentMode?: TeamChannelSummary["agentMode"],
 ) {
   const context = await getTeamContext(userId);
 
@@ -605,6 +617,8 @@ export async function createTeamChannel(
     data: {
       type: "TEAM",
       name,
+      purpose: purpose?.trim() || null,
+      agentMode: agentMode ?? "ASSISTIVE",
       ownerUserId: userId,
       teamId: context.team.id,
       members: {
@@ -636,6 +650,8 @@ export async function updateTeamChannel(
   name: string,
   invitedUserIds: string[],
   invitedAgentIds: string[],
+  purpose?: string | null,
+  agentMode?: TeamChannelSummary["agentMode"],
 ) {
   const context = await getTeamContext(userId);
 
@@ -680,6 +696,8 @@ export async function updateTeamChannel(
     },
     data: {
       name,
+      purpose: purpose?.trim() || null,
+      ...(agentMode ? { agentMode } : {}),
     },
   });
 

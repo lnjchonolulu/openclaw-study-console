@@ -16,6 +16,29 @@ type TeamAgentDecision =
       reason?: string;
     };
 
+type DispatchCandidate = {
+  roomAgent: {
+    agent: {
+      displayName: string;
+      id: string;
+      openclawAgentId: string;
+      personaSummary?: string | null;
+      soulConfigJson?: unknown;
+      user: {
+        displayName: string;
+        timezone?: string | null;
+        username: string;
+      };
+    };
+    lastInvokedAt?: Date | null;
+    lastSpokeAt?: Date | null;
+    mutedUntil?: Date | null;
+    roleNote?: string | null;
+  };
+  reason: string;
+  strength: "explicit" | "relevant" | "ambient";
+};
+
 function extractJsonObject(value: string) {
   const trimmed = value.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -28,6 +51,150 @@ function extractJsonObject(value: string) {
   }
 
   return candidate.slice(firstBrace, lastBrace + 1);
+}
+
+function normalizeText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function aliasPattern(alias: string) {
+  return escapeRegExp(alias.trim().replace(/^@/, "").toLowerCase()).replace(/\s+/g, "\\s+");
+}
+
+function textMentionsAnyAlias(text: string, aliases: string[]) {
+  const normalized = normalizeText(text);
+
+  return aliases.some((alias) => {
+    const pattern = aliasPattern(alias);
+
+    if (!pattern) {
+      return false;
+    }
+
+    return new RegExp(`(?:^|[^a-z0-9_-])@?${pattern}(?=$|[^a-z0-9_-])`, "i").test(
+      normalized,
+    );
+  });
+}
+
+function aliasesForAgent(agent: {
+  displayName: string;
+  openclawAgentId: string;
+  user: {
+    displayName: string;
+    username: string;
+  };
+}) {
+  return [
+    agent.displayName,
+    agent.openclawAgentId,
+    `${agent.user.username} agent`,
+    `${agent.user.username}'s agent`,
+    `${agent.user.displayName} agent`,
+    `${agent.user.displayName}'s agent`,
+    `${agent.user.username}-agent`,
+  ].filter(Boolean);
+}
+
+function aliasesForOwner(agent: {
+  user: {
+    displayName: string;
+    username: string;
+  };
+}) {
+  return [
+    agent.user.username,
+    agent.user.displayName,
+    agent.user.displayName.split(/\s+/)[0] ?? "",
+  ].filter(Boolean);
+}
+
+function isAgentMuted(candidate: {
+  mutedUntil?: Date | null;
+}) {
+  return candidate.mutedUntil ? candidate.mutedUntil.getTime() > Date.now() : false;
+}
+
+function minutesSince(value?: Date | null) {
+  if (!value) {
+    return Infinity;
+  }
+
+  return (Date.now() - value.getTime()) / 1000 / 60;
+}
+
+function selectDispatchCandidates({
+  room,
+  triggeringMessage,
+}: {
+  room: {
+    agentMode: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
+    agents: DispatchCandidate["roomAgent"][];
+  };
+  triggeringMessage: {
+    content: string;
+  };
+}) {
+  const content = triggeringMessage.content;
+  const candidates: DispatchCandidate[] = [];
+
+  for (const roomAgent of room.agents) {
+    if (isAgentMuted(roomAgent)) {
+      continue;
+    }
+
+    const agentMentioned = textMentionsAnyAlias(content, aliasesForAgent(roomAgent.agent));
+    const ownerMentioned = textMentionsAnyAlias(content, aliasesForOwner(roomAgent.agent));
+
+    if (agentMentioned) {
+      candidates.push({
+        roomAgent,
+        reason: "The message explicitly mentions this agent.",
+        strength: "explicit",
+      });
+      continue;
+    }
+
+    if (ownerMentioned) {
+      candidates.push({
+        roomAgent,
+        reason:
+          "The message mentions this agent's owner; the agent may help as that owner's personal agent without speaking as the owner.",
+        strength: "relevant",
+      });
+      continue;
+    }
+
+    if (room.agentMode === "ASSISTIVE" || room.agentMode === "PROACTIVE") {
+      const recentlyInvoked = minutesSince(roomAgent.lastInvokedAt) < 2;
+
+      if (!recentlyInvoked) {
+        candidates.push({
+          roomAgent,
+          reason:
+            "The channel allows assistive agent participation; speak only if the contribution is clearly useful.",
+          strength: "ambient",
+        });
+      }
+    }
+  }
+
+  if (room.agentMode === "MANUAL") {
+    return candidates.filter((candidate) => candidate.strength === "explicit");
+  }
+
+  if (room.agentMode === "MENTIONED") {
+    return candidates.filter((candidate) => candidate.strength !== "ambient");
+  }
+
+  return candidates.sort((left, right) => {
+    const weight = { explicit: 0, relevant: 1, ambient: 2 };
+    return weight[left.strength] - weight[right.strength];
+  });
 }
 
 function parseTeamAgentDecision(value: string): TeamAgentDecision {
@@ -143,7 +310,10 @@ export async function runTeamAgentDispatch({
             },
           },
         },
-        take: 6,
+        orderBy: {
+          joinedAt: "asc",
+        },
+        take: 8,
       },
       members: {
         include: {
@@ -198,8 +368,13 @@ export async function runTeamAgentDispatch({
   const createdMessages = [];
   const recentLog = formatRecentMessages([...recentMessages].reverse());
   const memberList = formatRoomMembers(room);
+  const dispatchCandidates = selectDispatchCandidates({
+    room,
+    triggeringMessage,
+  }).slice(0, room.agentMode === "PROACTIVE" ? 6 : 4);
 
-  for (const roomAgent of room.agents) {
+  for (const candidate of dispatchCandidates) {
+    const roomAgent = candidate.roomAgent;
     const agent = roomAgent.agent;
     const instructions = buildAgentRuntimeInstructions({
       agentDisplayName: agent.displayName,
@@ -220,8 +395,14 @@ export async function runTeamAgentDispatch({
       instructions: `${instructions}
 
 You are participating in a CyWorld Team Chat channel.
+- Channel name: ${room.name}
+- Channel purpose: ${room.purpose?.trim() || "No explicit purpose has been set yet."}
+- Channel agent participation mode: ${room.agentMode}
+- Why CyWorld is asking you to evaluate this turn: ${candidate.reason}
+- Your room role note: ${roomAgent.roleNote?.trim() || "No special room-specific role note."}
 - Decide whether this agent should speak now or stay quiet.
-- Speak only if you were directly addressed, mentioned, asked for input, or you can add clear value.
+- If the participation reason is ambient, speak only when your contribution is clearly useful and not duplicative.
+- If the message is about your owner, help the collaboration from your owner's perspective, but do not impersonate your owner.
 - If you speak, write the exact message that should appear in the team channel.
 - If you need to DM or schedule a DM to a human participant, use the provided CyWorld tool, then decide whether a channel message is still useful.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, or implementation details.
@@ -253,6 +434,19 @@ Should ${agent.displayName} speak now?`,
         }),
     });
 
+    await prisma.roomAgent.update({
+      where: {
+        roomId_agentId: {
+          agentId: roomAgent.agent.id,
+          roomId,
+        },
+      },
+      data: {
+        lastInvokedAt: new Date(),
+        lastSeenMessageId: triggeringMessage.id,
+      },
+    }).catch(() => null);
+
     const decision = parseTeamAgentDecision(result.assistantText);
 
     if (decision.action !== "speak") {
@@ -270,6 +464,18 @@ Should ${agent.displayName} speak now?`,
         agent: true,
       },
     });
+
+    await prisma.roomAgent.update({
+      where: {
+        roomId_agentId: {
+          agentId: roomAgent.agent.id,
+          roomId,
+        },
+      },
+      data: {
+        lastSpokeAt: created.createdAt,
+      },
+    }).catch(() => null);
 
     createdMessages.push({
       author: created.agent?.displayName ?? agent.displayName,

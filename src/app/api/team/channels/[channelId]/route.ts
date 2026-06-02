@@ -14,11 +14,21 @@ export async function PATCH(
 
   const { channelId } = await params;
   const body = (await request.json()) as {
+    agentMode?: "MANUAL" | "MENTIONED" | "ASSISTIVE" | "PROACTIVE";
     invitedAgentIds?: string[];
     invitedUserIds?: string[];
     name?: string;
+    purpose?: string;
   };
   const name = body.name?.trim();
+  const purpose = body.purpose?.trim() ?? "";
+  const agentMode =
+    body.agentMode === "MANUAL" ||
+    body.agentMode === "MENTIONED" ||
+    body.agentMode === "ASSISTIVE" ||
+    body.agentMode === "PROACTIVE"
+      ? body.agentMode
+      : undefined;
   const invitedAgentIds = Array.isArray(body.invitedAgentIds) ? body.invitedAgentIds : [];
   const invitedUserIds = Array.isArray(body.invitedUserIds) ? body.invitedUserIds : [];
 
@@ -32,6 +42,8 @@ export async function PATCH(
     name,
     invitedUserIds,
     invitedAgentIds,
+    purpose,
+    agentMode,
   );
 
   if (!room) {

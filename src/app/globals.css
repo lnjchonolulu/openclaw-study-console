@@ -1940,6 +1940,11 @@ button.primary-button {
   padding: 0;
 }
 
+.team-modal-field-grid {
+  display: grid;
+  gap: 14px;
+}
+
 .team-modal-input-wrap {
   display: flex;
   align-items: center;
@@ -1967,6 +1972,16 @@ button.primary-button {
 
 .team-modal-input::placeholder {
   color: rgba(17, 17, 17, 0.38);
+}
+
+.team-modal-textarea-wrap {
+  align-items: stretch;
+  min-height: 88px;
+  padding-block: 12px;
+}
+
+.team-modal-textarea {
+  resize: vertical;
 }
 
 .team-invite-card {

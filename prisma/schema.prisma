@@ -46,6 +46,13 @@ enum RoomAgentRole {
   COLLABORATOR
 }
 
+enum TeamAgentMode {
+  MANUAL
+  MENTIONED
+  ASSISTIVE
+  PROACTIVE
+}
+
 enum ScheduledMessageStatus {
   PENDING
   SENT
@@ -178,6 +185,9 @@ model Room {
   id                String             @id @default(cuid())
   type              RoomType
   name              String             @default("Untitled room")
+  purpose           String?
+  agentMode         TeamAgentMode      @default(ASSISTIVE)
+  defaultReportMode String             @default("CHANNEL")
   teamId            String?
   ownerUserId       String?
   createdAt         DateTime           @default(now())
@@ -357,9 +367,14 @@ model RoomAgent {
   roomId         String
   agentId        String
   role           RoomAgentRole @default(COLLABORATOR)
+  roleNote       String?
   canRespond     Boolean       @default(true)
   canUseFiles    Boolean       @default(true)
   canBeMentioned Boolean       @default(true)
+  lastSeenMessageId String?
+  lastInvokedAt  DateTime?
+  lastSpokeAt    DateTime?
+  mutedUntil     DateTime?
   joinedAt       DateTime      @default(now())
   room           Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
   agent          Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
