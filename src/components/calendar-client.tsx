@@ -501,6 +501,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
           onClick={() => {
             if (!isSaving && !isDeleting) {
               setOpenTimePicker(null);
+              setIsDeletePromptOpen(false);
               setIsEventModalOpen(false);
             }
           }}
@@ -675,39 +676,6 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   ))}
                 </div>
               </div>
-              {modalMode === "edit" && isDeletePromptOpen ? (
-                <div className="calendar-delete-panel">
-                  <div>
-                    <strong>Delete this event?</strong>
-                    <span>
-                      Remove it only from your calendar, or decline the RSVP so
-                      others see that you are not attending.
-                    </span>
-                  </div>
-                  <div className="calendar-delete-panel-actions">
-                    <button
-                      className="secondary-button"
-                      disabled={isDeleting}
-                      onClick={() => {
-                        void deleteEvent("HIDE");
-                      }}
-                      type="button"
-                    >
-                      Delete from my calendar
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={isDeleting}
-                      onClick={() => {
-                        void deleteEvent("DECLINE");
-                      }}
-                      type="button"
-                    >
-                      Decline RSVP
-                    </button>
-                  </div>
-                </div>
-              ) : null}
             </div>
             <div className="team-modal-actions calendar-modal-actions">
               <div>
@@ -716,7 +684,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                     className="secondary-button calendar-delete-button"
                     disabled={isSaving || isDeleting}
                     onClick={() => {
-                      setIsDeletePromptOpen((current) => !current);
+                      setIsDeletePromptOpen(true);
                     }}
                     type="button"
                   >
@@ -730,6 +698,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                   disabled={isSaving || isDeleting}
                   onClick={() => {
                     setOpenTimePicker(null);
+                    setIsDeletePromptOpen(false);
                     setIsEventModalOpen(false);
                   }}
                   type="button"
@@ -751,6 +720,67 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
                         : "Create Event"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {modalMode === "edit" && isDeletePromptOpen ? (
+        <div
+          className="team-modal-backdrop calendar-delete-backdrop"
+          onClick={() => {
+            if (!isDeleting) {
+              setIsDeletePromptOpen(false);
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            aria-modal="true"
+            className="content-card calendar-delete-dialog"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            role="dialog"
+          >
+            <div className="calendar-delete-dialog-copy">
+              <h2>Delete this event?</h2>
+              <p>
+                Remove it only from your calendar, or decline the RSVP so others
+                see that you are not attending.
+              </p>
+            </div>
+            <div className="calendar-delete-dialog-actions">
+              <button
+                className="secondary-button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setIsDeletePromptOpen(false);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="secondary-button"
+                disabled={isDeleting}
+                onClick={() => {
+                  void deleteEvent("HIDE");
+                }}
+                type="button"
+              >
+                Delete from my calendar
+              </button>
+              <button
+                className="primary-button"
+                disabled={isDeleting}
+                onClick={() => {
+                  void deleteEvent("DECLINE");
+                }}
+                type="button"
+              >
+                {isDeleting ? "Deleting..." : "Decline RSVP"}
+              </button>
             </div>
           </div>
         </div>

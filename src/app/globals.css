@@ -1451,37 +1451,6 @@ button.primary-button {
   overflow-y: auto;
 }
 
-.calendar-delete-panel {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid rgba(17, 17, 17, 0.12);
-  border-radius: 16px;
-  background: rgba(17, 17, 17, 0.035);
-}
-
-.calendar-delete-panel div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.calendar-delete-panel strong {
-  color: var(--foreground);
-  font-size: 0.95rem;
-}
-
-.calendar-delete-panel span {
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.calendar-delete-panel-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .team-modal-actions.calendar-modal-actions {
   flex: 0 0 auto;
   display: flex;
@@ -1500,6 +1469,42 @@ button.primary-button {
 
 .calendar-delete-button {
   color: #9f1d1d;
+}
+
+.calendar-delete-backdrop {
+  z-index: 45;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.calendar-delete-dialog {
+  display: grid;
+  gap: 22px;
+  width: min(500px, calc(100vw - 40px));
+  padding: 24px;
+}
+
+.calendar-delete-dialog-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-delete-dialog-copy h2 {
+  color: var(--foreground);
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+
+.calendar-delete-dialog-copy p {
+  color: var(--muted);
+  font-size: 0.96rem;
+  line-height: 1.5;
+}
+
+.calendar-delete-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .team-grid {
