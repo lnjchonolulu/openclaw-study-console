@@ -76,10 +76,15 @@ function toTokenJson(value: unknown): GoogleTokenJson {
 async function googleJson<T>(url: string, init: RequestInit) {
   const response = await fetch(url, init);
   const text = await response.text();
-  const data = text ? (JSON.parse(text) as T & { error?: string; error_description?: string }) : null;
+  const data = text
+    ? (JSON.parse(text) as T & { error?: unknown; error_description?: string })
+    : null;
 
   if (!response.ok) {
-    const message = data?.error_description || data?.error || response.statusText;
+    const error = data?.error;
+    const message =
+      data?.error_description ||
+      (typeof error === "string" ? error : error ? JSON.stringify(error) : response.statusText);
     throw new Error(`Google API request failed: ${message}`);
   }
 
