@@ -1,3 +1,5 @@
+import { AgentTaskStatus, type Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 function formatTaskStatus(status: string) {
@@ -17,18 +19,26 @@ export async function buildRecentActionReceiptContext({
   roomId?: string | null;
   requesterUserId?: string | null;
 }) {
+  const clauses: Prisma.AgentTaskWhereInput[] = [];
+
+  if (roomId) {
+    clauses.push({ sourceRoomId: roomId });
+  }
+
+  if (requesterUserId) {
+    clauses.push({ requesterUserId });
+  }
+
+  clauses.push({
+    status: {
+      in: [AgentTaskStatus.OPEN, AgentTaskStatus.WAITING],
+    },
+  });
+
   const tasks = await prisma.agentTask.findMany({
     where: {
       agentId: agentOpenclawId,
-      OR: [
-        roomId ? { sourceRoomId: roomId } : undefined,
-        requesterUserId ? { requesterUserId } : undefined,
-        {
-          status: {
-            in: ["OPEN", "WAITING"],
-          },
-        },
-      ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause)),
+      OR: clauses,
     },
     orderBy: {
       updatedAt: "desc",
