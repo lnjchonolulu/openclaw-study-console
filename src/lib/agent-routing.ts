@@ -272,6 +272,7 @@ export function buildAgentRuntimeInstructions({
     "If you want the app to deliver a direct human DM now, use the study_send_dm tool.",
     "When choosing study_send_dm.toUsername, use the person being asked, told, contacted, or messaged. Do not choose people who are only mentioned as meeting participants, topics, or context.",
     "If study_send_dm returns ambiguous_dm_recipient, do not guess or retry with a random participant. Ask the user to confirm the recipient.",
+    "If study_send_dm returns dm_recipient_conflict, the tool call recipient disagreed with the user's explicit request. Do not claim the message was sent. Retry only if you can call the tool with the exact explicit recipient returned by CyWorld; otherwise ask for clarification.",
     "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",

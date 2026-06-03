@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 
 const prisma = new PrismaClient();
-const TARGET_USERNAME = "hyungjun";
 const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
 const STUDY_FILES_DIRNAME = "CYWORLD_DRIVE";
 const MANAGED_INDEX = ".study-console-managed.json";
@@ -16,12 +15,33 @@ const FILES_MANAGED_START = "<!-- BEGIN:study-console-files -->";
 const FILES_MANAGED_END = "<!-- END:study-console-files -->";
 const SYNC_MTIME_TOLERANCE_MS = 1500;
 
-const agentsFilesBlock = `${FILES_MANAGED_START}
+function targetAgentId() {
+  if (process.argv.includes("--all")) {
+    return "__all__";
+  }
+
+  const agentFlagIndex = process.argv.findIndex((arg) => arg === "--agent" || arg === "--agent-id");
+  const agentFlagValue = agentFlagIndex >= 0 ? process.argv[agentFlagIndex + 1] : undefined;
+  const positionalValue = process.argv
+    .slice(2)
+    .find((arg) => !arg.startsWith("-") && arg !== "--");
+
+  return (
+    agentFlagValue ||
+    process.env.CYWORLD_DRIVE_SYNC_AGENT ||
+    process.env.OPENCLAW_AGENT ||
+    positionalValue ||
+    "hyungjun"
+  ).trim();
+}
+
+function buildAgentsFilesBlock({ agentDisplayName, username }) {
+  return `${FILES_MANAGED_START}
 ## CyWorld Drive
 
 CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In conversation, users may call it "Drive", "CyWorld Drive", "the shared folder", "shared files", "the interface files", "directory", or a visible path such as \`/Onboarding\`.
 
-For this agent, CyWorld Drive is mirrored into this OpenClaw workspace at:
+For ${agentDisplayName}, CyWorld Drive is mirrored into this OpenClaw workspace at:
 
 - Workspace root: \`${STUDY_FILES_DIRNAME}/\`
 - Manifest: \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`
@@ -29,7 +49,7 @@ For this agent, CyWorld Drive is mirrored into this OpenClaw workspace at:
 Critical path rule:
 - CyWorld Drive root maps directly to \`${STUDY_FILES_DIRNAME}/\`.
 - UI path \`/\` maps to \`${STUDY_FILES_DIRNAME}/\`.
-- UI path \`/Personals/hyungjun\` maps to \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`.
+- UI path \`/Personals/${username}\` maps to \`${STUDY_FILES_DIRNAME}/Personals/${username}\`.
 - Do not invent or insert a \`home\` segment. \`${STUDY_FILES_DIRNAME}/home\` is a legacy path and is no longer the Drive root.
 
 Before answering requests about shared files or folders:
@@ -48,13 +68,15 @@ When you create, edit, rename, or delete files under \`${STUDY_FILES_DIRNAME}/\`
 Important file policy:
 - CyWorld Drive is a shared drive, not a live collaborative editor.
 - If you revise an existing file, the sync job will upload your revision as a new file instead of replacing the original.
-- Prefer naming revised outputs clearly, such as \`Original Name - HyungjunBot revision.ext\` or \`Original Name - edited by HyungjunBot.ext\`.
+- Prefer naming revised outputs clearly, such as \`Original Name - ${agentDisplayName} revision.ext\` or \`Original Name - edited by ${agentDisplayName}.ext\`.
 - Only delete or rename files when the user clearly asked you to change the shared drive entry itself.
 
 If a user refers to a folder that is not listed in the manifest, say you cannot find it in the visible CyWorld Drive. If a folder is listed as no access, say you can see that it exists but do not have access to its contents.
 ${FILES_MANAGED_END}`;
+}
 
-const toolsFilesBlock = `${FILES_MANAGED_START}
+function buildToolsFilesBlock({ username }) {
+  return `${FILES_MANAGED_START}
 ### CyWorld Drive
 
 Use \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` as the source of truth for CyWorld Drive.
@@ -76,11 +98,12 @@ Sync behavior:
 
 Path safety:
 - CyWorld Drive root maps directly to \`${STUDY_FILES_DIRNAME}/\`.
-- Use \`${STUDY_FILES_DIRNAME}/Personals/hyungjun\`, not \`${STUDY_FILES_DIRNAME}/home/Personals/hyungjun\`.
+- Use \`${STUDY_FILES_DIRNAME}/Personals/${username}\`, not \`${STUDY_FILES_DIRNAME}/home/Personals/${username}\`.
 - \`${STUDY_FILES_DIRNAME}/home\` is a legacy path and should not be used.
 
 Do not look for CyWorld Drive files outside \`${STUDY_FILES_DIRNAME}/\` unless the user explicitly asks about non-CyWorld/OpenClaw workspace files.
 ${FILES_MANAGED_END}`;
+}
 
 function storageRoot() {
   return (
@@ -1228,10 +1251,11 @@ async function mirrorTree({
   }
 }
 
-async function syncAgentMarkdown(workspacePath) {
+async function syncAgentMarkdown(workspacePath, user) {
+  const agentDisplayName = user.agent.displayName || `${user.username}'s agent`;
   const files = [
-    ["AGENTS.md", agentsFilesBlock],
-    ["TOOLS.md", toolsFilesBlock],
+    ["AGENTS.md", buildAgentsFilesBlock({ agentDisplayName, username: user.username })],
+    ["TOOLS.md", buildToolsFilesBlock({ username: user.username })],
   ];
 
   for (const [fileName, block] of files) {
@@ -1266,20 +1290,7 @@ async function backfillMissingMimeTypes(records) {
   return updates.length;
 }
 
-async function main() {
-  const user = await prisma.user.findUnique({
-    where: {
-      username: TARGET_USERNAME,
-    },
-    include: {
-      agent: true,
-    },
-  });
-
-  if (!user?.agent) {
-    throw new Error(`No agent found for ${TARGET_USERNAME}.`);
-  }
-
+async function syncUserDrive(user) {
   const workspacePath = expandHome(
     user.agent.workspacePath || path.join(OPENCLAW_ROOT, `workspace-${user.agent.openclawAgentId}`),
   );
@@ -1337,7 +1348,7 @@ async function main() {
   const nextManagedEntries = [];
 
   await mkdir(studyFilesRoot, { recursive: true });
-  await syncAgentMarkdown(workspacePath);
+  await syncAgentMarkdown(workspacePath, user);
   const migrationLogs = [
     ...(await migrateLegacyHomeMirror(studyFilesRoot, user.agent.openclawAgentId)),
     ...(await restoreQuarantinedRootEntries(studyFilesRoot, user.agent.openclawAgentId)),
@@ -1426,6 +1437,64 @@ async function main() {
   }
   if (mimeBackfillCount > 0) {
     console.log(`Backfilled MIME types: ${mimeBackfillCount}`);
+  }
+}
+
+async function usersForTarget(target) {
+  if (target === "__all__") {
+    return prisma.user.findMany({
+      where: {
+        status: "ACTIVE",
+        agent: {
+          isNot: null,
+        },
+      },
+      include: {
+        agent: true,
+      },
+      orderBy: {
+        username: "asc",
+      },
+    });
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        {
+          username: target,
+        },
+        {
+          agent: {
+            openclawAgentId: target,
+          },
+        },
+      ],
+    },
+    include: {
+      agent: true,
+    },
+  });
+
+  return user?.agent ? [user] : [];
+}
+
+async function main() {
+  const target = targetAgentId();
+  const users = await usersForTarget(target);
+
+  if (users.length === 0) {
+    throw new Error(`No CyWorld users with OpenClaw agents found for ${target}.`);
+  }
+
+  console.log(
+    target === "__all__"
+      ? `Syncing CyWorld Drive for ${users.length} agents`
+      : `Syncing CyWorld Drive for ${users[0].agent.openclawAgentId}`,
+  );
+
+  for (const user of users) {
+    await syncUserDrive(user);
   }
 }
 

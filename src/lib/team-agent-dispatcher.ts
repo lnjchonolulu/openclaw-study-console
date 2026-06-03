@@ -1,4 +1,5 @@
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -648,11 +649,17 @@ async function askAgentForTeamProposal({
     ownerUsername: agent.user.username,
     personaSummary: agent.personaSummary,
   });
+  const actionReceiptContext = await buildRecentActionReceiptContext({
+    agentOpenclawId: agent.openclawAgentId,
+    roomId: room.id,
+  });
 
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
     conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
-    instructions: `${instructions}
+    instructions: `${[instructions, actionReceiptContext]
+      .filter((part): part is string => Boolean(part?.trim()))
+      .join("\n\n")}
 
 You are participating in a CyWorld Team Chat channel.
 - Channel name: ${room.name}

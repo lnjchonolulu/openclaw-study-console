@@ -282,8 +282,7 @@ type DmRecipientResolution =
   | {
       explicitUsername: string;
       requestedUsername: string;
-      status: "corrected";
-      toUsername: string;
+      status: "conflict";
     }
   | {
       candidates: string[];
@@ -368,8 +367,7 @@ async function resolveDmTargetUsername({
       return {
         explicitUsername,
         requestedUsername,
-        status: "corrected",
-        toUsername: explicitUsername,
+        status: "conflict",
       };
     }
 
@@ -752,10 +750,16 @@ async function handleCalendarCreateTool({
   args,
   objective,
   requesterUserId,
+  senderAgentOpenclawId,
+  sourceRoomId,
+  taskId,
 }: {
   args: Record<string, unknown>;
   objective?: string;
   requesterUserId?: string;
+  senderAgentOpenclawId?: string;
+  sourceRoomId?: string;
+  taskId?: string | null;
 }) {
   if (!requesterUserId) {
     return JSON.stringify({
@@ -842,6 +846,57 @@ async function handleCalendarCreateTool({
       ok: false,
       reason: "calendar_event_create_failed",
       error: createError,
+    });
+  }
+
+  const eventSummary = `Created CyWorld Calendar event "${created.title}" from ${formatDateTimeInTimeZone(created.startAt, requesterTimezone, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })} to ${formatDateTimeInTimeZone(created.endAt, requesterTimezone, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })}.`;
+
+  if (taskId) {
+    await prisma.agentTaskEvent.create({
+      data: {
+        taskId,
+        type: "SYSTEM_NOTE",
+        summary: eventSummary,
+        payload: {
+          calendarEventId: created.id,
+          invitedUsernames: invitees.map((invitee) => invitee.username),
+        },
+      },
+    });
+  } else if (senderAgentOpenclawId) {
+    await prisma.agentTask.create({
+      data: {
+        agentId: senderAgentOpenclawId,
+        kind: "calendar_event",
+        objective: objective?.trim() || `Create calendar event: ${created.title}`,
+        requesterUserId,
+        sourceRoomId: sourceRoomId ?? null,
+        status: "COMPLETED",
+        resultSummary: eventSummary,
+        title: `Create calendar event "${created.title}"`,
+        events: {
+          create: [
+            {
+              type: "USER_REQUEST",
+              summary: objective?.trim() || `Create calendar event: ${created.title}`,
+            },
+            {
+              type: "SYSTEM_NOTE",
+              summary: eventSummary,
+              payload: {
+                calendarEventId: created.id,
+                invitedUsernames: invitees.map((invitee) => invitee.username),
+              },
+            },
+          ],
+        },
+      },
     });
   }
 
@@ -1163,6 +1218,9 @@ export async function handleCyWorldAgentToolCall({
       args,
       objective,
       requesterUserId,
+      senderAgentOpenclawId,
+      sourceRoomId,
+      taskId,
     });
   }
 
@@ -1225,11 +1283,22 @@ export async function handleCyWorldAgentToolCall({
     requestedUsername: requestedToUsername,
   });
   const toUsername =
-    recipientResolution.status === "ambiguous" ? "" : recipientResolution.toUsername;
+    recipientResolution.status === "accepted" ? recipientResolution.toUsername : "";
   const message = cleanMessage(args.message);
   const expectReply = args.expectReply === true;
 
   if (!requestedToUsername || !toUsername || !message) {
+    if (recipientResolution.status === "conflict") {
+      return JSON.stringify({
+        ok: false,
+        reason: "dm_recipient_conflict",
+        explicitRecipient: `@${recipientResolution.explicitUsername}`,
+        requestedToUsername: recipientResolution.requestedUsername,
+        guidance:
+          "The user's request names a different recipient than the tool call. Do not send yet. If the named recipient is correct, call the same CyWorld DM tool again with that exact toUsername.",
+      });
+    }
+
     if (recipientResolution.status === "ambiguous") {
       return JSON.stringify({
         ok: false,

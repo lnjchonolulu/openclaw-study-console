@@ -1,5 +1,162 @@
 # Open Issues
 
+## CyWorld Final Integration Roadmap
+
+CyWorld's core goal is to become a collaborative space where humans bring their
+own OpenClaw agents into shared work. The product should support the social and
+work dynamics that follow from that premise: private owner-agent work, DM
+handoffs, team-chat participation, shared files, calendars, email, and agent
+follow-ups.
+
+The main architecture principle:
+
+- OpenClaw should remain the agent brain: reasoning, drafting, deciding whether
+  to act, using files, and performing work inside its workspace.
+- CyWorld should remain the social and permission layer: identity, room
+  membership, visibility, delivery, file/calendar/email permissions, audit
+  records, and user-facing UI.
+- The integration layer must translate between those two worlds without making
+  brittle hidden assumptions.
+
+### Current System Read
+
+What is working:
+
+- CyWorld calls OpenClaw through `openclaw:{agentId}`, so each personal agent can
+  be addressed independently.
+- CyWorld provides app-level tools for DM, scheduled DM, CyWorld Calendar, shared
+  Gmail, and external calendar invite email.
+- Team chat can now let agents respond to other agents in controlled chains.
+- The app has DB-level concepts for humans, agents, rooms, messages, tasks,
+  files, calendars, email threads, and settings.
+
+What is still fragile:
+
+- Some routing still depends on phrase matching such as "ask/tell/send/contact",
+  which can confuse normal conversation with action requests.
+- OpenClaw's native worldview is owner/workspace-oriented, while CyWorld's
+  worldview is multi-human and multi-agent. Runtime context and markdown files
+  can still disagree.
+- CyWorld Drive is mirrored into OpenClaw workspace state, but the sync and
+  managed instructions are still mostly shaped around Hyungjun's agent.
+- Calendar and Gmail are CyWorld backend tools, not OpenClaw-native tools, so
+  agents must reliably learn to use the CyWorld route instead of looking for
+  unavailable native tools.
+- Long-running tasks, replies, follow-ups, and cross-room handoffs are present
+  but not yet systematically tested against multiple simultaneous tasks.
+
+### Development Direction
+
+1. Define the OpenClaw-CyWorld contract.
+
+   Document and enforce the exact meaning of owner, current human, non-owner
+   human, personal agent, other agent, DM, team channel, CyWorld Drive, CyWorld
+   Calendar, shared Gmail, task, action receipt, and permission boundary.
+
+2. Reduce brittle intent routing.
+
+   CyWorld should not silently infer major actions from loose wording. OpenClaw
+   may propose tool calls, but CyWorld must validate recipients, permissions,
+   room context, and action scope. If the target or intent is ambiguous, the
+   system should ask a clarification instead of guessing.
+
+3. Make CyWorld resources first-class to agents.
+
+   Agents need stable, repeated language and workspace context for CyWorld
+   Drive, CyWorld Calendar, shared Gmail, and team channels. The goal is not to
+   bypass OpenClaw, but to make these resources feel like legitimate tools and
+   workspace areas inside OpenClaw's normal operating model.
+
+4. Standardize action receipts and task continuity.
+
+   When an agent sends a DM, schedules a message, creates an event, sends email,
+   uploads a file, or receives a reply, that outcome should be written back into
+   the conversation/task context so the agent can later know what it did.
+
+5. Build scenario tests before adding more product surface.
+
+   The system should be tested with realistic workflows, not only UI clicks:
+
+   - Owner asks their agent to ask another human a question.
+   - A non-owner asks someone else's agent for calendar information.
+   - Two agents advance a team-chat topic without a human re-prompt.
+   - An agent creates or edits a CyWorld Drive file and the UI reflects it.
+   - A shared Gmail reply routes back to the correct agent/task.
+   - After completing or partially completing a task, an agent reports progress
+     to the appropriate DM or team channel.
+   - Multiple pending tasks exist at once and replies do not cross wires.
+
+   The detailed contract and scenario matrix live in
+   `docs/openclaw-cyworld-contract.md`.
+
+### Known Missing Or Incomplete Capabilities
+
+- Agent-to-agent autonomous DM is not yet a first-class primitive. Team-chat
+  agent chains exist, but DM agent-to-agent work still needs a clear design.
+- CyWorld Drive sync is callable per OpenClaw agent id and has an all-agent
+  runner for every active CyWorld user with an OpenClaw agent. It still needs
+  production rollout verification so every study agent workspace has the same
+  Drive scaffold, manifest, and near-immediate sync behavior.
+- File permission enforcement for agents needs a hard contract. App APIs enforce
+  DB visibility, but mirrored workspace files also need reliable pruning and
+  manifest discipline.
+- Team channels need richer metadata so agents can understand room purpose,
+  project scope, expected audience, and where follow-ups belong.
+- Calendar tool behavior needs more end-to-end testing for timezone, invite,
+  RSVP, privacy policy, deletion, and external email invite cases.
+- Shared Gmail needs stronger thread/task routing and privacy expectations, since
+  all agents use the same mailbox.
+- Observability is incomplete. The system should log why agents spoke, stayed
+  silent, used a tool, had a tool call rejected, or asked for clarification.
+
+### Code To Revisit Carefully
+
+- `src/lib/cyworld-agent-tools.ts`: recipient validation, tool-call handling,
+  calendar/email action behavior.
+- `src/lib/agent-routing.ts`: runtime identity, owner/current-human distinction,
+  CyWorld tool/resource instructions.
+- `src/lib/team-agent-dispatcher.ts`: team-chat agent chain selection,
+  continuation, arbiter strictness, and silence decisions.
+- `src/lib/cyworld-drive-sync.ts` and `scripts/sync-hyungjun-study-files.mjs`:
+  Drive mirror scope, all-agent workspace rollout, and manifest generation.
+- `src/lib/email-tracking.ts`: shared Gmail reply routing and follow-up context.
+
+### Pre-Deployment Finalization
+
+Before the actual study deployment, CyWorld needs a dedicated participant and
+agent onboarding pass. This is not optional polish; it is required for the study
+to work as a multi-agent system rather than a Hyungjun-specific prototype.
+
+Required finalization work:
+
+- Create all study participant accounts.
+- Create and register one OpenClaw personal agent for each participant.
+- Ensure every participant's agent has the same CyWorld-compatible structural
+  setup as Hyungjun's agent, without copying Hyungjun-specific personal content.
+- Run the all-agent Drive sync after adding participant agents so their
+  workspaces receive `CYWORLD_DRIVE`, `MANIFEST.md`, and the managed Drive
+  guidance in `AGENTS.md`/`TOOLS.md`.
+- Separate reusable CyWorld agent scaffolding from individual personalization.
+- Standardize baseline `AGENTS.md`, `TOOLS.md`, `USER.md`, `IDENTITY.md`,
+  `SOUL.md`, and `HEARTBEAT.md` patterns for CyWorld agents.
+- Rebuild `BOOTSTRAP.md` for CyWorld onboarding so each new user can meet their
+  agent, rough in preferences, learn what the agent can do in CyWorld, and set
+  initial expectations.
+- Make sure default values are clear for new agents: identity, owner profile,
+  communication preferences, CyWorld Drive behavior, team-chat behavior,
+  calendar privacy, Gmail/shared-resource behavior, and proactiveness.
+- Verify that sync, runtime instructions, Drive manifests, calendar tools, email
+  tools, and team-chat participation work for every agent, not only Hyungjun's.
+
+The target end state:
+
+- All agents share the same CyWorld operating structure.
+- Each agent has different owner-specific content.
+- New participants can enter CyWorld and understand, configure, and use their
+  personal agent without server/admin intervention.
+- OpenClaw feels like the agent's native brain, while CyWorld feels like the
+  shared social workspace around it.
+
 ## Team Channel Context for Agent-Initiated Follow-Ups
 
 Agents can now own long-running tasks, including outbound email threads. A remaining design issue is how an agent should choose the right team channel when it needs to proactively report something.

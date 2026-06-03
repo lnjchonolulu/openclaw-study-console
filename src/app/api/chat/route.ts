@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
+import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { handleInboundTaskReply } from "@/lib/agent-task-workflow";
 import {
@@ -205,9 +206,14 @@ export async function POST(request: Request) {
           userId: user.id,
         })
       : null;
-    const turnInstructions = filesContext
-      ? `${instructions}\n\n${filesContext}`
-      : instructions;
+    const actionReceiptContext = await buildRecentActionReceiptContext({
+      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+      requesterUserId: user.id,
+      roomId: dmRoom.room.id,
+    });
+    const turnInstructions = [instructions, filesContext, actionReceiptContext]
+      .filter((part): part is string => Boolean(part?.trim()))
+      .join("\n\n");
 
     const result = await runAgentTurn({
       agentId: dmRoom.targetAgent.openclawAgentId,

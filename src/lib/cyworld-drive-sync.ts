@@ -14,12 +14,14 @@ export function shouldTriggerCyWorldDriveSync(...texts: Array<string | null | un
 }
 
 export async function triggerCyWorldDriveSync(agentId: string) {
-  if (agentId !== "hyungjun") {
+  const targetAgentId = agentId.trim();
+
+  if (!targetAgentId) {
     return;
   }
 
   try {
-    await execFileAsync("npm", ["run", "sync:cyworld-drive"], {
+    await execFileAsync("npm", ["run", "sync:cyworld-drive", "--", "--agent", targetAgentId], {
       cwd: process.cwd(),
       env: process.env,
       timeout: 20_000,
