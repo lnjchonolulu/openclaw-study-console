@@ -142,6 +142,15 @@ Required finalization work:
 - Rebuild `BOOTSTRAP.md` for CyWorld onboarding so each new user can meet their
   agent, rough in preferences, learn what the agent can do in CyWorld, and set
   initial expectations.
+- Keep the reusable scaffold in the sync script rather than copying Hyungjun's
+  markdown files by hand. The current scaffold command is
+  `npm run sync:cyworld-scaffold`.
+- For every future participant agent, the required rollout order is:
+  create account, create/register OpenClaw agent, run
+  `npm run sync:cyworld-scaffold`, run `npm run sync:cyworld-drive:all`, then
+  let the participant complete the CyWorld onboarding conversation.
+- Treat `BOOTSTRAP.md` as the first-run onboarding script for each owner-agent
+  pair, not as a Hyungjun-specific file.
 - Make sure default values are clear for new agents: identity, owner profile,
   communication preferences, CyWorld Drive behavior, team-chat behavior,
   calendar privacy, Gmail/shared-resource behavior, and proactiveness.

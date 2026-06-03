@@ -155,6 +155,46 @@ The structure should be standardized. The content should be owner-specific.
 Hyungjun's agent can be used as a reference, but Hyungjun-specific preferences
 must not be copied into other agents.
 
+The scaffold is synced by:
+
+```bash
+npm run sync:cyworld-scaffold
+```
+
+Scaffold sync behavior:
+
+- `AGENTS.md` and `TOOLS.md` receive managed CyWorld operating blocks.
+- Existing owner-authored content outside managed blocks is preserved.
+- Legacy Study Console managed blocks are replaced with CyWorld blocks.
+- `USER.md`, `IDENTITY.md`, `SOUL.md`, `HEARTBEAT.md`, and `BOOTSTRAP.md` are
+  created from templates only when missing or empty.
+- Existing personalized versions of `USER.md`, `IDENTITY.md`, `SOUL.md`,
+  `HEARTBEAT.md`, and `BOOTSTRAP.md` are not overwritten.
+
+The common operating layer belongs in `AGENTS.md` and `TOOLS.md`.
+
+The owner-specific layer belongs in:
+
+- `USER.md`: owner name, preferred address, timezone, notes, direct-line
+  communication preferences, and shared-space representation preferences.
+- `IDENTITY.md`: agent name, creature, vibe, emoji, and self-description.
+- `SOUL.md`: values and behavior principles that the owner wants this agent to
+  develop over time.
+- `HEARTBEAT.md`: how the agent should behave when owner-enabled proactiveness
+  is on.
+- `BOOTSTRAP.md`: first conversation guidance for helping the owner understand
+  CyWorld and rough in the agent's initial settings.
+
+Future agent creation rule:
+
+1. Create the CyWorld user and OpenClaw agent.
+2. Store the agent's `openclawAgentId`, display name, and workspace path in the
+   CyWorld database.
+3. Run `npm run sync:cyworld-scaffold`.
+4. Run `npm run sync:cyworld-drive:all`.
+5. Let the participant complete the CyWorld onboarding conversation with their
+   agent.
+
 ## CyWorld Tools
 
 OpenClaw may propose CyWorld tool calls. CyWorld must validate them.
