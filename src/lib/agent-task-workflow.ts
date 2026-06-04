@@ -1,4 +1,5 @@
-import { type Prisma } from "@prisma/client";
+import { AgentTaskEventType, type Prisma } from "@prisma/client";
+import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import { runAgentTurn } from "@/lib/openclaw";
@@ -681,20 +682,25 @@ export async function createAndRunOutboundAgentTask(input: CreateOutboundAgentTa
           toUsername: targetUser.username,
         });
 
-  await prisma.agentTaskEvent.create({
-    data: {
-      taskId: task.id,
-      type: input.kind === "schedule_dm" ? "SCHEDULED_MESSAGE" : "OUTBOUND_MESSAGE",
-      summary: delivery.ok
-        ? input.kind === "schedule_dm"
-          ? `Scheduled outbound DM to @${targetUser.username}.`
-          : `Delivered outbound DM to @${targetUser.username}.`
-        : `Delivery failed: ${delivery.reason}.`,
-      payload: {
-        delivery,
-        message: composed.message,
-      } satisfies Prisma.InputJsonValue,
-    },
+  await recordAgentActionReceipt({
+    action: input.kind,
+    agentOpenclawId: input.agentOpenclawId,
+    eventType:
+      input.kind === "schedule_dm"
+        ? AgentTaskEventType.SCHEDULED_MESSAGE
+        : AgentTaskEventType.OUTBOUND_MESSAGE,
+    payload: {
+      delivery,
+      message: composed.message,
+    } satisfies Prisma.InputJsonValue,
+    status: delivery.ok ? "success" : "failure",
+    summary: delivery.ok
+      ? input.kind === "schedule_dm"
+        ? `Scheduled outbound DM to @${targetUser.username}.`
+        : `Delivered outbound DM to @${targetUser.username}.`
+      : `Delivery failed: ${delivery.reason}.`,
+    targetUserId: targetUser.id,
+    taskId: task.id,
   });
 
   await prisma.agentTask.update({
@@ -842,16 +848,18 @@ export async function handleInboundTaskReply({
     },
   });
 
-  await prisma.agentTaskEvent.create({
-    data: {
-      taskId: task.id,
-      type: "INBOUND_REPLY",
-      summary: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
-      payload: {
-        replyMessage,
-        replyingUsername,
-      } satisfies Prisma.InputJsonValue,
-    },
+  await recordAgentActionReceipt({
+    action: "inbound_task_reply",
+    agentOpenclawId,
+    eventType: AgentTaskEventType.INBOUND_REPLY,
+    payload: {
+      replyMessage,
+      replyingUsername,
+      userMessageId,
+    } satisfies Prisma.InputJsonValue,
+    status: "success",
+    summary: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+    taskId: task.id,
   });
 
   const activeHumans = await prisma.user.findMany({
@@ -939,18 +947,19 @@ Decide the next action.`,
       toUsername: task.requester.username,
     });
 
-    await prisma.agentTaskEvent.create({
-      data: {
-        taskId: task.id,
-        type: "OUTBOUND_MESSAGE",
-        summary: delivery.ok
-          ? `Reported task result to @${task.requester.username}.`
-          : `Report-back delivery failed: ${delivery.reason}.`,
-        payload: {
-          delivery,
-          message: nextAction.message,
-        } satisfies Prisma.InputJsonValue,
-      },
+    await recordAgentActionReceipt({
+      action: "report_dm",
+      agentOpenclawId,
+      eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
+      payload: {
+        delivery,
+        message: nextAction.message,
+      } satisfies Prisma.InputJsonValue,
+      status: delivery.ok ? "success" : "failure",
+      summary: delivery.ok
+        ? `Reported task result to @${task.requester.username}.`
+        : `Report-back delivery failed: ${delivery.reason}.`,
+      taskId: task.id,
     });
 
     await prisma.agentTask.update({
@@ -981,18 +990,19 @@ Decide the next action.`,
       toUsername: replyingUsername,
     });
 
-    await prisma.agentTaskEvent.create({
-      data: {
-        taskId: task.id,
-        type: "OUTBOUND_MESSAGE",
-        summary: delivery.ok
-          ? `Asked follow-up to @${replyingUsername}.`
-          : `Follow-up delivery failed: ${delivery.reason}.`,
-        payload: {
-          delivery,
-          message: nextAction.message,
-        } satisfies Prisma.InputJsonValue,
-      },
+    await recordAgentActionReceipt({
+      action: "ask_followup_dm",
+      agentOpenclawId,
+      eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
+      payload: {
+        delivery,
+        message: nextAction.message,
+      } satisfies Prisma.InputJsonValue,
+      status: delivery.ok ? "success" : "failure",
+      summary: delivery.ok
+        ? `Asked follow-up to @${replyingUsername}.`
+        : `Follow-up delivery failed: ${delivery.reason}.`,
+      taskId: task.id,
     });
 
     await prisma.agentTask.update({

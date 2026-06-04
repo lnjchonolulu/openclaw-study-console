@@ -1,4 +1,7 @@
+import { AgentTaskEventType } from "@prisma/client";
+
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -99,19 +102,20 @@ async function processEmailReply(message: GmailMessageView) {
   });
 
   if (thread.taskId) {
-    await prisma.agentTaskEvent.create({
-      data: {
-        payload: {
-          from: message.from,
-          gmailMessageId: message.id,
-          gmailThreadId: message.threadId,
-          snippet: message.snippet,
-          subject: message.subject,
-        },
-        summary: `Email reply received from ${message.from ?? "unknown sender"}.`,
-        taskId: thread.taskId,
-        type: "INBOUND_REPLY",
+    await recordAgentActionReceipt({
+      action: "email_reply_received",
+      agentOpenclawId: thread.agent.openclawAgentId,
+      eventType: AgentTaskEventType.INBOUND_REPLY,
+      payload: {
+        from: message.from,
+        gmailMessageId: message.id,
+        gmailThreadId: message.threadId,
+        snippet: message.snippet,
+        subject: message.subject,
       },
+      status: "success",
+      summary: `Email reply received from ${message.from ?? "unknown sender"}.`,
+      taskId: thread.taskId,
     });
   }
 
@@ -174,6 +178,21 @@ async function processEmailReply(message: GmailMessageView) {
         updatedAt: new Date(),
       },
     });
+
+    if (thread.taskId) {
+      await recordAgentActionReceipt({
+        action: "email_followup_report",
+        agentOpenclawId: thread.agent.openclawAgentId,
+        eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
+        payload: {
+          message: result.assistantText,
+          sourceRoomId: thread.sourceRoomId,
+        },
+        status: "success",
+        summary: "Reported shared Gmail reply follow-up into the source CyWorld room.",
+        taskId: thread.taskId,
+      });
+    }
   }
 
   return {

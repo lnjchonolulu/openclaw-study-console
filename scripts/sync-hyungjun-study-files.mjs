@@ -1130,6 +1130,49 @@ async function importWorkspaceChanges({
   return [...renameResult.logs, ...deleted, ...updated, ...created];
 }
 
+async function recordDriveSyncReceipt({
+  agent,
+  logs,
+  userId,
+}) {
+  if (logs.length === 0) {
+    return null;
+  }
+
+  const summary =
+    logs.length === 1
+      ? logs[0]
+      : `Imported ${logs.length} CyWorld Drive workspace changes.`;
+
+  return prisma.agentTask.create({
+    data: {
+      agentId: agent.openclawAgentId,
+      kind: "cyworld_drive_sync",
+      objective: "Import OpenClaw workspace file changes into CyWorld Drive.",
+      requesterUserId: userId,
+      status: "COMPLETED",
+      resultSummary: summary,
+      title: "CyWorld Drive sync",
+      events: {
+        create: [
+          {
+            type: "SYSTEM_NOTE",
+            summary,
+            payload: {
+              changes: logs,
+              receipt: {
+                action: "cyworld_drive_sync",
+                recordedAt: new Date().toISOString(),
+                status: "success",
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+}
+
 async function removeStaleManagedEntries(studyFilesRoot, previousEntries, nextRelativePaths) {
   const nextPaths = new Set(nextRelativePaths);
 
@@ -1428,6 +1471,12 @@ async function syncUserDrive(user) {
   console.log(`Workspace: ${studyFilesRoot}`);
   console.log(`Mirrored entries: ${nextManagedEntries.length - 1}`);
   const syncLogs = [...migrationLogs, ...importedChanges];
+
+  await recordDriveSyncReceipt({
+    agent: user.agent,
+    logs: syncLogs,
+    userId: user.id,
+  });
 
   if (syncLogs.length > 0) {
     console.log("Imported agent workspace changes:");

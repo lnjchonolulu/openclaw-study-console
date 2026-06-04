@@ -47,6 +47,7 @@ type DispatchCandidate = {
       soulConfigJson?: unknown;
       user: {
         displayName: string;
+        id: string;
         timezone?: string | null;
         username: string;
       };
@@ -700,7 +701,7 @@ Should ${agent.displayName} speak now?`,
       handleCyWorldAgentToolCall({
         call,
         objective: latestMessage.content,
-        requesterUserId: latestMessage.userId ?? undefined,
+        requesterUserId: latestMessage.userId ?? agent.user.id,
         senderAgentOpenclawId: agent.openclawAgentId,
         sourceRoomId: room.id,
       }),

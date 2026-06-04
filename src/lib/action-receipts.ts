@@ -1,4 +1,8 @@
-import { AgentTaskStatus, type Prisma } from "@prisma/client";
+import {
+  AgentTaskEventType,
+  AgentTaskStatus,
+  type Prisma,
+} from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -8,6 +12,154 @@ function formatTaskStatus(status: string) {
 
 function compact(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+type ActionReceiptStatus = "success" | "failure";
+
+export type RecordAgentActionReceiptInput = {
+  action: string;
+  agentOpenclawId: string;
+  eventType?: AgentTaskEventType;
+  objective?: string | null;
+  payload?: Prisma.InputJsonValue;
+  requesterUserId?: string | null;
+  resultSummary?: string | null;
+  sourceRoomId?: string | null;
+  status: ActionReceiptStatus;
+  summary: string;
+  targetUserId?: string | null;
+  taskId?: string | null;
+  title?: string | null;
+};
+
+export type RecordedAgentActionReceipt = {
+  eventId: string | null;
+  taskId: string;
+};
+
+function statusToTaskStatus(status: ActionReceiptStatus) {
+  return status === "success" ? AgentTaskStatus.COMPLETED : AgentTaskStatus.FAILED;
+}
+
+function defaultEventTypeForAction(action: string, status: ActionReceiptStatus) {
+  if (status === "failure") {
+    return AgentTaskEventType.SYSTEM_NOTE;
+  }
+
+  if (action === "study_send_dm" || action === "send_dm" || action === "report_dm") {
+    return AgentTaskEventType.OUTBOUND_MESSAGE;
+  }
+
+  if (action === "study_schedule_dm" || action === "schedule_dm") {
+    return AgentTaskEventType.SCHEDULED_MESSAGE;
+  }
+
+  if (action === "email_reply_received") {
+    return AgentTaskEventType.INBOUND_REPLY;
+  }
+
+  return AgentTaskEventType.SYSTEM_NOTE;
+}
+
+function buildReceiptPayload({
+  action,
+  payload,
+  status,
+}: {
+  action: string;
+  payload?: Prisma.InputJsonValue;
+  status: ActionReceiptStatus;
+}) {
+  return {
+    ...(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : { data: payload ?? null }),
+    receipt: {
+      action,
+      status,
+      recordedAt: new Date().toISOString(),
+    },
+  } satisfies Prisma.InputJsonValue;
+}
+
+export async function recordAgentActionReceipt({
+  action,
+  agentOpenclawId,
+  eventType,
+  objective,
+  payload,
+  requesterUserId,
+  resultSummary,
+  sourceRoomId,
+  status,
+  summary,
+  targetUserId,
+  taskId,
+  title,
+}: RecordAgentActionReceiptInput): Promise<RecordedAgentActionReceipt | null> {
+  const normalizedSummary = compact(summary);
+  const receiptPayload = buildReceiptPayload({ action, payload, status });
+  const resolvedEventType = eventType ?? defaultEventTypeForAction(action, status);
+
+  if (taskId) {
+    const [event] = await prisma.$transaction([
+      prisma.agentTaskEvent.create({
+        data: {
+          taskId,
+          type: resolvedEventType,
+          summary: normalizedSummary,
+          payload: receiptPayload,
+        },
+      }),
+      prisma.agentTask.update({
+        where: {
+          id: taskId,
+        },
+        data: {
+          updatedAt: new Date(),
+        },
+      }),
+    ]);
+
+    return {
+      eventId: event.id,
+      taskId,
+    };
+  }
+
+  if (!requesterUserId) {
+    return null;
+  }
+
+  const task = await prisma.agentTask.create({
+    data: {
+      agentId: agentOpenclawId,
+      kind: action,
+      objective: objective?.trim() || normalizedSummary,
+      requesterUserId,
+      sourceRoomId: sourceRoomId ?? null,
+      status: statusToTaskStatus(status),
+      targetUserId: targetUserId ?? null,
+      title: title?.trim() || normalizedSummary.slice(0, 120) || action,
+      resultSummary: resultSummary?.trim() || normalizedSummary,
+      events: {
+        create: [
+          {
+            type: AgentTaskEventType.USER_REQUEST,
+            summary: objective?.trim() || normalizedSummary,
+          },
+          {
+            type: resolvedEventType,
+            summary: normalizedSummary,
+            payload: receiptPayload,
+          },
+        ],
+      },
+    },
+  });
+
+  return {
+    eventId: null,
+    taskId: task.id,
+  };
 }
 
 export async function buildRecentActionReceiptContext({
@@ -29,27 +181,21 @@ export async function buildRecentActionReceiptContext({
     clauses.push({ requesterUserId });
   }
 
-  clauses.push({
-    status: {
-      in: [AgentTaskStatus.OPEN, AgentTaskStatus.WAITING],
-    },
-  });
-
   const tasks = await prisma.agentTask.findMany({
     where: {
       agentId: agentOpenclawId,
-      OR: clauses,
+      OR: clauses.length > 0 ? clauses : undefined,
     },
     orderBy: {
       updatedAt: "desc",
     },
-    take: 6,
+    take: 8,
     include: {
       events: {
         orderBy: {
           createdAt: "desc",
         },
-        take: 4,
+        take: 5,
       },
       requester: {
         select: {

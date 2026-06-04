@@ -1,8 +1,13 @@
 import {
+  AgentTaskEventType,
+  type Prisma,
+} from "@prisma/client";
+import {
   createCalendarEvent,
   listCalendarMonth,
   type CalendarEventView,
 } from "@/lib/calendar";
+import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { sendSharedGmail } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
@@ -223,6 +228,141 @@ function parseToolArguments(call: OpenClawFunctionCall) {
   } catch {
     return null;
   }
+}
+
+function parseToolResult(value: string) {
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function toolReceiptEventType(toolName: string, ok: boolean) {
+  if (!ok) {
+    return AgentTaskEventType.SYSTEM_NOTE;
+  }
+
+  if (toolName === "study_send_dm") {
+    return AgentTaskEventType.OUTBOUND_MESSAGE;
+  }
+
+  if (toolName === "study_schedule_dm") {
+    return AgentTaskEventType.SCHEDULED_MESSAGE;
+  }
+
+  return AgentTaskEventType.SYSTEM_NOTE;
+}
+
+function toolReceiptSummary(toolName: string, result: Record<string, unknown> | null) {
+  const ok = result?.ok === true;
+  const reason = typeof result?.reason === "string" ? result.reason : null;
+
+  if (!result) {
+    return `CyWorld tool ${toolName} returned a non-JSON result.`;
+  }
+
+  if (ok) {
+    if (typeof result.toUsername === "string") {
+      return `CyWorld tool ${toolName} succeeded for @${result.toUsername}.`;
+    }
+
+    if (result.event && typeof result.event === "object" && !Array.isArray(result.event)) {
+      const title = (result.event as { title?: unknown }).title;
+      return `CyWorld tool ${toolName} succeeded${typeof title === "string" ? ` for "${title}"` : ""}.`;
+    }
+
+    return `CyWorld tool ${toolName} succeeded.`;
+  }
+
+  return `CyWorld tool ${toolName} failed${reason ? `: ${reason}` : ""}.`;
+}
+
+async function userIdForUsername(username: unknown) {
+  const cleaned = cleanUsername(username);
+
+  if (!cleaned) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      username: cleaned,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return user?.id ?? null;
+}
+
+async function recordToolCallReceipt({
+  args,
+  call,
+  objective,
+  requesterUserId,
+  resultText,
+  senderAgentOpenclawId,
+  sourceRoomId,
+  taskId,
+}: {
+  args: Record<string, unknown> | null;
+  call: OpenClawFunctionCall;
+  objective?: string;
+  requesterUserId?: string;
+  resultText: string;
+  senderAgentOpenclawId: string;
+  sourceRoomId?: string;
+  taskId?: string | null;
+}) {
+  const result = parseToolResult(resultText);
+  const ok = result?.ok === true;
+  const effectiveTaskId =
+    (typeof result?.taskId === "string" && result.taskId.trim()) || taskId || null;
+  const targetUserId =
+    call.name === "study_send_dm" || call.name === "study_schedule_dm"
+      ? await userIdForUsername(result?.toUsername ?? args?.toUsername)
+      : null;
+
+  const receipt = await recordAgentActionReceipt({
+    action: call.name,
+    agentOpenclawId: senderAgentOpenclawId,
+    eventType: toolReceiptEventType(call.name, ok),
+    objective,
+    payload: {
+      args: (args ?? null) as Prisma.InputJsonValue,
+      result: (result ?? resultText) as Prisma.InputJsonValue,
+      toolName: call.name,
+    } satisfies Prisma.InputJsonValue,
+    requesterUserId,
+    resultSummary: toolReceiptSummary(call.name, result),
+    sourceRoomId,
+    status: ok ? "success" : "failure",
+    summary: toolReceiptSummary(call.name, result),
+    targetUserId,
+    taskId: effectiveTaskId,
+    title: `CyWorld tool ${call.name}`,
+  });
+
+  if (
+    receipt?.taskId &&
+    result &&
+    (call.name === "study_send_email" || call.name === "study_send_calendar_invite_email") &&
+    typeof result.threadId === "string"
+  ) {
+    await prisma.emailThread.updateMany({
+      where: {
+        gmailThreadId: result.threadId,
+        taskId: null,
+      },
+      data: {
+        taskId: receipt.taskId,
+      },
+    });
+  }
+
+  return receipt;
 }
 
 function cleanUsername(value: unknown) {
@@ -750,16 +890,10 @@ async function handleCalendarCreateTool({
   args,
   objective,
   requesterUserId,
-  senderAgentOpenclawId,
-  sourceRoomId,
-  taskId,
 }: {
   args: Record<string, unknown>;
   objective?: string;
   requesterUserId?: string;
-  senderAgentOpenclawId?: string;
-  sourceRoomId?: string;
-  taskId?: string | null;
 }) {
   if (!requesterUserId) {
     return JSON.stringify({
@@ -846,57 +980,6 @@ async function handleCalendarCreateTool({
       ok: false,
       reason: "calendar_event_create_failed",
       error: createError,
-    });
-  }
-
-  const eventSummary = `Created CyWorld Calendar event "${created.title}" from ${formatDateTimeInTimeZone(created.startAt, requesterTimezone, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })} to ${formatDateTimeInTimeZone(created.endAt, requesterTimezone, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })}.`;
-
-  if (taskId) {
-    await prisma.agentTaskEvent.create({
-      data: {
-        taskId,
-        type: "SYSTEM_NOTE",
-        summary: eventSummary,
-        payload: {
-          calendarEventId: created.id,
-          invitedUsernames: invitees.map((invitee) => invitee.username),
-        },
-      },
-    });
-  } else if (senderAgentOpenclawId) {
-    await prisma.agentTask.create({
-      data: {
-        agentId: senderAgentOpenclawId,
-        kind: "calendar_event",
-        objective: objective?.trim() || `Create calendar event: ${created.title}`,
-        requesterUserId,
-        sourceRoomId: sourceRoomId ?? null,
-        status: "COMPLETED",
-        resultSummary: eventSummary,
-        title: `Create calendar event "${created.title}"`,
-        events: {
-          create: [
-            {
-              type: "USER_REQUEST",
-              summary: objective?.trim() || `Create calendar event: ${created.title}`,
-            },
-            {
-              type: "SYSTEM_NOTE",
-              summary: eventSummary,
-              payload: {
-                calendarEventId: created.id,
-                invitedUsernames: invitees.map((invitee) => invitee.username),
-              },
-            },
-          ],
-        },
-      },
     });
   }
 
@@ -1159,23 +1242,14 @@ async function createToolTask({
       targetUserId: targetUser.id,
       title: `${kind === "schedule_dm" ? "Schedule" : "Send"} DM to @${targetUser.username}`,
       events: {
-        create: [
-          {
-            type: "AGENT_DECISION",
-            summary: `Agent chose to ${kind === "schedule_dm" ? "schedule" : "send"} a CyWorld DM to @${targetUser.username}.`,
-            payload: {
-              expectReply,
-              message,
-            },
+        create: {
+          type: "AGENT_DECISION",
+          summary: `Agent chose to ${kind === "schedule_dm" ? "schedule" : "send"} a CyWorld DM to @${targetUser.username}.`,
+          payload: {
+            expectReply,
+            message,
           },
-          {
-            type: "OUTBOUND_MESSAGE",
-            summary: message,
-            payload: {
-              targetUsername: targetUser.username,
-            },
-          },
-        ],
+        },
       },
     },
   });
@@ -1197,14 +1271,63 @@ export async function handleCyWorldAgentToolCall({
   taskId?: string | null;
 }) {
   const args = parseToolArguments(call);
+  let resultText: string;
 
   if (!args) {
-    return JSON.stringify({
+    resultText = JSON.stringify({
       ok: false,
       reason: "invalid_json_arguments",
     });
+  } else {
+    resultText = await executeCyWorldAgentToolCall({
+      args,
+      call,
+      objective,
+      requesterUserId,
+      senderAgentOpenclawId,
+      sourceRoomId,
+      taskId,
+    });
   }
 
+  try {
+    await recordToolCallReceipt({
+      args,
+      call,
+      objective,
+      requesterUserId,
+      resultText,
+      senderAgentOpenclawId,
+      sourceRoomId,
+      taskId,
+    });
+  } catch (error) {
+    console.error("[action-receipt] failed to record CyWorld tool receipt", {
+      error,
+      toolName: call.name,
+    });
+  }
+
+  return resultText;
+}
+
+async function executeCyWorldAgentToolCall({
+  args,
+  call,
+  objective,
+  requesterUserId,
+  senderAgentOpenclawId,
+  sourceRoomId,
+  taskId,
+}: {
+  args: Record<string, unknown>;
+  call: OpenClawFunctionCall;
+  objective?: string;
+  requesterUserId?: string;
+  senderAgentOpenclawId: string;
+  sourceRoomId?: string;
+  taskId?: string | null;
+}) {
   if (call.name === "study_list_calendar") {
     return handleCalendarListTool({
       args,
@@ -1218,9 +1341,6 @@ export async function handleCyWorldAgentToolCall({
       args,
       objective,
       requesterUserId,
-      senderAgentOpenclawId,
-      sourceRoomId,
-      taskId,
     });
   }
 
@@ -1354,6 +1474,7 @@ export async function handleCyWorldAgentToolCall({
     return JSON.stringify({
       ...result,
       recipientResolution,
+      taskId: effectiveTaskId,
     });
   }
 
@@ -1393,6 +1514,7 @@ export async function handleCyWorldAgentToolCall({
     return JSON.stringify({
       ...result,
       recipientResolution,
+      taskId: effectiveTaskId,
     });
   }
 

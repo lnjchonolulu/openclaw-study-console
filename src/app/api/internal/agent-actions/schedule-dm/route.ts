@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { AgentTaskEventType } from "@prisma/client";
+import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import {
   scheduleAgentDm,
   verifyInternalAgentActionToken,
@@ -32,7 +34,11 @@ export async function POST(request: Request) {
     delayMinutes?: unknown;
     deliverAt?: unknown;
     message?: string;
+    objective?: string;
+    requesterUserId?: string;
     senderAgentOpenclawId?: string;
+    sourceRoomId?: string;
+    taskId?: string;
     toUsername?: string;
   };
 
@@ -55,7 +61,28 @@ export async function POST(request: Request) {
     deliverAt,
     message,
     senderAgentOpenclawId,
+    taskId: body.taskId?.trim() || null,
     toUsername,
+  });
+
+  await recordAgentActionReceipt({
+    action: "schedule_dm",
+    agentOpenclawId: senderAgentOpenclawId,
+    eventType: result.ok ? AgentTaskEventType.SCHEDULED_MESSAGE : AgentTaskEventType.SYSTEM_NOTE,
+    objective: body.objective,
+    payload: {
+      deliverAt: result.ok ? result.deliverAt : deliverAt.toISOString(),
+      reason: result.ok ? null : result.reason,
+      scheduledMessageId: result.ok ? result.scheduledMessageId : null,
+      toUsername,
+    },
+    requesterUserId: body.requesterUserId?.trim() || null,
+    sourceRoomId: body.sourceRoomId?.trim() || null,
+    status: result.ok ? "success" : "failure",
+    summary: result.ok
+      ? `Scheduled outbound DM to @${result.toUsername}.`
+      : `Scheduled DM failed: ${result.reason}.`,
+    taskId: body.taskId?.trim() || null,
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });

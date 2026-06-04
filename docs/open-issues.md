@@ -89,6 +89,66 @@ What is still fragile:
    The detailed contract and scenario matrix live in
    `docs/openclaw-cyworld-contract.md`.
 
+### Code-First Improvement Priorities
+
+This priority list is based on the current implementation, not only on the
+product idea. The recurring risk is that CyWorld has many partially working
+integration paths, but they do not all follow the same action lifecycle.
+
+1. Unify action, task, and receipt handling.
+
+   Every agent-initiated CyWorld action should move through the same lifecycle:
+   OpenClaw proposes the action, CyWorld validates permissions and targets,
+   CyWorld executes it, CyWorld records a durable receipt, and the receipt is
+   reintroduced into later OpenClaw turns. This should cover DM delivery,
+   scheduled DM, calendar actions, shared Gmail, external calendar invite
+   email, Drive imports/exports, and follow-up reports. Today the building
+   blocks exist (`AgentTask`, `AgentTaskEvent`, `EmailThread`, `Message.taskId`,
+   and recent receipt injection), but action paths still use them unevenly.
+
+2. Clean up runtime context boundaries.
+
+   Durable identity and operating knowledge should live in the OpenClaw
+   workspace files and managed scaffold. Per-turn facts should stay in runtime
+   context: current human, room, timezone, active task, current permissions, and
+   fresh receipts. Runtime context should not become a hidden second personality
+   system that fights OpenClaw's markdown workspace.
+
+3. Stabilize CyWorld resource vocabulary and tool paths.
+
+   Agents should consistently understand CyWorld Drive, CyWorld Calendar,
+   shared Gmail, DMs, and Team Chat as CyWorld-provided social/tool layers.
+   They should not confuse CyWorld Drive with the OpenClaw workspace root or
+   look for unavailable native calendar/session/gateway tools when CyWorld
+   provides the app-mediated route.
+
+4. Harden shared Gmail follow-up routing.
+
+   Gmail is a shared resource, but each email thread belongs to a specific
+   agent/task/source room. Replies must route back to the correct agent without
+   exposing unrelated mailbox content, and the agent should receive enough
+   receipt context to decide whether to reply, report to the owner, or report
+   to the source room.
+
+5. Improve team-chat observability.
+
+   Team-chat agent chains now exist, but the research/product value depends on
+   knowing why an agent spoke, stayed silent, was rejected by the arbiter, or
+   stopped a chain. These decisions should be easy to inspect later.
+
+6. Verify Drive sync as production behavior.
+
+   All-agent Drive sync and manifests exist, but the production expectation is
+   near-immediate visibility after users or agents change files. Sync timing,
+   permission pruning, and agent-created revisions need end-to-end verification.
+
+7. Finalize participant onboarding and scaffold rollout.
+
+   Before deployment, every participant needs a CyWorld account, one OpenClaw
+   agent, the shared CyWorld scaffold, a clean owner-specific bootstrap, and
+   verified Drive/Calendar/Gmail/Team Chat behavior. Hyungjun-specific content
+   must not become the default template for future agents.
+
 ### Known Missing Or Incomplete Capabilities
 
 - Agent-to-agent autonomous DM is not yet a first-class primitive. Team-chat

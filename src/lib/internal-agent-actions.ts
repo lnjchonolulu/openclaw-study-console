@@ -1,4 +1,7 @@
+import { AgentTaskEventType } from "@prisma/client";
+
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
+import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { prisma } from "@/lib/prisma";
 
 export function verifyInternalAgentActionToken(request: Request) {
@@ -189,6 +192,21 @@ export async function deliverDueScheduledMessages(now = new Date()) {
         data: {},
       });
 
+      if (scheduled.taskId) {
+        await recordAgentActionReceipt({
+          action: "deliver_scheduled_dm",
+          agentOpenclawId: scheduled.agentId,
+          eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
+          payload: {
+            messageId: createdMessage.id,
+            scheduledMessageId: scheduled.id,
+          },
+          status: "success",
+          summary: "Delivered scheduled CyWorld DM.",
+          taskId: scheduled.taskId,
+        });
+      }
+
       results.push({
         ok: true,
         messageId: createdMessage.id,
@@ -206,6 +224,21 @@ export async function deliverDueScheduledMessages(now = new Date()) {
           error: message,
         },
       });
+
+      if (scheduled.taskId) {
+        await recordAgentActionReceipt({
+          action: "deliver_scheduled_dm",
+          agentOpenclawId: scheduled.agentId,
+          eventType: AgentTaskEventType.SYSTEM_NOTE,
+          payload: {
+            error: message,
+            scheduledMessageId: scheduled.id,
+          },
+          status: "failure",
+          summary: `Scheduled CyWorld DM delivery failed: ${message}`,
+          taskId: scheduled.taskId,
+        });
+      }
 
       results.push({
         ok: false,
