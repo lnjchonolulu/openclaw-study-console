@@ -139,9 +139,9 @@ Required finalization work:
 - Separate reusable CyWorld agent scaffolding from individual personalization.
 - Standardize baseline `AGENTS.md`, `TOOLS.md`, `USER.md`, `IDENTITY.md`,
   `SOUL.md`, and `HEARTBEAT.md` patterns for CyWorld agents.
-- Rebuild `BOOTSTRAP.md` for CyWorld onboarding so each new user can meet their
-  agent, rough in preferences, learn what the agent can do in CyWorld, and set
-  initial expectations.
+- Rebuild `BOOTSTRAP.md` as a CyWorld birth certificate so each new user can
+  rough in `USER.md`, `IDENTITY.md`, `SOUL.md`, and `HEARTBEAT.md` with their
+  agent during the first conversation.
 - Keep the reusable scaffold in the sync script rather than copying Hyungjun's
   markdown files by hand. The current scaffold command is
   `npm run sync:cyworld-scaffold`.
@@ -151,6 +151,9 @@ Required finalization work:
   let the participant complete the CyWorld onboarding conversation.
 - Treat `BOOTSTRAP.md` as the first-run onboarding script for each owner-agent
   pair, not as a Hyungjun-specific file.
+- Use `npm run sync:cyworld-bootstrap` only when intentionally refreshing the
+  existing agents' bootstrap ritual; regular scaffold sync preserves existing
+  personalized markdown files.
 - Make sure default values are clear for new agents: identity, owner profile,
   communication preferences, CyWorld Drive behavior, team-chat behavior,
   calendar privacy, Gmail/shared-resource behavior, and proactiveness.

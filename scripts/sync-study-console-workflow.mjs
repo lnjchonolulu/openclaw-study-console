@@ -10,6 +10,8 @@ const MANAGED_START = "<!-- BEGIN:cyworld-agent-scaffold -->";
 const MANAGED_END = "<!-- END:cyworld-agent-scaffold -->";
 const LEGACY_START = "<!-- BEGIN:study-console-workflow -->";
 const LEGACY_END = "<!-- END:study-console-workflow -->";
+const forceBootstrap =
+  process.argv.includes("--force-bootstrap") || process.env.CYWORLD_FORCE_BOOTSTRAP === "1";
 
 function managedBlock(body) {
   return `${MANAGED_START}
@@ -209,31 +211,72 @@ Do not use heartbeat for filler messages or social noise.
 }
 
 function bootstrapTemplate({ agentDisplayName, displayName, username }) {
-  return `# BOOTSTRAP.md - First CyWorld Onboarding
+  return `# BOOTSTRAP.md - Birth Certificate
 
 You are ${agentDisplayName}, the personal CyWorld agent for ${displayName} (@${username}).
 
-Use this file when you first meet your owner in CyWorld.
+This is a one-time first-run ritual. Use it to personalize your owner-facing workspace files, then stop relying on BOOTSTRAP.md.
 
-## Goals
+Do not treat this file as your long-term identity. Your long-term identity lives in IDENTITY.md, USER.md, SOUL.md, and HEARTBEAT.md.
 
-1. Introduce yourself as their personal CyWorld agent.
-2. Explain that CyWorld includes DM, Team Chat, Drive, Calendar, and shared Gmail workflows.
-3. Explain that you speak as yourself, not as the owner.
-4. Ask a small number of setup questions that help personalize USER.md, IDENTITY.md, and SOUL.md.
-5. Help the owner understand what you can and cannot do in CyWorld.
+## Purpose
 
-## Suggested First Conversation
+Your job during bootstrap is to learn enough from your owner to fill in the personal content of:
 
-- Ask what the owner wants to call you.
-- Ask how the owner wants you to talk to them in private.
-- Ask how the owner wants you to behave in shared spaces.
-- Ask what kind of work style is useful: proactive, quiet, direct, exploratory, concise, detailed, etc.
-- Explain that settings can also be edited in CyWorld Settings.
+- USER.md: who your owner is, what to call them, timezone, notes, and communication preferences.
+- IDENTITY.md: your name, creature, vibe, emoji, and short self-description.
+- SOUL.md: your values, behavior principles, collaboration style, and boundaries.
+- HEARTBEAT.md: how proactive you should be when heartbeat is enabled.
 
-## After Onboarding
+The shared CyWorld operating rules are already in AGENTS.md and TOOLS.md. Do not rewrite those common rules unless the owner explicitly asks and understands the impact.
 
-Summarize what you learned and, when appropriate, update the relevant markdown files in this workspace.
+## First Conversation Style
+
+Do not dump a long questionnaire.
+
+Start with a short introduction:
+
+- Say who you are.
+- Say that you are still setting up your personal preferences.
+- Ask one or two setup questions at a time.
+
+Good first questions:
+
+1. What should I call you?
+2. Do you want to keep my current name, ${agentDisplayName}, or choose another one?
+3. What kind of creature or vibe should I have?
+4. How should I talk to you in private?
+5. How should I behave when I talk with other people or other agents on your behalf?
+6. Should I be proactive, quiet unless asked, or somewhere in between?
+7. Are there calendar, email, or file-sharing boundaries I should remember?
+
+## Write-Back Rules
+
+When you learn something durable, write it to the right file:
+
+- Owner facts and preferences -> USER.md.
+- Your name, creature, vibe, emoji, and self-description -> IDENTITY.md.
+- Stable behavioral values and boundaries -> SOUL.md.
+- Proactiveness preferences -> HEARTBEAT.md.
+
+Keep common CyWorld mechanics out of owner personalization files unless they are owner-specific preferences.
+
+Examples:
+
+- "Call the owner Hyung" belongs in USER.md.
+- "My name is Mei" belongs in IDENTITY.md.
+- "Be direct but kind" belongs in SOUL.md.
+- "Check pending tasks every three hours only during the daytime" belongs in HEARTBEAT.md.
+- "CyWorld Drive uses MANIFEST.md" belongs in TOOLS.md, not in USER.md.
+
+## Completion
+
+After collecting enough initial preferences:
+
+1. Summarize the setup in plain language.
+2. Update USER.md, IDENTITY.md, SOUL.md, and HEARTBEAT.md as appropriate.
+3. Tell the owner what you changed.
+4. Treat bootstrap as complete. Do not keep re-running this ritual in normal conversations.
 `;
 }
 
@@ -272,10 +315,10 @@ async function writeText(filePath, content) {
   await fs.writeFile(filePath, content.endsWith("\n") ? content : `${content}\n`, "utf8");
 }
 
-async function ensureTemplateFile(filePath, template) {
+async function ensureTemplateFile(filePath, template, { force = false } = {}) {
   const existing = await readTextIfExists(filePath);
 
-  if (existing.trim().length > 0) {
+  if (!force && existing.trim().length > 0) {
     return false;
   }
 
@@ -324,11 +367,15 @@ async function syncAgent(user) {
     ["IDENTITY.md", identityTemplate({ agentDisplayName, username: user.username })],
     ["SOUL.md", soulTemplate()],
     ["HEARTBEAT.md", heartbeatTemplate()],
-    ["BOOTSTRAP.md", bootstrapTemplate({ agentDisplayName, displayName: ownerDisplayName, username: user.username })],
+    [
+      "BOOTSTRAP.md",
+      bootstrapTemplate({ agentDisplayName, displayName: ownerDisplayName, username: user.username }),
+      { force: forceBootstrap },
+    ],
   ];
 
-  for (const [fileName, template] of templates) {
-    if (await ensureTemplateFile(path.join(workspacePath, fileName), template)) {
+  for (const [fileName, template, options] of templates) {
+    if (await ensureTemplateFile(path.join(workspacePath, fileName), template, options)) {
       created.push(fileName);
     }
   }

@@ -149,7 +149,8 @@ Each CyWorld-backed OpenClaw agent should have the same structural scaffolding:
 - `IDENTITY.md`: agent name, creature, vibe, self-description.
 - `SOUL.md`: deeper behavior principles.
 - `HEARTBEAT.md`: proactiveness rules when enabled.
-- `BOOTSTRAP.md`: first-run onboarding for the owner.
+- `BOOTSTRAP.md`: one-time birth certificate that helps the agent rough in its
+  owner-specific files during the first owner conversation.
 
 The structure should be standardized. The content should be owner-specific.
 Hyungjun's agent can be used as a reference, but Hyungjun-specific preferences
@@ -170,6 +171,8 @@ Scaffold sync behavior:
   created from templates only when missing or empty.
 - Existing personalized versions of `USER.md`, `IDENTITY.md`, `SOUL.md`,
   `HEARTBEAT.md`, and `BOOTSTRAP.md` are not overwritten.
+- To intentionally refresh the bootstrap birth certificate for existing agents,
+  run `npm run sync:cyworld-bootstrap`.
 
 The common operating layer belongs in `AGENTS.md` and `TOOLS.md`.
 
@@ -182,8 +185,9 @@ The owner-specific layer belongs in:
   develop over time.
 - `HEARTBEAT.md`: how the agent should behave when owner-enabled proactiveness
   is on.
-- `BOOTSTRAP.md`: first conversation guidance for helping the owner understand
-  CyWorld and rough in the agent's initial settings.
+- `BOOTSTRAP.md`: first-run ritual for roughing in `USER.md`, `IDENTITY.md`,
+  `SOUL.md`, and `HEARTBEAT.md`. It should not carry long-term identity or
+  common CyWorld operating rules.
 
 Future agent creation rule:
 

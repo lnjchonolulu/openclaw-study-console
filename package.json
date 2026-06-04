@@ -14,7 +14,8 @@
     "sync:cyworld-drive": "node scripts/sync-hyungjun-study-files.mjs",
     "sync:cyworld-drive:all": "node scripts/sync-hyungjun-study-files.mjs --all",
     "sync:study-workflow": "node scripts/sync-study-console-workflow.mjs",
-    "sync:cyworld-scaffold": "node scripts/sync-study-console-workflow.mjs"
+    "sync:cyworld-scaffold": "node scripts/sync-study-console-workflow.mjs",
+    "sync:cyworld-bootstrap": "node scripts/sync-study-console-workflow.mjs --force-bootstrap"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
