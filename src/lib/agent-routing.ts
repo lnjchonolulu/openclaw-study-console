@@ -199,6 +199,8 @@ export function buildAgentRuntimeInstructions({
   counterpartLabel,
   counterpartTimezone,
   availableHumanUsernames,
+  currentHumanDisplayName,
+  currentHumanUsername,
   ownerDisplayName,
   ownerTimezone,
   ownerUsername,
@@ -210,6 +212,8 @@ export function buildAgentRuntimeInstructions({
   counterpartLabel: string;
   counterpartTimezone?: string | null;
   availableHumanUsernames: string[];
+  currentHumanDisplayName?: string | null;
+  currentHumanUsername?: string | null;
   ownerDisplayName: string;
   ownerTimezone?: string | null;
   ownerUsername: string;
@@ -218,10 +222,36 @@ export function buildAgentRuntimeInstructions({
   const normalized = normalizeAgentBehaviorConfig(behaviorConfig);
   const currentCounterpartTime = formatCurrentTimeContext(counterpartTimezone ?? ownerTimezone ?? null);
   const normalizedOwnerTimezone = normalizeTimeZone(ownerTimezone);
+  const normalizedCurrentHumanUsername = currentHumanUsername?.trim().replace(/^@/, "").toLowerCase();
+  const normalizedOwnerUsername = ownerUsername.trim().replace(/^@/, "").toLowerCase();
+  const hasCurrentHuman = Boolean(normalizedCurrentHumanUsername);
+  const ownerMatch = hasCurrentHuman
+    ? normalizedCurrentHumanUsername === normalizedOwnerUsername
+      ? "YES"
+      : "NO"
+    : "NO CURRENT HUMAN";
+  const isCurrentHumanOwner = ownerMatch === "YES";
+  const currentHumanFact = hasCurrentHuman
+    ? `${currentHumanDisplayName?.trim() || normalizedCurrentHumanUsername} (@${normalizedCurrentHumanUsername})`
+    : "No single current human; this is a room, agent, email, or system context.";
+  const ownerIdentityInstruction = isCurrentHumanOwner
+    ? "- The current human is this agent's owner. In shared rooms, still respect room visibility and do not leak private context."
+    : ownerMatch === "NO"
+      ? "- The current human is not this agent's owner. USER.md is still relevant as the owner's profile and owner preferences, but do not treat USER.md owner facts as facts about the current human."
+      : "- There is no single current human in this turn. Use the room, task, email, or system context and do not invent a current human identity.";
   const lines = [
     `You are ${agentDisplayName}, the personal agent for ${ownerDisplayName} (@${ownerUsername}).`,
     `Current date/time for the current human/context: ${currentCounterpartTime.human} (${currentCounterpartTime.timeZone}). Today's date there is ${currentCounterpartTime.isoDate}.`,
     `Owner timezone: ${normalizedOwnerTimezone}. Use the current human/context timezone for interpreting "today", "this morning", and other relative scheduling language unless the user explicitly names a different timezone.`,
+    "",
+    "CyWorld identity facts",
+    `- Stable owner of this agent: ${ownerDisplayName} (@${ownerUsername}).`,
+    `- Current human/context: ${currentHumanFact}`,
+    `- Owner match: ${ownerMatch}.`,
+    ownerIdentityInstruction,
+    isCurrentHumanOwner
+      ? null
+      : `- When speaking with this non-owner, help from ${ownerDisplayName}'s perspective without pretending to be ${ownerDisplayName} or treating the non-owner as ${ownerDisplayName}.`,
     personaSummary?.trim() ? `Baseline persona: ${personaSummary.trim()}` : null,
     "",
     "Core response style",

@@ -645,6 +645,8 @@ async function askAgentForTeamProposal({
       ? `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) speaking most recently`
       : `Team channel "${room.name}" after another agent spoke`,
     counterpartTimezone: triggeringUser?.timezone ?? agent.user.timezone,
+    currentHumanDisplayName: triggeringUser?.displayName ?? null,
+    currentHumanUsername: triggeringUser?.username ?? null,
     ownerDisplayName: agent.user.displayName,
     ownerTimezone: agent.user.timezone,
     ownerUsername: agent.user.username,

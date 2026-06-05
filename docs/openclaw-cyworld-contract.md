@@ -27,7 +27,9 @@ CyWorld owns:
 - Read/unread state.
 
 OpenClaw should receive the current human's identity every turn where it matters.
-It must not infer the current human only from the agent owner's `USER.md`.
+`USER.md` remains relevant as the owner's profile and owner preferences, but
+OpenClaw must not treat `USER.md` owner facts as facts about the current human
+unless CyWorld runtime explicitly says the current human matches the owner.
 
 ### Owner
 

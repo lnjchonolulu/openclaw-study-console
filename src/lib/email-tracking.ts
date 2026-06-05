@@ -132,11 +132,13 @@ async function processEmailReply(message: GmailMessageView) {
   });
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: thread.agent.displayName,
-    audience: "direct_line",
+    audience: thread.requesterUserId === thread.agent.userId ? "direct_line" : "shared_spaces",
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: thread.agent.soulConfigJson,
     counterpartLabel: `${thread.requester.displayName} (@${thread.requester.username}) via an email follow-up event`,
     counterpartTimezone: thread.requester.timezone,
+    currentHumanDisplayName: thread.requester.displayName,
+    currentHumanUsername: thread.requester.username,
     ownerDisplayName: thread.agent.user.displayName,
     ownerTimezone: thread.agent.user.timezone,
     ownerUsername: thread.agent.user.username,

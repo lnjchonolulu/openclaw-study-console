@@ -126,6 +126,8 @@ export async function POST(request: Request) {
           ? `${user.displayName} (@${user.username})`
           : `${user.displayName} (@${user.username}), who is not the owner of this agent`,
       counterpartTimezone: user.timezone,
+      currentHumanDisplayName: user.displayName,
+      currentHumanUsername: user.username,
       ownerDisplayName: dmRoom.targetAgent.user.displayName,
       ownerTimezone: dmRoom.targetAgent.user.timezone,
       ownerUsername: dmRoom.targetAgent.user.username,
