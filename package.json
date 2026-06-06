@@ -13,6 +13,7 @@
     "sync:hyungjun-files": "node scripts/sync-hyungjun-study-files.mjs --agent hyungjun",
     "sync:cyworld-drive": "node scripts/sync-hyungjun-study-files.mjs",
     "sync:cyworld-drive:all": "node scripts/sync-hyungjun-study-files.mjs --all",
+    "test:cyworld-drive-permissions": "node scripts/test-cyworld-drive-permissions.mjs",
     "verify:cyworld-drive": "node scripts/verify-cyworld-drive.mjs",
     "sync:study-workflow": "node scripts/sync-study-console-workflow.mjs",
     "sync:cyworld-scaffold": "node scripts/sync-study-console-workflow.mjs",
