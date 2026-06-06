@@ -1,6 +1,6 @@
 {
   "id": "study_console",
-  "name": "Study Console",
+  "name": "CyWorld",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

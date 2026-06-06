@@ -16,14 +16,6 @@ import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
-function mentionsStudyFiles(message: string) {
-  return (
-    /\b(files?|folders?|workspace|shared folder|drive|directory|directories|interface|upload|download|pdf|docx?|sheets?)\b/i.test(
-      message,
-    ) || /(파일|폴더|공유\s*폴더|워크스페이스|인터페이스|업로드|다운로드|문서)/.test(message)
-  );
-}
-
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -202,12 +194,12 @@ export async function POST(request: Request) {
       });
     }
 
-    const filesContext = mentionsStudyFiles(message)
-      ? await buildStudyFilesRuntimeContext({
-          agentDatabaseId: dmRoom.targetAgent.id,
-          userId: user.id,
-        })
-      : null;
+    const filesContext = await buildStudyFilesRuntimeContext({
+      agentDatabaseId: dmRoom.targetAgent.id,
+      maxInaccessibleFolders: 8,
+      maxVisibleEntries: 16,
+      userId: user.id,
+    });
     const actionReceiptContext = await buildRecentActionReceiptContext({
       agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
       requesterUserId: user.id,

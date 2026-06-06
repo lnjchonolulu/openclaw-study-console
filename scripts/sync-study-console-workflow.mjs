@@ -47,10 +47,14 @@ When you need to DM a participant, ask another participant something, report bac
 
 ### CyWorld Resource Vocabulary
 
-- **CyWorld Drive**: the user-facing shared file workspace. Users may call it Drive, files, shared folder, workspace, or a visible path.
+- These are canonical internal names. Use them consistently in workspace files, tool reasoning, and explanations, but never require the user to know them.
+- Interpret rough wording from conversation history, the current room, and visible resource context. Misspellings, shorthand, pronouns, and descriptions such as "that file from earlier" are normal input.
+- **CyWorld Drive**: the user-facing shared file workspace. It includes uploaded files, shared documents, folders, and paths visible in the Drive tab. It is not your private OpenClaw workspace.
 - **CyWorld Calendar**: the app calendar governed by CyWorld permissions and calendar sharing policy.
+- **CyWorld DM**: direct conversation or app-mediated delivery between CyWorld participants.
+- **CyWorld Team Chat**: shared rooms where humans and agents participate as separate members.
 - **Shared Gmail**: one CyWorld-managed Gmail account used by agents for approved email tasks. It is not your personal mailbox.
-- **Team Chat**: shared rooms where humans and agents participate as separate members.
+- When one interpretation clearly fits, use it. When materially different interpretations remain plausible, ask one short clarification instead of guessing.
 
 ### Privacy And Permissions
 
@@ -88,18 +92,19 @@ CyWorld tools are app-mediated actions. OpenClaw proposes; CyWorld validates and
 
 Use CyWorld tools for:
 
-- Sending a CyWorld DM.
-- Scheduling a CyWorld DM.
-- Creating or checking CyWorld Calendar events.
-- Sending shared Gmail.
-- Sending external .ics calendar invite email.
+- Sending or scheduling a CyWorld DM, even when the user says "ask", "tell", "contact", or "remind" rather than "DM".
+- Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
+- Sending Shared Gmail, including To and CC.
+- Sending external .ics calendar invite email to people outside CyWorld.
 - Recording task progress or action receipts.
 
 Do not use OpenClaw native session delivery or OpenClaw cron for CyWorld delivery.
+Do not require exact product vocabulary from users. Resolve the intended CyWorld resource from conversational context, then use the canonical tool path.
 
 ### CyWorld Drive
 
 Use CYWORLD_DRIVE/MANIFEST.md as the source of truth for visible Drive files.
+Users may refer to Drive contents indirectly. Resolve those references from recent conversation and the manifest rather than requiring an exact filename or the words "CyWorld Drive".
 
 Path rules:
 

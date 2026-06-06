@@ -269,10 +269,12 @@ async function resolveInboundTaskReply({
   behaviorConfig,
   inboundMessageCreatedAt,
   ownerDisplayName,
+  ownerTimezone,
   ownerUsername,
   personaSummary,
   replyMessage,
   replyingDisplayName,
+  replyingTimezone,
   replyingUserId,
   replyingUsername,
   roomId,
@@ -283,10 +285,12 @@ async function resolveInboundTaskReply({
   behaviorConfig: unknown;
   inboundMessageCreatedAt: Date;
   ownerDisplayName: string;
+  ownerTimezone?: string | null;
   ownerUsername: string;
   personaSummary?: string | null;
   replyMessage: string;
   replyingDisplayName: string;
+  replyingTimezone?: string | null;
   replyingUserId: string;
   replyingUsername: string;
   roomId: string;
@@ -432,12 +436,12 @@ async function resolveInboundTaskReply({
     audience: "shared_spaces",
     availableHumanUsernames: [ownerUsername, replyingUsername],
     behaviorConfig,
-    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying in a Study Console DM`,
-    counterpartTimezone: null,
+    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying in a CyWorld DM`,
+    counterpartTimezone: replyingTimezone,
     currentHumanDisplayName: replyingDisplayName,
     currentHumanUsername: replyingUsername,
     ownerDisplayName,
-    ownerTimezone: null,
+    ownerTimezone,
     ownerUsername,
     personaSummary,
   });
@@ -447,7 +451,7 @@ async function resolveInboundTaskReply({
     conversationKey: `task-match:${roomId}:${replyingUserId}`,
     instructions: `${instructions}
 
-You are matching a new human reply to one of several open Study Console tasks.
+You are matching a new human reply to one of several open CyWorld tasks.
 - Return JSON only.
 - Choose a task only if the reply clearly belongs to it.
 - If the reply is too ambiguous, return null taskId.
@@ -573,7 +577,7 @@ async function composeOutboundMessage({
     conversationKey: `task:${taskId}:compose-outbound`,
     instructions: `${instructions}
 
-You are composing a Study Console outbound DM.
+You are composing a CyWorld outbound DM.
 - You are writing as ${input.agentDisplayName}, not as ${input.requesterDisplayName}.
 - Return only the exact message body that should be delivered to @${input.targetUsername}.
 - Do not impersonate the requester. Never write "${input.requesterDisplayName} here", "this is ${input.requesterDisplayName}", or similar unless the requester gave that exact quoted text.
@@ -793,10 +797,12 @@ export async function handleInboundTaskReply({
     behaviorConfig,
     inboundMessageCreatedAt: inboundMessage.createdAt,
     ownerDisplayName,
+    ownerTimezone,
     ownerUsername,
     personaSummary,
     replyMessage,
     replyingDisplayName,
+    replyingTimezone,
     replyingUserId,
     replyingUsername,
     roomId,
@@ -883,7 +889,7 @@ export async function handleInboundTaskReply({
     audience: "shared_spaces",
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig,
-    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying to a Study Console task`,
+    counterpartLabel: `${replyingDisplayName} (@${replyingUsername}), who is replying to a CyWorld task`,
     counterpartTimezone: replyingTimezone,
     currentHumanDisplayName: replyingDisplayName,
     currentHumanUsername: replyingUsername,
@@ -902,11 +908,11 @@ export async function handleInboundTaskReply({
     conversationKey: `task:${task.id}:decide-next-action`,
     instructions: `${instructions}
 
-You are deciding the next action in a Study Console task loop.
+You are deciding the next action in a CyWorld task loop.
 - A participant has replied to something you asked on behalf of the requester.
 - Decide autonomously what should happen next.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
-- The app backend will execute your selected Study Console action.
+- The app backend will execute your selected CyWorld action.
 - Return only JSON. No markdown. No extra text.
 
 Valid JSON shapes:

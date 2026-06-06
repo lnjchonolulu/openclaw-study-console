@@ -747,6 +747,8 @@ async function validateProposalWithArbiter({
     agentId: arbiterAgentId,
     conversationKey: `team:${room.id}:arbiter:${arbiterAgentId}`,
     instructions: `You are the CyWorld team-chat arbiter.
+This is an app-mediated validation call, not a DM, not a human conversation, and not a request to act as the arbiter agent's owner.
+There is no single current human in this turn. Use only the room, chain, latest message, candidate agent, and proposed contribution shown below.
 Your job is to verify whether a proposed agent message actually advances the current team-chat chain.
 Strictness setting: ${settings.arbiterStrictness}.
 

@@ -23,7 +23,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_send_dm",
     description:
-      "Send a direct message from this agent to a human participant inside CyWorld.",
+      "Send a CyWorld DM from this agent to another human participant. Use it when the conversation clearly asks this agent to contact, ask, tell, update, remind, or message a different CyWorld person, even if the user does not say 'DM'. Do not use it for ordinary replies to the current conversational partner or phrases such as 'tell me'.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -48,7 +48,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_create_calendar_event",
     description:
-      "Create a CyWorld Calendar event for the current human participant. Use this when the user asks this agent to add, create, schedule, or put an event on their CyWorld Calendar.",
+      "Create an event in the current human participant's CyWorld Calendar. Use it for clear requests to add, create, schedule, block, remember, or put an appointment/event on their calendar, regardless of whether they say 'CyWorld Calendar'. Do not create an event when they are only discussing possible times.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -90,7 +90,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_list_calendar",
     description:
-      "List CyWorld Calendar events and pending invitations visible to the current human participant. Use this when the user asks to check their calendar, schedule, events, availability, invitations, or what's on their calendar.",
+      "Inspect CyWorld Calendar events and pending invitations visible to the current human participant. Use it when the user asks about a schedule, availability, appointments, events, invitations, free time, or what someone is doing, even if they never say 'calendar'. CyWorld permissions and the owner's sharing policy still apply.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -112,7 +112,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_schedule_dm",
     description:
-      "Schedule a direct message from this agent to a human participant inside CyWorld.",
+      "Schedule a future CyWorld DM from this agent to a human participant. Use it when the user clearly wants another CyWorld person, or themselves, to receive a message later. This is message delivery, not a calendar event.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -141,7 +141,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_send_email",
     description:
-      "Send an email through the shared CyWorld Gmail account. Use only when a user explicitly asks or approves sending an email. This Gmail address is shared by CyWorld agents; it is not this agent's personal address.",
+      "Send email through Shared Gmail, the one Gmail account shared by CyWorld agents. Use only when a user explicitly asks or approves sending mail, including ordinary wording such as 'email them', 'send this to that address', or 'CC'. It is not this agent's personal address.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -170,7 +170,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_send_calendar_invite_email",
     description:
-      "Send an external calendar invitation email with an .ics attachment through the shared CyWorld Gmail account. Use when the user asks to invite someone outside CyWorld, send a calendar invite to a personal email address, or make an event usable in Google Calendar, Apple Calendar, Outlook, or another outside calendar. External email invite acceptance/decline is not tracked inside CyWorld.",
+      "Send an external calendar invitation email with an .ics attachment through Shared Gmail. Use when the user wants an outside email address to receive an invite or wants the event usable in Google Calendar, Apple Calendar, Outlook, or another outside calendar, even if they simply say 'invite this email'. External acceptance or decline is not tracked inside CyWorld.",
     parameters: {
       type: "object",
       additionalProperties: false,

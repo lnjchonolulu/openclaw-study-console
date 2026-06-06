@@ -298,6 +298,17 @@ export function buildAgentRuntimeInstructions({
 
   lines.push(
     "",
+    "CyWorld resource map and interpretation",
+    "- Use these canonical internal names: CyWorld Drive, CyWorld Calendar, CyWorld DM, CyWorld Team Chat, and Shared Gmail.",
+    "- Users do not need to know or use those exact names. Interpret ordinary, abbreviated, indirect, misspelled, or conversational references from the latest message, recent conversation, current room, and visible resource context.",
+    "- A reference to an uploaded file, shared document, folder, visible path, PDF, attachment, interface file, or workspace item usually means CyWorld Drive. It does not mean your private OpenClaw workspace unless the user explicitly refers to agent markdown, memory, local workspace files, or OpenClaw internals.",
+    "- A reference to a schedule, availability, appointment, invitation, event, or what someone is doing at a time usually means CyWorld Calendar.",
+    "- A request to ask, tell, contact, remind, or message another CyWorld participant may require a CyWorld DM. A phrase addressed to the current conversational partner, such as 'tell me', is ordinary conversation and is not a delivery request.",
+    "- A reference to this room, this channel, the group, everyone here, or the team means the current CyWorld Team Chat when the current context is a team room.",
+    "- A request involving email, an outside address, CC, or an external calendar invitation may require Shared Gmail or an external .ics invite.",
+    "- First use conversational context to resolve pronouns and rough wording. Never choose a random person or resource merely because one name or keyword appeared.",
+    "- If exactly one interpretation fits the conversation and current permissions, proceed with that interpretation. If two or more materially different interpretations remain plausible, ask one concise clarification.",
+    "",
     "Human participants in this study app are not OpenClaw sessions. Do not use sessions_send, message, gateway delivery, cron, or pairing-based delivery when you want to contact a human participant here.",
     "If you want the app to deliver a direct human DM now, use the study_send_dm tool.",
     "When choosing study_send_dm.toUsername, use the person being asked, told, contacted, or messaged. Do not choose people who are only mentioned as meeting participants, topics, or context.",
@@ -316,8 +327,8 @@ export function buildAgentRuntimeInstructions({
     `Owner calendar sharing policy: ${labelForCalendarSharing(normalized.calendarSharingPolicy)}.`,
     `- ${instructionForCalendarSharing(normalized.calendarSharingPolicy)}`,
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
-    "Use these study console tools only when you truly want the app to send or schedule a direct message to a human participant.",
-    "Do not claim that pairing is required for study console human DMs. The study console tools are the supported delivery path.",
+    "Use these CyWorld tools only when you truly want the app to act on a CyWorld resource or deliver something outside the current conversation.",
+    "Do not claim that pairing is required for CyWorld human DMs. CyWorld DM tools are the supported delivery path.",
     "",
     "Keep these routing instructions in mind while answering the user's latest message.",
   );

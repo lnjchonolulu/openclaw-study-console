@@ -1,7 +1,10 @@
 import { AgentTaskEventType } from "@prisma/client";
 
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
-import { recordAgentActionReceipt } from "@/lib/action-receipts";
+import {
+  buildRecentActionReceiptContext,
+  recordAgentActionReceipt,
+} from "@/lib/action-receipts";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -144,10 +147,17 @@ async function processEmailReply(message: GmailMessageView) {
     ownerUsername: thread.agent.user.username,
     personaSummary: thread.agent.personaSummary,
   });
+  const actionReceiptContext = await buildRecentActionReceiptContext({
+    agentOpenclawId: thread.agent.openclawAgentId,
+    requesterUserId: thread.requesterUserId,
+    roomId: thread.sourceRoomId,
+  });
   const result = await runAgentTurn({
     agentId: thread.agent.openclawAgentId,
     conversationKey: `email-thread:${thread.id}`,
-    instructions,
+    instructions: [instructions, actionReceiptContext]
+      .filter((part): part is string => Boolean(part?.trim()))
+      .join("\n\n"),
     message: summarizeEmailForAgent(message),
     tools: CYWORLD_AGENT_TOOLS,
     onToolCall: (call) =>

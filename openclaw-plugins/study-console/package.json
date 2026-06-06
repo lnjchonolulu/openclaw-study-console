@@ -5,8 +5,8 @@
   "main": "index.js",
   "openclaw": {
     "id": "study_console",
-    "name": "Study Console",
-    "description": "Study console participant messaging tools.",
+    "name": "CyWorld",
+    "description": "CyWorld participant messaging tools.",
     "extensions": [
       "./index.js"
     ]

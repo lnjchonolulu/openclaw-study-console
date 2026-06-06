@@ -468,9 +468,13 @@ function canAccessRecordWithKey(
 
 export async function buildStudyFilesRuntimeContext({
   agentDatabaseId,
+  maxInaccessibleFolders = 10,
+  maxVisibleEntries = 16,
   userId,
 }: {
   agentDatabaseId: string;
+  maxInaccessibleFolders?: number;
+  maxVisibleEntries?: number;
   userId: string;
 }) {
   const context = await getFileWorkspaceContext(userId);
@@ -506,14 +510,12 @@ export async function buildStudyFilesRuntimeContext({
     },
   });
   const recordsById = new Map(records.map((record) => [record.id, record]));
-  const visibleRecords = records
-    .filter((record) => canAccessRecordWithKey(record, agentKey, recordsById))
-    .sort((left, right) => {
-      const leftPath = buildStudyFilePath(left, recordsById);
-      const rightPath = buildStudyFilePath(right, recordsById);
-      return leftPath.localeCompare(rightPath);
-    })
-    .slice(0, 80);
+  const accessibleRecords = records.filter((record) =>
+    canAccessRecordWithKey(record, agentKey, recordsById),
+  );
+  const visibleRecords = accessibleRecords
+    .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+    .slice(0, maxVisibleEntries);
   const inaccessibleFolders = records
     .filter((record) => record.isFolder && !canAccessRecordWithKey(record, agentKey, recordsById))
     .filter((record) => {
@@ -525,7 +527,7 @@ export async function buildStudyFilesRuntimeContext({
 
       return parent ? canAccessRecordWithKey(parent, agentKey, recordsById) : true;
     })
-    .slice(0, 20);
+    .slice(0, maxInaccessibleFolders);
   const visibleLines = visibleRecords.map((record) => {
     const access = accessLabelForConfig(parseAccessConfig(record.accessConfigJson), context);
     const kind = record.isFolder ? "folder" : "file";
@@ -541,14 +543,17 @@ export async function buildStudyFilesRuntimeContext({
   return [
     "CyWorld Drive context",
     "- CyWorld Drive is the shared file area shown in the web app Drive tab.",
-    "- When the user says Drive, CyWorld Drive, files, folders, shared folder, shared files, workspace, or this interface, they usually mean CyWorld Drive, not your OpenClaw workspace root.",
+    "- Treat CyWorld Drive as the canonical name internally, but never require the user to say that exact name.",
+    "- Resolve vague references from the conversation: for example, a file they uploaded, something visible in the app, a shared document, a folder, a path, 'that PDF', 'the thing from earlier', or 'my workspace' may refer to CyWorld Drive.",
+    "- Distinguish it from your private OpenClaw workspace. AGENTS.md, USER.md, IDENTITY.md, SOUL.md, TOOLS.md, HEARTBEAT.md, BOOTSTRAP.md, and memory files are OpenClaw workspace files, not CyWorld Drive files.",
+    "- If conversation history and the visible entries below identify one sensible resource, use it. If multiple resources remain plausible and the difference matters, ask one short clarification instead of guessing.",
     "- The CyWorld Drive UI root is /.",
     "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use CYWORLD_DRIVE/ as the filesystem mirror of CyWorld Drive.",
     "- UI path /X maps directly to workspace path CYWORLD_DRIVE/X. Do not add or remove a home segment.",
     "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
     "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
     "",
-    "Visible CyWorld Drive entries:",
+    `Recently updated visible CyWorld Drive entries (showing ${visibleRecords.length} of ${accessibleRecords.length}):`,
     visibleLines.length > 0 ? visibleLines.join("\n") : "- (none)",
     "",
     "Known CyWorld Drive folders you cannot access:",

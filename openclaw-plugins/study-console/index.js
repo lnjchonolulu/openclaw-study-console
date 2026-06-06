@@ -83,16 +83,16 @@ async function callStudyConsole(ctx, path, body) {
 function createSendDmTool(ctx) {
   return {
     name: "study_send_dm",
-    label: "Study Console Send DM",
+    label: "CyWorld Send DM",
     description:
-      "Send a direct message to a human participant inside the study console. This is the supported way to contact study participants; do not use sessions_send, message, gateway, or cron for study console participants.",
+      "Send a CyWorld DM to another human participant. Use it when the conversation clearly asks this agent to contact, ask, tell, update, remind, or message a different CyWorld person, even if the user does not say 'DM'. Do not use sessions_send, message, gateway, or cron for CyWorld participants.",
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
         toUsername: {
           type: "string",
-          description: "Recipient username in the study console, without @.",
+          description: "Recipient CyWorld username without @.",
         },
         message: {
           type: "string",
@@ -125,16 +125,16 @@ function createSendDmTool(ctx) {
 function createScheduleDmTool(ctx) {
   return {
     name: "study_schedule_dm",
-    label: "Study Console Schedule DM",
+    label: "CyWorld Schedule DM",
     description:
-      "Schedule a direct message to a human participant inside the study console. Use this for requests like 'in one hour' or 'tomorrow'; do not use OpenClaw cron for study console participant messages.",
+      "Schedule a future CyWorld DM to a human participant. Use it when the user clearly wants someone to receive a message later, regardless of whether they say 'DM'. Do not use OpenClaw cron for CyWorld participant messages.",
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
         toUsername: {
           type: "string",
-          description: "Recipient username in the study console, without @.",
+          description: "Recipient CyWorld username without @.",
         },
         message: {
           type: "string",
@@ -171,8 +171,8 @@ function createScheduleDmTool(ctx) {
 
 export default definePluginEntry({
   id: "study_console",
-  name: "Study Console",
-  description: "Study console participant messaging tools.",
+  name: "CyWorld",
+  description: "CyWorld participant messaging tools.",
   register(api) {
     api.registerTool((ctx) => createSendDmTool(ctx), { name: "study_send_dm" });
     api.registerTool((ctx) => createScheduleDmTool(ctx), {

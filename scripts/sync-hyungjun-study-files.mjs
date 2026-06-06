@@ -39,7 +39,7 @@ function buildAgentsFilesBlock({ agentDisplayName, username }) {
   return `${FILES_MANAGED_START}
 ## CyWorld Drive
 
-CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. In conversation, users may call it "Drive", "CyWorld Drive", "the shared folder", "shared files", "the interface files", "directory", or a visible path such as \`/Onboarding\`.
+CyWorld has a Google Drive-like shared file area called **CyWorld Drive**. Treat that as the canonical internal name, but do not require users to say it. They may describe an item indirectly, misspell its name, refer to "that PDF", "what I uploaded", "the shared thing", "my files", or use a visible path such as \`/Onboarding\`. Resolve the reference from conversation history and the manifest.
 
 For ${agentDisplayName}, CyWorld Drive is mirrored into this OpenClaw workspace at:
 
@@ -54,14 +54,15 @@ Critical path rule:
 
 Before answering requests about shared files or folders:
 1. Read \`${STUDY_FILES_DIRNAME}/MANIFEST.md\`.
-2. Match the user's wording to the UI path shown in the manifest.
+2. Resolve the user's wording, pronouns, and recent conversational references against the UI paths shown in the manifest.
 3. Use the exact mirrored workspace path from the manifest when you need to read or edit accessible files.
 4. Respect the access state shown in the manifest.
+5. If exactly one visible resource fits, use it. If several materially different resources fit, ask one concise clarification instead of guessing.
 
 Access language:
 - \`view/edit\`: you may read and modify the mirrored file or folder.
 - \`no access\`: you may mention that the folder exists only if it appears in the manifest, but you must not claim to know its contents.
-- \`system-managed\`: access is controlled by the Study Console app and should not be bypassed.
+- \`system-managed\`: access is controlled by CyWorld and should not be bypassed.
 
 When you create, edit, rename, or delete files under \`${STUDY_FILES_DIRNAME}/\`, the CyWorld Drive sync job can import those changes back into the web app. Do not edit \`${STUDY_FILES_DIRNAME}/MANIFEST.md\` to change permissions; permissions come from the app.
 
@@ -89,6 +90,8 @@ Canonical terms:
 - Participants with access: humans and agents who can access that folder
 - Personal folder: a system-managed folder for a human and that human's own agent
 - Replace file: upload a new version over an existing file
+
+These terms standardize internal reasoning and documentation. They are not a vocabulary requirement for users.
 
 Sync behavior:
 - Existing mirrored files you edit are imported back into the web app as new files, not replacements.
