@@ -221,7 +221,7 @@ export async function buildRecentActionReceiptContext({
 
   tasks.forEach((task) => {
     lines.push(
-      `- ${task.title} [${formatTaskStatus(task.status)}] requester=@${task.requester.username}${task.targetUser ? ` target=@${task.targetUser.username}` : ""}`,
+      `- ${task.title} [${formatTaskStatus(task.status)}] taskId=${task.id} requester=@${task.requester.username}${task.targetUser ? ` target=@${task.targetUser.username}` : ""}`,
     );
 
     task.events

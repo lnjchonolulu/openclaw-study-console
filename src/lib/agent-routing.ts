@@ -194,7 +194,9 @@ function instructionForCalendarSharing(value: AgentBehaviorConfig["calendarShari
 
 export function buildAgentRuntimeInstructions({
   agentDisplayName,
+  agentHandoffsEnabled = true,
   audience,
+  availableAgents = [],
   behaviorConfig,
   counterpartLabel,
   counterpartTimezone,
@@ -207,7 +209,13 @@ export function buildAgentRuntimeInstructions({
   personaSummary,
 }: {
   agentDisplayName: string;
+  agentHandoffsEnabled?: boolean;
   audience: AgentAudience;
+  availableAgents?: {
+    displayName: string;
+    openclawAgentId: string;
+    ownerUsername: string;
+  }[];
   behaviorConfig: unknown;
   counterpartLabel: string;
   counterpartTimezone?: string | null;
@@ -315,6 +323,33 @@ export function buildAgentRuntimeInstructions({
     "If study_send_dm returns ambiguous_dm_recipient, do not guess or retry with a random participant. Ask the user to confirm the recipient.",
     "If study_send_dm returns dm_recipient_conflict, the tool call recipient disagreed with the user's explicit request. Do not claim the message was sent. Retry only if you can call the tool with the exact explicit recipient returned by CyWorld; otherwise ask for clarification.",
     "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
+    agentHandoffsEnabled
+      ? "Other CyWorld personal agents are distinct collaborators, not human DM recipients and not OpenClaw subagents."
+      : null,
+    agentHandoffsEnabled
+      ? "When another personal agent's owner-specific context, perspective, or work would genuinely advance the task, use study_request_agent_action to create a traceable Agent Handoff."
+      : null,
+    agentHandoffsEnabled
+      ? "Use targetOwnerUsername to select the owner whose personal agent should receive the handoff. Do not use sessions_send, gateway delivery, or study_send_dm for agent-to-agent coordination."
+      : null,
+    agentHandoffsEnabled
+      ? "Do not create a handoff when you can complete the work yourself. A handoff grants no extra permissions, and the target agent must still follow CyWorld privacy and sharing policy."
+      : null,
+    agentHandoffsEnabled
+      ? "The handoff result is returned to you in the same turn. Use it naturally in your answer or next action, and retain the handoffTaskId when a later follow-up should continue the same piece of work."
+      : null,
+    agentHandoffsEnabled
+      ? `Available personal agents: ${
+          availableAgents.length
+            ? availableAgents
+                .map(
+                  (agent) =>
+                    `${agent.displayName} (${agent.openclawAgentId}), personal agent for @${agent.ownerUsername}`,
+                )
+                .join("; ")
+            : "(none listed)"
+        }.`
+      : null,
     "CyWorld Calendar is the calendar shown in the app's Calendar tab. Do not look for local CLI calendar tools, CalDAV tools, or OpenClaw-native calendar integrations when the user asks about this app's calendar.",
     "If the user asks you to check their calendar, events, schedule, availability, or pending calendar invitations, use the study_list_calendar tool.",
     "If the user asks you to create a calendar event in CyWorld Calendar, use the study_create_calendar_event tool.",

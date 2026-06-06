@@ -7,6 +7,7 @@ import {
   listCalendarMonth,
   type CalendarEventView,
 } from "@/lib/calendar";
+import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { sendSharedGmail } from "@/lib/google-integration";
@@ -20,6 +21,33 @@ import {
 } from "@/lib/timezone";
 
 export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
+  {
+    name: "study_request_agent_action",
+    description:
+      "Ask another CyWorld personal agent to contribute owner-specific context, perspective, or work to the current task. This creates a traceable Agent Handoff and returns that agent's response in this turn. Use it only when another agent is genuinely relevant; do not use it to contact a human participant or for work this agent can complete itself.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        continueTaskId: {
+          type: "string",
+          description:
+            "Optional handoffTaskId from an earlier handoff when this is a follow-up in the same piece of work.",
+        },
+        request: {
+          type: "string",
+          description:
+            "A self-contained, natural-language request for the target agent. Include the context needed to act without impersonating any human.",
+        },
+        targetOwnerUsername: {
+          type: "string",
+          description:
+            "The CyWorld username of the person whose personal agent should receive this handoff, without @.",
+        },
+      },
+      required: ["targetOwnerUsername", "request"],
+    },
+  },
   {
     name: "study_send_dm",
     description:
@@ -319,10 +347,18 @@ async function recordToolCallReceipt({
   const result = parseToolResult(resultText);
   const ok = result?.ok === true;
   const effectiveTaskId =
-    (typeof result?.taskId === "string" && result.taskId.trim()) || taskId || null;
+    (typeof result?.taskId === "string" && result.taskId.trim()) ||
+    (typeof result?.handoffTaskId === "string" && result.handoffTaskId.trim()) ||
+    taskId ||
+    null;
   const targetUserId =
     call.name === "study_send_dm" || call.name === "study_schedule_dm"
       ? await userIdForUsername(result?.toUsername ?? args?.toUsername)
+      : call.name === "study_request_agent_action"
+        ? await userIdForUsername(
+            (result?.targetAgent as { ownerUsername?: unknown } | undefined)?.ownerUsername ??
+              args?.targetOwnerUsername,
+          )
       : null;
 
   const receipt = await recordAgentActionReceipt({
@@ -1328,6 +1364,35 @@ async function executeCyWorldAgentToolCall({
   sourceRoomId?: string;
   taskId?: string | null;
 }) {
+  if (call.name === "study_request_agent_action") {
+    const handoffTools = CYWORLD_AGENT_TOOLS.filter(
+      (tool) => tool.name !== "study_request_agent_action",
+    );
+    const result = await runAgentHandoff({
+      input: {
+        continueTaskId: args.continueTaskId,
+        request: args.request,
+        targetOwnerUsername: args.targetOwnerUsername,
+      },
+      parentTaskId: taskId,
+      requesterUserId,
+      sourceAgentOpenclawId: senderAgentOpenclawId,
+      sourceRoomId,
+      targetTools: handoffTools,
+      onTargetToolCall: (targetCall, context) =>
+        handleCyWorldAgentToolCall({
+          call: targetCall,
+          objective: cleanMessage(args.request),
+          requesterUserId: context.requesterUserId,
+          senderAgentOpenclawId: context.targetAgentOpenclawId,
+          sourceRoomId: context.sourceRoomId,
+          taskId: context.taskId,
+        }),
+    });
+
+    return JSON.stringify(result);
+  }
+
   if (call.name === "study_list_calendar") {
     return handleCalendarListTool({
       args,

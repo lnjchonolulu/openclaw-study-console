@@ -105,12 +105,29 @@ export async function POST(request: Request) {
         username: "asc",
       },
       select: {
+        agent: {
+          select: {
+            displayName: true,
+            openclawAgentId: true,
+          },
+        },
         username: true,
       },
     });
     const instructions = buildAgentRuntimeInstructions({
       agentDisplayName: dmRoom.targetAgent.displayName,
       audience,
+      availableAgents: activeHumans.flatMap((human) =>
+        human.agent
+          ? [
+              {
+                displayName: human.agent.displayName,
+                openclawAgentId: human.agent.openclawAgentId,
+                ownerUsername: human.username,
+              },
+            ]
+          : [],
+      ),
       availableHumanUsernames: activeHumans.map((human) => human.username),
       behaviorConfig: dmRoom.targetAgent.soulConfigJson,
       counterpartLabel:

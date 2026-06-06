@@ -240,8 +240,11 @@ integration paths, but they do not all follow the same action lifecycle.
 
 ### Known Missing Or Incomplete Capabilities
 
-- Agent-to-agent autonomous DM is not yet a first-class primitive. Team-chat
-  agent chains exist, but DM agent-to-agent work still needs a clear design.
+- Agent Handoff is now the first-class primitive for agent-to-agent work outside
+  team-chat chains. It uses the target agent's real OpenClaw runtime and durable
+  task events without exposing a hidden agent DM UI. Production scenario
+  validation is still needed for multi-agent delegation, continuation, privacy,
+  and failure recovery.
 - CyWorld Drive sync is callable per OpenClaw agent id and has an all-agent
   runner for every active CyWorld user with an OpenClaw agent. It still needs
   production rollout verification so every study agent workspace has the same

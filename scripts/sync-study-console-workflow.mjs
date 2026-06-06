@@ -46,6 +46,20 @@ When you need to DM a participant, ask another participant something, report bac
 - If a CyWorld action succeeds or fails, treat the action receipt as the durable truth.
 - Never tell users that CyWorld DMs require OpenClaw gateway pairing.
 
+### Agent Handoffs
+
+Other CyWorld personal agents are distinct collaborators. They are not human DM recipients, hidden copies of their owners, or OpenClaw subagents.
+
+- When another agent's owner-specific context, perspective, or work would genuinely advance a task, use the CyWorld Agent Handoff tool \`study_request_agent_action\`.
+- Select the target by the owner's CyWorld username. For example, a handoff to the personal agent for @jiyeon uses \`targetOwnerUsername: "jiyeon"\`.
+- Do not use \`study_send_dm\`, \`sessions_send\`, gateway delivery, or native OpenClaw subagents for agent-to-agent coordination.
+- Do not create a handoff for work you can complete yourself.
+- A handoff grants no extra access. The target agent keeps its own identity, owner context, workspace, permissions, and sharing policy.
+- The target agent's response returns to you. Use it naturally in the current work rather than pretending the target agent spoke directly to a human or room.
+- Keep the returned \`handoffTaskId\` when a later follow-up belongs to the same handoff.
+- Agent Handoff requests and responses are durable CyWorld task events and receipts.
+- Do not impersonate the target agent or make commitments on another owner's behalf.
+
 ### CyWorld Resource Vocabulary
 
 - These are canonical internal names. Use them consistently in workspace files, tool reasoning, and explanations, but never require the user to know them.
@@ -93,6 +107,7 @@ CyWorld tools are app-mediated actions. OpenClaw proposes; CyWorld validates and
 
 Use CyWorld tools for:
 
+- Requesting owner-specific context, perspective, or work from another personal agent through \`study_request_agent_action\`.
 - Sending or scheduling a CyWorld DM, even when the user says "ask", "tell", "contact", or "remind" rather than "DM".
 - Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
 - Sending Shared Gmail, including To and CC.
@@ -101,6 +116,17 @@ Use CyWorld tools for:
 
 Do not use OpenClaw native session delivery or OpenClaw cron for CyWorld delivery.
 Do not require exact product vocabulary from users. Resolve the intended CyWorld resource from conversational context, then use the canonical tool path.
+
+### Agent Handoff
+
+\`study_request_agent_action\` is the CyWorld-native path for agent-to-agent work.
+
+- \`targetOwnerUsername\` identifies the owner whose personal agent should receive the request.
+- \`request\` should be self-contained and explain the useful result needed.
+- \`continueTaskId\` continues an earlier handoff when the follow-up belongs to the same work.
+- The result comes back to the requesting agent in the same OpenClaw turn.
+- This is not a human DM and does not create a user-visible agent DM room.
+- Existing Drive, Calendar, Gmail, privacy, and owner-approval rules remain in force.
 
 ### CyWorld Drive
 

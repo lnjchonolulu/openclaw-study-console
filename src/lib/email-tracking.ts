@@ -130,12 +130,29 @@ async function processEmailReply(message: GmailMessageView) {
       username: "asc",
     },
     select: {
+      agent: {
+        select: {
+          displayName: true,
+          openclawAgentId: true,
+        },
+      },
       username: true,
     },
   });
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: thread.agent.displayName,
     audience: thread.requesterUserId === thread.agent.userId ? "direct_line" : "shared_spaces",
+    availableAgents: activeHumans.flatMap((human) =>
+      human.agent
+        ? [
+            {
+              displayName: human.agent.displayName,
+              openclawAgentId: human.agent.openclawAgentId,
+              ownerUsername: human.username,
+            },
+          ]
+        : [],
+    ),
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: thread.agent.soulConfigJson,
     counterpartLabel: `${thread.requester.displayName} (@${thread.requester.username}) via an email follow-up event`,

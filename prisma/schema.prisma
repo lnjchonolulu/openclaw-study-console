@@ -64,6 +64,8 @@ enum AgentTaskStatus {
 enum AgentTaskEventType {
   USER_REQUEST
   AGENT_DECISION
+  HANDOFF_REQUEST
+  HANDOFF_RESPONSE
   OUTBOUND_MESSAGE
   SCHEDULED_MESSAGE
   INBOUND_REPLY
@@ -145,7 +147,8 @@ model Agent {
   messages          Message[]
   roomAgents        RoomAgent[]
   scheduledMessages ScheduledMessage[]
-  tasks             AgentTask[]
+  tasks             AgentTask[]        @relation("AgentTaskOwner")
+  handoffTasks      AgentTask[]        @relation("AgentTaskTargetAgent")
   emailThreads      EmailThread[]
 }
 
@@ -248,6 +251,8 @@ model ScheduledMessage {
 model AgentTask {
   id                String             @id @default(cuid())
   agentId           String
+  targetAgentId     String?
+  parentTaskId      String?
   requesterUserId   String
   targetUserId      String?
   sourceRoomId      String?
@@ -258,7 +263,10 @@ model AgentTask {
   resultSummary     String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-  agent             Agent              @relation(fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+  agent             Agent              @relation("AgentTaskOwner", fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+  targetAgent       Agent?             @relation("AgentTaskTargetAgent", fields: [targetAgentId], references: [openclawAgentId], onDelete: SetNull)
+  parentTask        AgentTask?         @relation("AgentTaskChildren", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childTasks        AgentTask[]        @relation("AgentTaskChildren")
   requester         User               @relation("AgentTaskRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
   targetUser        User?              @relation("AgentTaskTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
   sourceRoom        Room?              @relation(fields: [sourceRoomId], references: [id], onDelete: SetNull)
@@ -268,6 +276,8 @@ model AgentTask {
   emailThreads      EmailThread[]
 
   @@index([agentId, status])
+  @@index([targetAgentId, status])
+  @@index([parentTaskId])
   @@index([requesterUserId, status])
   @@index([targetUserId, status])
 }
@@ -358,20 +368,20 @@ model TypingState {
 }
 
 model RoomAgent {
-  roomId         String
-  agentId        String
-  role           RoomAgentRole @default(COLLABORATOR)
-  roleNote       String?
-  canRespond     Boolean       @default(true)
-  canUseFiles    Boolean       @default(true)
-  canBeMentioned Boolean       @default(true)
+  roomId            String
+  agentId           String
+  role              RoomAgentRole @default(COLLABORATOR)
+  roleNote          String?
+  canRespond        Boolean       @default(true)
+  canUseFiles       Boolean       @default(true)
+  canBeMentioned    Boolean       @default(true)
   lastSeenMessageId String?
-  lastInvokedAt  DateTime?
-  lastSpokeAt    DateTime?
-  mutedUntil     DateTime?
-  joinedAt       DateTime      @default(now())
-  room           Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  agent          Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lastInvokedAt     DateTime?
+  lastSpokeAt       DateTime?
+  mutedUntil        DateTime?
+  joinedAt          DateTime      @default(now())
+  room              Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  agent             Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@id([roomId, agentId])
 }
@@ -450,7 +460,7 @@ model CalendarEvent {
   updatedAt        DateTime                     @updatedAt
   team             Team?                        @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdBy        User?                        @relation("CalendarEventCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  hiddenForUsers    CalendarEventHidden[]
+  hiddenForUsers   CalendarEventHidden[]
   invitations      CalendarInvitation[]
   titleOverrides   CalendarEventTitleOverride[]
 

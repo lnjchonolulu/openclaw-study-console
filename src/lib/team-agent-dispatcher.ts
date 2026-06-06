@@ -633,12 +633,29 @@ async function askAgentForTeamProposal({
       username: "asc",
     },
     select: {
+      agent: {
+        select: {
+          displayName: true,
+          openclawAgentId: true,
+        },
+      },
       username: true,
     },
   });
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: agent.displayName,
     audience: "shared_spaces",
+    availableAgents: activeHumans.flatMap((human) =>
+      human.agent
+        ? [
+            {
+              displayName: human.agent.displayName,
+              openclawAgentId: human.agent.openclawAgentId,
+              ownerUsername: human.username,
+            },
+          ]
+        : [],
+    ),
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: agent.soulConfigJson,
     counterpartLabel: triggeringUser

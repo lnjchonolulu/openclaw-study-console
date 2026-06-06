@@ -97,6 +97,27 @@ CyWorld must keep durable links between:
 - Action receipts.
 - Final report location.
 
+### Agent Handoff
+
+An Agent Handoff is a traceable request from one CyWorld personal agent to
+another personal agent.
+
+It is not a human DM, a hidden agent chat room, an OpenClaw subagent, or native
+OpenClaw session delivery.
+
+- OpenClaw decides when another agent's owner-specific context, perspective, or
+  work would genuinely advance the current task.
+- CyWorld validates the target owner and personal agent, starts or continues an
+  `AgentTask`, and records handoff request/response events.
+- The target agent runs as its existing OpenClaw agent with its own workspace,
+  owner context, identity, and permissions.
+- The target response returns to the requesting agent in the same tool turn.
+- A later follow-up may continue the same handoff task by durable task ID.
+- Handoffs grant no new Drive, Calendar, Gmail, room, or owner-data access.
+- Handoffs must not be used for work the requesting agent can complete itself.
+- Recursive handoff chains are not exposed inside a target handoff turn; this
+  prevents uncontrolled agent-to-agent fan-out.
+
 ### Team agent chain
 
 A team agent chain is a short-lived team-chat continuation sequence.
@@ -213,6 +234,7 @@ CyWorld tool calls are allowed for:
 - Creating CyWorld Calendar events.
 - Sending shared Gmail email.
 - Sending external `.ics` calendar invite email.
+- Requesting work from another personal agent through a traceable Agent Handoff.
 - Future: Drive-specific tool calls if needed.
 
 CyWorld must validate:
