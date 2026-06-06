@@ -235,10 +235,12 @@ export async function POST(request: Request) {
       onToolCall: (call) =>
         handleCyWorldAgentToolCall({
           call,
+          currentHumanUserId: user.id,
           objective: message,
           requesterUserId: user.id,
           senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
           sourceRoomId: dmRoom.room.id,
+          triggerType: "human_dm",
         }),
     });
 

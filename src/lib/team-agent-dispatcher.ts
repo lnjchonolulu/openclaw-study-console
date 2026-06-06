@@ -673,6 +673,26 @@ async function askAgentForTeamProposal({
     agentOpenclawId: agent.openclawAgentId,
     roomId: room.id,
   });
+  const chainRecord = await prisma.teamAgentChain.findUnique({
+    where: {
+      id: chain.id,
+    },
+    select: {
+      rootMessageId: true,
+    },
+  });
+  const rootMessage = chainRecord
+    ? await prisma.message.findUnique({
+        where: {
+          id: chainRecord.rootMessageId,
+        },
+        select: {
+          userId: true,
+        },
+      })
+    : null;
+  const initiatedByUserId =
+    latestMessage.userId ?? rootMessage?.userId ?? agent.user.id;
 
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
@@ -719,10 +739,12 @@ Should ${agent.displayName} speak now?`,
     onToolCall: (call) =>
       handleCyWorldAgentToolCall({
         call,
+        currentHumanUserId: latestMessage.userId,
         objective: latestMessage.content,
-        requesterUserId: latestMessage.userId ?? agent.user.id,
+        requesterUserId: initiatedByUserId,
         senderAgentOpenclawId: agent.openclawAgentId,
         sourceRoomId: room.id,
+        triggerType: latestMessage.userId ? "team_human_message" : "team_agent_message",
       }),
   });
 

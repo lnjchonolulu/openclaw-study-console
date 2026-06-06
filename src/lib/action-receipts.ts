@@ -183,8 +183,25 @@ export async function buildRecentActionReceiptContext({
 
   const tasks = await prisma.agentTask.findMany({
     where: {
-      agentId: agentOpenclawId,
-      OR: clauses.length > 0 ? clauses : undefined,
+      AND: [
+        {
+          OR: [
+            {
+              agentId: agentOpenclawId,
+            },
+            {
+              targetAgentId: agentOpenclawId,
+            },
+          ],
+        },
+        ...(clauses.length > 0
+          ? [
+              {
+                OR: clauses,
+              },
+            ]
+          : []),
+      ],
     },
     orderBy: {
       updatedAt: "desc",
@@ -221,7 +238,7 @@ export async function buildRecentActionReceiptContext({
 
   tasks.forEach((task) => {
     lines.push(
-      `- ${task.title} [${formatTaskStatus(task.status)}] taskId=${task.id} requester=@${task.requester.username}${task.targetUser ? ` target=@${task.targetUser.username}` : ""}`,
+      `- ${task.title} [${formatTaskStatus(task.status)}] taskId=${task.id} requester=@${task.requester.username}${task.agentId === agentOpenclawId ? " role=requesting-agent" : " role=receiving-agent"}${task.targetUser ? ` target=@${task.targetUser.username}` : ""}`,
     );
 
     task.events

@@ -180,11 +180,13 @@ async function processEmailReply(message: GmailMessageView) {
     onToolCall: (call) =>
       handleCyWorldAgentToolCall({
         call,
+        currentHumanUserId: null,
         objective: `Follow up on email reply in thread "${thread.subject}".`,
         requesterUserId: thread.requesterUserId,
         senderAgentOpenclawId: thread.agent.openclawAgentId,
         sourceRoomId: thread.sourceRoomId ?? undefined,
         taskId: thread.taskId,
+        triggerType: "email_reply",
       }),
   });
 

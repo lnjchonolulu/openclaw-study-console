@@ -10,6 +10,7 @@ import {
 import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import { sendSharedGmail } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
@@ -24,7 +25,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_request_agent_action",
     description:
-      "Ask another CyWorld personal agent to contribute owner-specific context, perspective, or work to the current task. This creates a traceable Agent Handoff and returns that agent's response in this turn. Use it only when another agent is genuinely relevant; do not use it to contact a human participant or for work this agent can complete itself.",
+      "Ask another CyWorld personal agent to contribute owner-specific context, perspective, or work to the current task. This creates a traceable Agent Handoff and returns that agent's response in this turn. If a necessary follow-up remains, call it again with the returned handoffTaskId as continueTaskId so the same agents can continue the exchange. Stop when the result is sufficient; do not continue for agreement, repetition, or social filler. Use it only when another agent is genuinely relevant; do not use it to contact a human participant or for work this agent can complete itself.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -781,68 +782,75 @@ function summarizeCalendarEvent(event: CalendarEventView, timeZone: string) {
 
 async function handleCalendarListTool({
   args,
-  requesterUserId,
+  currentHumanUserId,
+  initiatedByUserId,
   senderAgentOpenclawId,
+  triggerType,
 }: {
   args: Record<string, unknown>;
-  requesterUserId?: string;
+  currentHumanUserId?: string;
+  initiatedByUserId?: string;
   senderAgentOpenclawId: string;
+  triggerType?: string | null;
 }) {
-  if (!requesterUserId) {
-    return JSON.stringify({
-      ok: false,
-      reason: "missing_requester_user",
-    });
-  }
-
-  const requester = await prisma.user.findUnique({
-    where: {
-      id: requesterUserId,
-    },
-    select: {
-      displayName: true,
-      id: true,
-      timezone: true,
-      username: true,
-    },
-  });
-
-  if (!requester) {
-    return JSON.stringify({
-      ok: false,
-      reason: "requester_not_found",
-    });
-  }
-
-  const requestedUsername = cleanUsername(args.username);
-
-  if (requestedUsername && requestedUsername !== requester.username) {
-    const senderAgent = await prisma.agent.findUnique({
+  const [currentHuman, initiator, senderAgent] = await Promise.all([
+    currentHumanUserId
+      ? prisma.user.findUnique({
+          where: {
+            id: currentHumanUserId,
+          },
+          select: {
+            displayName: true,
+            id: true,
+            timezone: true,
+            username: true,
+          },
+        })
+      : null,
+    initiatedByUserId
+      ? prisma.user.findUnique({
+          where: {
+            id: initiatedByUserId,
+          },
+          select: {
+            displayName: true,
+            id: true,
+            timezone: true,
+            username: true,
+          },
+        })
+      : null,
+    prisma.agent.findUnique({
       where: {
         openclawAgentId: senderAgentOpenclawId,
       },
       include: {
         user: true,
       },
+    }),
+  ]);
+
+  if (!senderAgent) {
+    return JSON.stringify({
+      ok: false,
+      reason: "acting_agent_not_found",
     });
+  }
 
-    if (!senderAgent || senderAgent.user.username !== requestedUsername) {
-      return JSON.stringify({
-        ok: false,
-        reason: "calendar_access_is_limited_to_current_human",
-        currentHuman: {
-          displayName: requester.displayName,
-          username: requester.username,
-        },
-        requestedUsername,
-      });
-    }
+  const requestedUsername = cleanUsername(args.username);
+  const actingOwner = senderAgent.user;
+  const viewer = currentHuman ?? initiator ?? actingOwner;
+  const effectiveUsername =
+    requestedUsername || currentHuman?.username || actingOwner.username;
 
+  if (effectiveUsername === actingOwner.username) {
+    const ownerIsCurrentHuman = currentHuman?.id === actingOwner.id;
+    const autonomousOwnerWork = !currentHuman && triggerType !== "agent_handoff";
     const policy = normalizeAgentBehaviorConfig(
       senderAgent.soulConfigJson,
     ).calendarSharingPolicy;
 
-    if (policy !== "always") {
+    if (!ownerIsCurrentHuman && !autonomousOwnerWork && policy !== "always") {
       return JSON.stringify({
         ok: false,
         reason:
@@ -850,14 +858,14 @@ async function handleCalendarListTool({
             ? "owner_calendar_sharing_disabled"
             : "owner_calendar_permission_required",
         owner: {
-          displayName: senderAgent.user.displayName,
-          username: senderAgent.user.username,
+          displayName: actingOwner.displayName,
+          username: actingOwner.username,
         },
-        requestedUsername,
+        requestedUsername: effectiveUsername,
       });
     }
 
-    const ownerView = await listCalendarMonth(senderAgent.user.id, cleanMonth(args.month));
+    const ownerView = await listCalendarMonth(actingOwner.id, cleanMonth(args.month));
 
     if (!ownerView) {
       return JSON.stringify({
@@ -870,15 +878,15 @@ async function handleCalendarListTool({
       ok: true,
       calendar: "CyWorld Calendar",
       viewer: {
-        displayName: requester.displayName,
-        timezone: normalizeTimeZone(requester.timezone),
-        username: requester.username,
+        displayName: viewer.displayName,
+        timezone: normalizeTimeZone(viewer.timezone),
+        username: viewer.username,
       },
       sharedFrom: {
-        displayName: senderAgent.user.displayName,
-        username: senderAgent.user.username,
+        displayName: actingOwner.displayName,
+        username: actingOwner.username,
       },
-      sharingPolicy: policy,
+      sharingPolicy: ownerIsCurrentHuman || autonomousOwnerWork ? "owner_access" : policy,
       month: ownerView.month,
       timeZone: ownerView.timeZone,
       events: ownerView.events.slice(0, 40).map((event) => summarizeCalendarEvent(event, ownerView.timeZone)),
@@ -892,7 +900,21 @@ async function handleCalendarListTool({
     });
   }
 
-  const view = await listCalendarMonth(requester.id, cleanMonth(args.month));
+  if (!currentHuman || effectiveUsername !== currentHuman.username) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_access_is_limited_to_current_human_or_acting_agent_owner",
+      currentHuman: currentHuman
+        ? {
+            displayName: currentHuman.displayName,
+            username: currentHuman.username,
+          }
+        : null,
+      requestedUsername: effectiveUsername,
+    });
+  }
+
+  const view = await listCalendarMonth(currentHuman.id, cleanMonth(args.month));
 
   if (!view) {
     return JSON.stringify({
@@ -905,9 +927,9 @@ async function handleCalendarListTool({
     ok: true,
     calendar: "CyWorld Calendar",
     viewer: {
-      displayName: requester.displayName,
+      displayName: currentHuman.displayName,
       timezone: view.timeZone,
-      username: requester.username,
+      username: currentHuman.username,
     },
     month: view.month,
     timeZone: view.timeZone,
@@ -924,17 +946,19 @@ async function handleCalendarListTool({
 
 async function handleCalendarCreateTool({
   args,
+  currentHumanUserId,
   objective,
-  requesterUserId,
 }: {
   args: Record<string, unknown>;
+  currentHumanUserId?: string;
   objective?: string;
-  requesterUserId?: string;
 }) {
-  if (!requesterUserId) {
+  if (!currentHumanUserId) {
     return JSON.stringify({
       ok: false,
-      reason: "missing_requester_user",
+      reason: "calendar_mutation_requires_current_human",
+      guidance:
+        "Do not create or modify a person's calendar from an internal agent handoff. Ask the relevant human for approval in their own conversation.",
     });
   }
 
@@ -943,7 +967,7 @@ async function handleCalendarCreateTool({
   const endAt = parseDate(args.endAt);
   const requester = await prisma.user.findUnique({
     where: {
-      id: requesterUserId,
+      id: currentHumanUserId,
     },
     select: {
       timezone: true,
@@ -999,7 +1023,7 @@ async function handleCalendarCreateTool({
   });
   let createError: string | null = null;
   const created = await createCalendarEvent({
-    createdByUserId: requesterUserId,
+    createdByUserId: currentHumanUserId,
     description: typeof args.description === "string" ? args.description : undefined,
     endAt,
     invitedUserIds: invitees.map((invitee) => invitee.id),
@@ -1043,25 +1067,28 @@ async function handleCalendarCreateTool({
 
 async function handleExternalCalendarInviteTool({
   args,
+  currentHumanUserId,
   objective,
-  requesterUserId,
   senderAgentOpenclawId,
   sourceRoomId,
   taskId,
 }: {
   args: Record<string, unknown>;
+  currentHumanUserId?: string;
   objective?: string;
-  requesterUserId?: string;
   senderAgentOpenclawId: string;
   sourceRoomId?: string;
   taskId?: string | null;
 }) {
-  if (!requesterUserId) {
+  if (!currentHumanUserId) {
     return JSON.stringify({
       ok: false,
-      reason: "missing_requester_user",
+      reason: "external_calendar_invite_requires_current_human",
+      guidance:
+        "Do not create or send an external calendar invitation from an internal agent handoff. Ask the relevant human for approval in their own conversation.",
     });
   }
+  const requesterUserId = currentHumanUserId;
 
   const title = typeof args.title === "string" ? args.title.trim() : "";
   const toEmails = cleanEmailArray(args.toEmails);
@@ -1293,36 +1320,118 @@ async function createToolTask({
 
 export async function handleCyWorldAgentToolCall({
   call,
+  currentHumanUserId,
   objective,
   requesterUserId,
   senderAgentOpenclawId,
   sourceRoomId,
   taskId,
+  triggerType,
 }: {
   call: OpenClawFunctionCall;
+  currentHumanUserId?: string | null;
   objective?: string;
   requesterUserId?: string;
   senderAgentOpenclawId: string;
   sourceRoomId?: string;
   taskId?: string | null;
+  triggerType?: string | null;
 }) {
+  const context: CyWorldExecutionContext = {
+    actingAgentOpenclawId: senderAgentOpenclawId,
+    currentHumanUserId: currentHumanUserId ?? null,
+    initiatedByUserId: requesterUserId ?? null,
+    originRoomId: sourceRoomId ?? null,
+    taskId: taskId ?? null,
+    triggerType: triggerType ?? null,
+  };
+  const idempotencyKey = [
+    context.actingAgentOpenclawId,
+    context.taskId ?? context.originRoomId ?? context.initiatedByUserId ?? "system",
+    call.callId,
+  ].join(":");
+  const existingExecution = await prisma.agentToolExecution.findUnique({
+    where: {
+      idempotencyKey,
+    },
+  });
+
+  if (existingExecution?.resultText) {
+    return existingExecution.resultText;
+  }
+
+  if (existingExecution?.status === "RUNNING") {
+    return JSON.stringify({
+      ok: false,
+      reason: "tool_call_already_in_progress",
+    });
+  }
+
+  let executionId: string;
+
+  try {
+    const execution = await prisma.agentToolExecution.create({
+      data: {
+        actingAgentId: context.actingAgentOpenclawId,
+        callId: call.callId,
+        idempotencyKey,
+        status: "RUNNING",
+        taskId: context.taskId,
+        toolName: call.name,
+      },
+    });
+    executionId = execution.id;
+  } catch {
+    const racedExecution = await prisma.agentToolExecution.findUnique({
+      where: {
+        idempotencyKey,
+      },
+    });
+
+    if (racedExecution?.resultText) {
+      return racedExecution.resultText;
+    }
+
+    return JSON.stringify({
+      ok: false,
+      reason: "tool_call_already_in_progress",
+    });
+  }
+
   const args = parseToolArguments(call);
   let resultText: string;
 
-  if (!args) {
+  try {
+    if (!args) {
+      resultText = JSON.stringify({
+        ok: false,
+        reason: "invalid_json_arguments",
+      });
+    } else {
+      resultText = await executeCyWorldAgentToolCall({
+        args,
+        call,
+        context,
+        objective,
+      });
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Unknown CyWorld tool error.";
     resultText = JSON.stringify({
       ok: false,
-      reason: "invalid_json_arguments",
+      reason: "cyworld_tool_execution_failed",
+      error: reason,
     });
-  } else {
-    resultText = await executeCyWorldAgentToolCall({
-      args,
-      call,
-      objective,
-      requesterUserId,
-      senderAgentOpenclawId,
-      sourceRoomId,
-      taskId,
+
+    await prisma.agentToolExecution.update({
+      where: {
+        id: executionId,
+      },
+      data: {
+        error: reason,
+        resultText,
+        status: "FAILED",
+      },
     });
   }
 
@@ -1344,26 +1453,45 @@ export async function handleCyWorldAgentToolCall({
     });
   }
 
+  const parsedResult = parseToolResult(resultText);
+  const resultingTaskId =
+    (typeof parsedResult?.taskId === "string" && parsedResult.taskId.trim()) ||
+    (typeof parsedResult?.handoffTaskId === "string" &&
+      parsedResult.handoffTaskId.trim()) ||
+    context.taskId ||
+    null;
+
+  await prisma.agentToolExecution.update({
+    where: {
+      id: executionId,
+    },
+    data: {
+      error: parsedResult?.ok === false ? toolReceiptSummary(call.name, parsedResult) : null,
+      resultText,
+      status: parsedResult?.ok === false ? "FAILED" : "SUCCEEDED",
+      taskId: resultingTaskId,
+    },
+  });
+
   return resultText;
 }
 
 async function executeCyWorldAgentToolCall({
   args,
   call,
+  context,
   objective,
-  requesterUserId,
-  senderAgentOpenclawId,
-  sourceRoomId,
-  taskId,
 }: {
   args: Record<string, unknown>;
   call: OpenClawFunctionCall;
+  context: CyWorldExecutionContext;
   objective?: string;
-  requesterUserId?: string;
-  senderAgentOpenclawId: string;
-  sourceRoomId?: string;
-  taskId?: string | null;
 }) {
+  const requesterUserId = context.initiatedByUserId ?? undefined;
+  const senderAgentOpenclawId = context.actingAgentOpenclawId;
+  const sourceRoomId = context.originRoomId ?? undefined;
+  const taskId = context.taskId;
+
   if (call.name === "study_request_agent_action") {
     const handoffTools = CYWORLD_AGENT_TOOLS.filter(
       (tool) => tool.name !== "study_request_agent_action",
@@ -1382,11 +1510,13 @@ async function executeCyWorldAgentToolCall({
       onTargetToolCall: (targetCall, context) =>
         handleCyWorldAgentToolCall({
           call: targetCall,
+          currentHumanUserId: null,
           objective: cleanMessage(args.request),
           requesterUserId: context.requesterUserId,
           senderAgentOpenclawId: context.targetAgentOpenclawId,
           sourceRoomId: context.sourceRoomId,
           taskId: context.taskId,
+          triggerType: "agent_handoff",
         }),
     });
 
@@ -1396,24 +1526,26 @@ async function executeCyWorldAgentToolCall({
   if (call.name === "study_list_calendar") {
     return handleCalendarListTool({
       args,
-      requesterUserId,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
+      initiatedByUserId: requesterUserId,
       senderAgentOpenclawId,
+      triggerType: context.triggerType,
     });
   }
 
   if (call.name === "study_create_calendar_event") {
     return handleCalendarCreateTool({
       args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
       objective,
-      requesterUserId,
     });
   }
 
   if (call.name === "study_send_calendar_invite_email") {
     return handleExternalCalendarInviteTool({
       args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
       objective,
-      requesterUserId,
       senderAgentOpenclawId,
       sourceRoomId,
       taskId,

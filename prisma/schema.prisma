@@ -55,10 +55,17 @@ enum ScheduledMessageStatus {
 
 enum AgentTaskStatus {
   OPEN
+  RUNNING
   WAITING
   COMPLETED
   FAILED
   CANCELED
+}
+
+enum AgentToolExecutionStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
 }
 
 enum AgentTaskEventType {
@@ -149,6 +156,7 @@ model Agent {
   scheduledMessages ScheduledMessage[]
   tasks             AgentTask[]        @relation("AgentTaskOwner")
   handoffTasks      AgentTask[]        @relation("AgentTaskTargetAgent")
+  toolExecutions    AgentToolExecution[]
   emailThreads      EmailThread[]
 }
 
@@ -273,6 +281,7 @@ model AgentTask {
   messages          Message[]
   scheduledMessages ScheduledMessage[]
   events            AgentTaskEvent[]
+  toolExecutions    AgentToolExecution[]
   emailThreads      EmailThread[]
 
   @@index([agentId, status])
@@ -280,6 +289,26 @@ model AgentTask {
   @@index([parentTaskId])
   @@index([requesterUserId, status])
   @@index([targetUserId, status])
+}
+
+model AgentToolExecution {
+  id                 String                   @id @default(cuid())
+  idempotencyKey     String                   @unique
+  callId             String
+  taskId             String?
+  actingAgentId      String
+  toolName           String
+  status             AgentToolExecutionStatus @default(RUNNING)
+  resultText         String?
+  error              String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  task               AgentTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  actingAgent        Agent                    @relation(fields: [actingAgentId], references: [openclawAgentId], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([actingAgentId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model EmailThread {

@@ -242,9 +242,12 @@ integration paths, but they do not all follow the same action lifecycle.
 
 - Agent Handoff is now the first-class primitive for agent-to-agent work outside
   team-chat chains. It uses the target agent's real OpenClaw runtime and durable
-  task events without exposing a hidden agent DM UI. Production scenario
-  validation is still needed for multi-agent delegation, continuation, privacy,
-  and failure recovery.
+  task events without exposing a hidden agent DM UI. Same-pair continuation now
+  reuses one durable handoff task, both agents can recover its receipts, tool
+  calls are idempotency-guarded, and a receiving agent no longer inherits the
+  initiating human as its current-human authority. Production scenario
+  validation is still needed for multi-round sufficiency, timeout recovery, and
+  owner-approval handoffs.
 - CyWorld Drive sync is callable per OpenClaw agent id and has an all-agent
   runner for every active CyWorld user with an OpenClaw agent. It still needs
   production rollout verification so every study agent workspace has the same

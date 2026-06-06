@@ -113,10 +113,21 @@ OpenClaw session delivery.
   owner context, identity, and permissions.
 - The target response returns to the requesting agent in the same tool turn.
 - A later follow-up may continue the same handoff task by durable task ID.
+- The requesting human is provenance, not delegated authority. During the
+  target turn there is no current human, so owner-resource mutations that
+  require an active human conversation must not inherit the original human's
+  permissions.
+- Every CyWorld tool execution is attributed to the acting agent and guarded by
+  a durable idempotency key before the side effect runs.
+- Both the requesting and receiving agents may receive the handoff task's
+  durable receipts in later runtime context.
 - Handoffs grant no new Drive, Calendar, Gmail, room, or owner-data access.
 - Handoffs must not be used for work the requesting agent can complete itself.
 - Recursive handoff chains are not exposed inside a target handoff turn; this
   prevents uncontrolled agent-to-agent fan-out.
+- Necessary back-and-forth between the same two agents continues by reusing the
+  handoff task ID. The requesting agent decides whether the returned answer is
+  sufficient or whether one more focused question is needed.
 
 ### Team agent chain
 
