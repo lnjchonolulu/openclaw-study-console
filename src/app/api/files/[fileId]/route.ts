@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { triggerCyWorldDriveSyncAll } from "@/lib/cyworld-drive-sync";
 import {
   deleteWorkspaceFolder,
   getDownloadableFile,
@@ -63,6 +65,7 @@ export async function PATCH(
   try {
     if (body.action === "rename") {
       const entry = await renameWorkspaceEntry(user.id, fileId, body.name ?? "");
+      after(triggerCyWorldDriveSyncAll);
       return NextResponse.json({ entry });
     }
 
@@ -74,11 +77,13 @@ export async function PATCH(
           ? body.participantKeys.filter((value): value is string => typeof value === "string")
           : [],
       );
+      after(triggerCyWorldDriveSyncAll);
       return NextResponse.json({ entry });
     }
 
     if (body.action === "move") {
       await moveWorkspaceRecord(user.id, fileId, body.parentId?.trim() || null);
+      after(triggerCyWorldDriveSyncAll);
       return NextResponse.json({ ok: true });
     }
 
@@ -107,6 +112,7 @@ export async function DELETE(
 
   try {
     await deleteWorkspaceFolder(user.id, fileId);
+    after(triggerCyWorldDriveSyncAll);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

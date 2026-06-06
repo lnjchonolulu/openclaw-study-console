@@ -14,6 +14,56 @@ const QUARANTINE_DIRNAME = "_INVALID_CYWORLD_DRIVE_PATHS";
 const FILES_MANAGED_START = "<!-- BEGIN:study-console-files -->";
 const FILES_MANAGED_END = "<!-- END:study-console-files -->";
 const SYNC_MTIME_TOLERANCE_MS = 1500;
+const SYNC_LOCK_DIR = path.join(process.cwd(), ".data", "cyworld-drive-sync.lock");
+const SYNC_LOCK_STALE_MS = 10 * 60 * 1000;
+const SYNC_LOCK_WAIT_MS = 2 * 60 * 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquireSyncLock() {
+  const deadline = Date.now() + SYNC_LOCK_WAIT_MS;
+
+  await mkdir(path.dirname(SYNC_LOCK_DIR), { recursive: true });
+
+  while (Date.now() < deadline) {
+    try {
+      await mkdir(SYNC_LOCK_DIR);
+      await writeFile(
+        path.join(SYNC_LOCK_DIR, "owner.json"),
+        `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`,
+        "utf8",
+      );
+      return;
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        throw error;
+      }
+
+      try {
+        const lockStat = await stat(SYNC_LOCK_DIR);
+
+        if (Date.now() - lockStat.mtimeMs > SYNC_LOCK_STALE_MS) {
+          await rm(SYNC_LOCK_DIR, { force: true, recursive: true });
+          continue;
+        }
+      } catch (lockError) {
+        if (lockError?.code !== "ENOENT") {
+          throw lockError;
+        }
+      }
+
+      await sleep(500);
+    }
+  }
+
+  throw new Error("Timed out waiting for the CyWorld Drive sync lock.");
+}
+
+async function releaseSyncLock() {
+  await rm(SYNC_LOCK_DIR, { force: true, recursive: true });
+}
 
 function targetAgentId() {
   if (process.argv.includes("--all")) {
@@ -625,16 +675,30 @@ function remapPreviousEntries(previousEntries, mappings) {
   });
 }
 
-function canAgentModifyRecord(record, agentParticipantKey) {
+function canAgentAccessRecord(record, agentParticipantKey, recordsById) {
   if (!record) {
     return false;
   }
 
-  if (record.systemKey) {
-    return false;
+  let current = record;
+
+  while (current) {
+    if (!hasAccess(parseAccessConfig(current.accessConfigJson), agentParticipantKey)) {
+      return false;
+    }
+
+    current = current.parentId ? recordsById.get(current.parentId) : null;
   }
 
-  return hasAccess(parseAccessConfig(record.accessConfigJson), agentParticipantKey);
+  return true;
+}
+
+function canAgentModifyRecord(record, agentParticipantKey, recordsById) {
+  return (
+    Boolean(record) &&
+    !record.systemKey &&
+    canAgentAccessRecord(record, agentParticipantKey, recordsById)
+  );
 }
 
 function findRenameCandidate({
@@ -705,7 +769,7 @@ async function applyWorkspaceRenames({
 
     const record = recordsById.get(missingEntry.fileRecordId);
 
-    if (!canAgentModifyRecord(record, agentParticipantKey)) {
+    if (!canAgentModifyRecord(record, agentParticipantKey, recordsById)) {
       continue;
     }
 
@@ -843,7 +907,7 @@ async function applyWorkspaceDeletes({
 
     const record = recordsById.get(entry.fileRecordId);
 
-    if (!canAgentModifyRecord(record, agentParticipantKey)) {
+    if (!canAgentModifyRecord(record, agentParticipantKey, recordsById)) {
       continue;
     }
 
@@ -879,9 +943,7 @@ async function syncExistingWorkspaceEdits({
       continue;
     }
 
-    const accessConfig = parseAccessConfig(record.accessConfigJson);
-
-    if (!hasAccess(accessConfig, agentParticipantKey)) {
+    if (!canAgentAccessRecord(record, agentParticipantKey, recordsById)) {
       continue;
     }
 
@@ -1001,7 +1063,10 @@ async function createRecordsForNewWorkspaceEntries({
       ? parseAccessConfig(parentRecord.accessConfigJson)
       : { participantKeys: [] };
 
-    if (parentRecord && !hasAccess(parentAccess, agentParticipantKey)) {
+    if (
+      parentRecord &&
+      !canAgentAccessRecord(parentRecord, agentParticipantKey, recordsById)
+    ) {
       continue;
     }
 
@@ -1532,21 +1597,27 @@ async function usersForTarget(target) {
 }
 
 async function main() {
-  const target = targetAgentId();
-  const users = await usersForTarget(target);
+  await acquireSyncLock();
 
-  if (users.length === 0) {
-    throw new Error(`No CyWorld users with OpenClaw agents found for ${target}.`);
-  }
+  try {
+    const target = targetAgentId();
+    const users = await usersForTarget(target);
 
-  console.log(
-    target === "__all__"
-      ? `Syncing CyWorld Drive for ${users.length} agents`
-      : `Syncing CyWorld Drive for ${users[0].agent.openclawAgentId}`,
-  );
+    if (users.length === 0) {
+      throw new Error(`No CyWorld users with OpenClaw agents found for ${target}.`);
+    }
 
-  for (const user of users) {
-    await syncUserDrive(user);
+    console.log(
+      target === "__all__"
+        ? `Syncing CyWorld Drive for ${users.length} agents`
+        : `Syncing CyWorld Drive for ${users[0].agent.openclawAgentId}`,
+    );
+
+    for (const user of users) {
+      await syncUserDrive(user);
+    }
+  } finally {
+    await releaseSyncLock();
   }
 }
 

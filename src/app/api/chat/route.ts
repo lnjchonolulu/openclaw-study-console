@@ -10,7 +10,7 @@ import {
 } from "@/lib/cyworld-agent-tools";
 import {
   shouldTriggerCyWorldDriveSync,
-  triggerCyWorldDriveSync,
+  triggerCyWorldDriveSyncAll,
 } from "@/lib/cyworld-drive-sync";
 import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
@@ -244,7 +244,7 @@ export async function POST(request: Request) {
     });
 
     if (shouldTriggerCyWorldDriveSync(message, assistantText)) {
-      await triggerCyWorldDriveSync(dmRoom.targetAgent.openclawAgentId);
+      await triggerCyWorldDriveSyncAll();
     }
 
     return NextResponse.json({

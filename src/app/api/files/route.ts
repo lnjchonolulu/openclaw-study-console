@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { triggerCyWorldDriveSyncAll } from "@/lib/cyworld-drive-sync";
 import {
   createWorkspaceFolder,
   listWorkspaceFolder,
@@ -61,6 +63,7 @@ export async function POST(request: Request) {
           : undefined,
       });
 
+      after(triggerCyWorldDriveSyncAll);
       return NextResponse.json({ entry: folder });
     } catch (error) {
       return NextResponse.json(
@@ -102,6 +105,7 @@ export async function POST(request: Request) {
       );
     }
 
+    after(triggerCyWorldDriveSyncAll);
     return NextResponse.json({ entries: entries.entries });
   } catch (error) {
     return NextResponse.json(

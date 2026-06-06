@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const openclawRoot = path.join(os.homedir(), ".openclaw");
+const openclawConfigPath = path.join(openclawRoot, "openclaw.json");
 
 const MANAGED_START = "<!-- BEGIN:cyworld-agent-scaffold -->";
 const MANAGED_END = "<!-- END:cyworld-agent-scaffold -->";
@@ -321,6 +322,56 @@ async function writeText(filePath, content) {
   await fs.writeFile(filePath, content.endsWith("\n") ? content : `${content}\n`, "utf8");
 }
 
+async function applyOpenClawWorkspaceSecurity(agentIds) {
+  const source = await fs.readFile(openclawConfigPath, "utf8");
+  const config = JSON.parse(source);
+  const configuredAgents = config?.agents?.list;
+
+  if (!Array.isArray(configuredAgents)) {
+    throw new Error("OpenClaw config has no agents.list array.");
+  }
+
+  const pendingAgentIds = new Set(agentIds);
+
+  for (const agent of configuredAgents) {
+    if (!pendingAgentIds.has(agent.id)) {
+      continue;
+    }
+
+    agent.tools = {
+      ...(agent.tools ?? {}),
+      fs: {
+        ...(agent.tools?.fs ?? {}),
+        workspaceOnly: true,
+      },
+    };
+    agent.sandbox = {
+      ...(agent.sandbox ?? {}),
+      mode: "all",
+      scope: "agent",
+      workspaceAccess: "rw",
+    };
+    pendingAgentIds.delete(agent.id);
+  }
+
+  if (pendingAgentIds.size > 0) {
+    throw new Error(
+      `OpenClaw config is missing CyWorld agents: ${[...pendingAgentIds].join(", ")}`,
+    );
+  }
+
+  const backupPath = `${openclawConfigPath}.cyworld-backup`;
+  const nextConfigPath = `${openclawConfigPath}.cyworld-next`;
+
+  await fs.copyFile(openclawConfigPath, backupPath);
+  await fs.writeFile(
+    nextConfigPath,
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.rename(nextConfigPath, openclawConfigPath);
+}
+
 async function ensureTemplateFile(filePath, template, { force = false } = {}) {
   const existing = await readTextIfExists(filePath);
 
@@ -410,6 +461,11 @@ async function main() {
   for (const user of users) {
     await syncAgent(user);
   }
+
+  await applyOpenClawWorkspaceSecurity(
+    users.map((user) => user.agent.openclawAgentId),
+  );
+  console.log(`secured OpenClaw workspaces -> ${users.length} CyWorld agents`);
 }
 
 main()

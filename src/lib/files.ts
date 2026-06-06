@@ -242,6 +242,50 @@ async function getFolderOrThrow(folderId: string) {
   return folder;
 }
 
+async function canParticipantAccessRecord(
+  recordId: string,
+  participantKey: string,
+) {
+  let currentId: string | null = recordId;
+
+  while (currentId) {
+    const record: {
+      accessConfigJson: unknown;
+      parentId: string | null;
+    } | null = await prisma.fileRecord.findUnique({
+      where: {
+        id: currentId,
+      },
+      select: {
+        accessConfigJson: true,
+        parentId: true,
+      },
+    });
+
+    if (!record) {
+      return false;
+    }
+
+    if (!hasExplicitAccess(parseAccessConfig(record.accessConfigJson), participantKey)) {
+      return false;
+    }
+
+    currentId = record.parentId;
+  }
+
+  return true;
+}
+
+async function requireParticipantAccess(
+  recordId: string,
+  participantKey: string,
+  message: string,
+) {
+  if (!(await canParticipantAccessRecord(recordId, participantKey))) {
+    throw new Error(message);
+  }
+}
+
 async function ensurePersonalsStructure(context: FileWorkspaceContext) {
   if (!context.teamId) {
     return null;
@@ -573,11 +617,11 @@ export async function listWorkspaceFolder(
 
   if (parentId) {
     parentFolder = await getFolderOrThrow(parentId);
-    const accessConfig = parseAccessConfig(parentFolder.accessConfigJson);
-
-    if (!hasExplicitAccess(accessConfig, context.currentUserKey)) {
-      throw new Error("You do not have access to this folder.");
-    }
+    await requireParticipantAccess(
+      parentFolder.id,
+      context.currentUserKey,
+      "You do not have access to this folder.",
+    );
   }
 
   const [entries, breadcrumbs] = await Promise.all([
@@ -662,11 +706,11 @@ export async function createWorkspaceFolder({
 
   if (parentId) {
     const parentFolder = await getFolderOrThrow(parentId);
-    const parentAccess = parseAccessConfig(parentFolder.accessConfigJson);
-
-    if (!hasExplicitAccess(parentAccess, context.currentUserKey)) {
-      throw new Error("You do not have access to this folder.");
-    }
+    await requireParticipantAccess(
+      parentFolder.id,
+      context.currentUserKey,
+      "You do not have access to this folder.",
+    );
   }
 
   const folder = await prisma.fileRecord.create({
@@ -724,11 +768,11 @@ export async function uploadWorkspaceFiles({
 
   if (parentId) {
     const parentFolder = await getFolderOrThrow(parentId);
-    const parentAccess = parseAccessConfig(parentFolder.accessConfigJson);
-
-    if (!hasExplicitAccess(parentAccess, context.currentUserKey)) {
-      throw new Error("You do not have access to this folder.");
-    }
+    await requireParticipantAccess(
+      parentFolder.id,
+      context.currentUserKey,
+      "You do not have access to this folder.",
+    );
   }
 
   const root = await ensureStorageRoot();
@@ -865,11 +909,11 @@ export async function updateWorkspaceFolderAccess(
     throw new Error("This folder has fixed access rules.");
   }
 
-  const currentAccess = parseAccessConfig(folder.accessConfigJson);
-
-  if (!hasExplicitAccess(currentAccess, context.currentUserKey)) {
-    throw new Error("You do not have access to this folder.");
-  }
+  await requireParticipantAccess(
+    folder.id,
+    context.currentUserKey,
+    "You do not have access to this folder.",
+  );
 
   const updated = await prisma.fileRecord.update({
     where: {
@@ -933,11 +977,11 @@ export async function renameWorkspaceEntry(userId: string, fileId: string, name:
     throw new Error("This item name cannot be changed.");
   }
 
-  const accessConfig = parseAccessConfig(record.accessConfigJson);
-
-  if (!hasExplicitAccess(accessConfig, context.currentUserKey)) {
-    throw new Error("You do not have access to this item.");
-  }
+  await requireParticipantAccess(
+    record.id,
+    context.currentUserKey,
+    "You do not have access to this item.",
+  );
 
   const updated = await prisma.fileRecord.update({
     where: {
@@ -1020,11 +1064,11 @@ export async function moveWorkspaceRecord(
     throw new Error("This folder cannot be moved.");
   }
 
-  const currentAccess = parseAccessConfig(record.accessConfigJson);
-
-  if (!hasExplicitAccess(currentAccess, context.currentUserKey)) {
-    throw new Error("You do not have access to this folder.");
-  }
+  await requireParticipantAccess(
+    record.id,
+    context.currentUserKey,
+    "You do not have access to this item.",
+  );
 
   if (record.isFolder) {
     await ensureNotDescendant(record.id, nextParentId);
@@ -1032,11 +1076,11 @@ export async function moveWorkspaceRecord(
 
   if (nextParentId) {
     const targetFolder = await getFolderOrThrow(nextParentId);
-    const targetAccess = parseAccessConfig(targetFolder.accessConfigJson);
-
-    if (!hasExplicitAccess(targetAccess, context.currentUserKey)) {
-      throw new Error("You can only move this into a folder you can access.");
-    }
+    await requireParticipantAccess(
+      targetFolder.id,
+      context.currentUserKey,
+      "You can only move this into a folder you can access.",
+    );
   }
 
   await prisma.fileRecord.update({
@@ -1075,11 +1119,11 @@ export async function deleteWorkspaceFolder(userId: string, folderId: string) {
     throw new Error("This folder cannot be deleted.");
   }
 
-  const accessConfig = parseAccessConfig(folder.accessConfigJson);
-
-  if (!hasExplicitAccess(accessConfig, context.currentUserKey)) {
-    throw new Error("You do not have access to this folder.");
-  }
+  await requireParticipantAccess(
+    folder.id,
+    context.currentUserKey,
+    "You do not have access to this folder.",
+  );
 
   const folderIds = await collectFolderIds(folderId);
   const files = await prisma.fileRecord.findMany({
@@ -1138,14 +1182,11 @@ export async function getDownloadableFile(userId: string, fileId: string) {
     return null;
   }
 
-  if (record.parentId) {
-    const parentFolder = await getFolderOrThrow(record.parentId);
-    const accessConfig = parseAccessConfig(parentFolder.accessConfigJson);
-
-    if (!hasExplicitAccess(accessConfig, context.currentUserKey)) {
-      throw new Error("You do not have access to this file.");
-    }
-  }
+  await requireParticipantAccess(
+    fileId,
+    context.currentUserKey,
+    "You do not have access to this file.",
+  );
 
   const root = await ensureStorageRoot();
   const absolutePath = path.join(root, record.storageKey);
