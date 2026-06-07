@@ -169,11 +169,52 @@ function createScheduleDmTool(ctx) {
   };
 }
 
+function createListPendingTasksTool(ctx) {
+  return {
+    name: "study_list_pending_tasks",
+    label: "CyWorld Pending Tasks",
+    description:
+      "Inspect this agent's unfinished CyWorld tasks and latest durable events. Use this first during heartbeat or recovery after a delay, restart, email reply, handoff, scheduled message, or interrupted action. Do not repeat an action merely because its task remains pending.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: {
+          type: "number",
+          description:
+            "Optional maximum number of pending tasks to return, from 1 to 50.",
+        },
+      },
+      required: [],
+    },
+    async execute(_id, params) {
+      const agentOpenclawId = deriveAgentId(ctx);
+
+      if (!agentOpenclawId) {
+        return jsonToolResult({
+          ok: false,
+          reason: "missing_agent_identity",
+        });
+      }
+
+      const result = await callStudyConsole(ctx, "/pending-tasks", {
+        agentOpenclawId,
+        limit: Number(params?.limit) || undefined,
+      });
+
+      return jsonToolResult(result);
+    },
+  };
+}
+
 export default definePluginEntry({
   id: "study_console",
   name: "CyWorld",
-  description: "CyWorld participant messaging tools.",
+  description: "CyWorld task recovery and participant messaging tools.",
   register(api) {
+    api.registerTool((ctx) => createListPendingTasksTool(ctx), {
+      name: "study_list_pending_tasks",
+    });
     api.registerTool((ctx) => createSendDmTool(ctx), { name: "study_send_dm" });
     api.registerTool((ctx) => createScheduleDmTool(ctx), {
       name: "study_schedule_dm",

@@ -14,6 +14,7 @@ import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import { sendSharedGmail } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
+import { listPendingAgentTasks } from "@/lib/pending-agent-tasks";
 import { prisma } from "@/lib/prisma";
 import {
   dateKeyInTimeZone,
@@ -22,6 +23,23 @@ import {
 } from "@/lib/timezone";
 
 export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
+  {
+    name: "study_list_pending_tasks",
+    description:
+      "Inspect this agent's unfinished CyWorld tasks and their latest durable events. Use it during heartbeat or when recovering work after a delay, restart, email reply, handoff, scheduled message, or interrupted action. The result distinguishes new input, stalled execution, and ordinary waiting. Do not repeat an action merely because its task remains pending.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: {
+          type: "number",
+          description:
+            "Optional maximum number of pending tasks to return, from 1 to 50.",
+        },
+      },
+      required: [],
+    },
+  },
   {
     name: "study_request_agent_action",
     description:
@@ -281,6 +299,10 @@ function toolReceiptEventType(toolName: string, ok: boolean) {
   }
 
   return AgentTaskEventType.SYSTEM_NOTE;
+}
+
+function shouldRecordToolReceipt(toolName: string) {
+  return toolName !== "study_list_pending_tasks";
 }
 
 function toolReceiptSummary(toolName: string, result: Record<string, unknown> | null) {
@@ -1435,22 +1457,24 @@ export async function handleCyWorldAgentToolCall({
     });
   }
 
-  try {
-    await recordToolCallReceipt({
-      args,
-      call,
-      objective,
-      requesterUserId,
-      resultText,
-      senderAgentOpenclawId,
-      sourceRoomId,
-      taskId,
-    });
-  } catch (error) {
-    console.error("[action-receipt] failed to record CyWorld tool receipt", {
-      error,
-      toolName: call.name,
-    });
+  if (shouldRecordToolReceipt(call.name)) {
+    try {
+      await recordToolCallReceipt({
+        args,
+        call,
+        objective,
+        requesterUserId,
+        resultText,
+        senderAgentOpenclawId,
+        sourceRoomId,
+        taskId,
+      });
+    } catch (error) {
+      console.error("[action-receipt] failed to record CyWorld tool receipt", {
+        error,
+        toolName: call.name,
+      });
+    }
   }
 
   const parsedResult = parseToolResult(resultText);
@@ -1491,6 +1515,20 @@ async function executeCyWorldAgentToolCall({
   const senderAgentOpenclawId = context.actingAgentOpenclawId;
   const sourceRoomId = context.originRoomId ?? undefined;
   const taskId = context.taskId;
+
+  if (call.name === "study_list_pending_tasks") {
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? args.limit
+        : undefined;
+
+    return JSON.stringify(
+      await listPendingAgentTasks({
+        agentOpenclawId: senderAgentOpenclawId,
+        limit,
+      }),
+    );
+  }
 
   if (call.name === "study_request_agent_action") {
     const handoffTools = CYWORLD_AGENT_TOOLS.filter(

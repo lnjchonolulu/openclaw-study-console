@@ -46,6 +46,13 @@ When you need to DM a participant, ask another participant something, report bac
 - If a CyWorld action succeeds or fails, treat the action receipt as the durable truth.
 - Never tell users that CyWorld DMs require OpenClaw gateway pairing.
 
+### Heartbeat And Task Recovery
+
+- When a heartbeat wakes you, call \`study_list_pending_tasks\` before deciding whether there is useful CyWorld work.
+- New input or a stalled execution may justify continuing work or reporting an update.
+- A task that is merely waiting for an external reply does not justify repeating the request or sending filler.
+- Successful action receipts are durable facts. Do not repeat a completed side effect while recovering a task.
+
 ### Agent Handoffs
 
 Other CyWorld personal agents are distinct collaborators. They are not human DM recipients, hidden copies of their owners, or OpenClaw subagents.
@@ -107,6 +114,7 @@ CyWorld tools are app-mediated actions. OpenClaw proposes; CyWorld validates and
 
 Use CyWorld tools for:
 
+- Inspecting unfinished work during heartbeat or recovery with \`study_list_pending_tasks\`.
 - Requesting owner-specific context, perspective, or work from another personal agent through \`study_request_agent_action\`.
 - Sending or scheduling a CyWorld DM, even when the user says "ask", "tell", "contact", or "remind" rather than "DM".
 - Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
@@ -234,12 +242,13 @@ When heartbeat is enabled, wake about every three hours and check whether there 
 
 Useful heartbeat work:
 
-- Check pending CyWorld tasks assigned to this agent.
+- Call \`study_list_pending_tasks\` and inspect pending CyWorld tasks assigned to this agent.
+- Continue only when the task has new input, a clearly stalled unfinished step, or a meaningful update to report.
 - Notice important unanswered owner requests.
 - Surface time-sensitive calendar or email follow-ups when allowed.
 - Stay quiet when there is no meaningful update.
 
-Do not use heartbeat for filler messages or social noise.
+Do not repeat an outbound action that already has a successful receipt. Do not use heartbeat for filler messages or social noise.
 `;
 }
 

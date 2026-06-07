@@ -239,6 +239,7 @@ OpenClaw may propose CyWorld tool calls. CyWorld must validate them.
 
 CyWorld tool calls are allowed for:
 
+- Inspecting the acting agent's unfinished CyWorld tasks during heartbeat or recovery.
 - Sending CyWorld DMs.
 - Scheduling CyWorld DMs.
 - Listing CyWorld Calendar events within policy.
@@ -297,6 +298,24 @@ Receipts should include:
 
 This is how an agent should later know, "I sent that DM", "I created that event",
 "I uploaded that file", or "that email reply came back."
+
+## Heartbeat And Pending Work
+
+OpenClaw heartbeat is the owner-controlled recovery loop for proactive CyWorld
+work. When enabled, the agent should call `study_list_pending_tasks` before
+deciding whether to act.
+
+The pending-task view must distinguish:
+
+- New inbound information that needs review.
+- A running action that appears to have stalled.
+- An open task that has not started or needs review.
+- A task that is simply waiting for an external reply.
+
+The absence of a receipt is not itself proof that an action should be repeated.
+The agent must inspect task events and existing successful receipts. Email
+replies are normally detected by CyWorld's inbox poller immediately; heartbeat
+provides recovery if that event was recorded but its follow-up was interrupted.
 
 ## Follow-Up Reporting
 

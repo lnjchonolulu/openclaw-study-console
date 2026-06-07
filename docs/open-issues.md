@@ -248,6 +248,11 @@ integration paths, but they do not all follow the same action lifecycle.
   initiating human as its current-human authority. Production scenario
   validation is still needed for multi-round sufficiency, timeout recovery, and
   owner-approval handoffs.
+- Owner-controlled OpenClaw heartbeat now has a first-class
+  `study_list_pending_tasks` path. It can distinguish new input, stale running
+  work, unstarted work, and ordinary external waiting without treating receipt
+  absence as permission to repeat a side effect. Production verification is
+  still needed with heartbeat enabled for a real agent.
 - CyWorld Drive sync is callable per OpenClaw agent id and has an all-agent
   runner for every active CyWorld user with an OpenClaw agent. It still needs
   production rollout verification so every study agent workspace has the same

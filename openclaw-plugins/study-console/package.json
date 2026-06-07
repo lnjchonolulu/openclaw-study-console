@@ -1,12 +1,12 @@
 {
   "name": "openclaw-study-console-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "index.js",
   "openclaw": {
     "id": "study_console",
     "name": "CyWorld",
-    "description": "CyWorld participant messaging tools.",
+    "description": "CyWorld task recovery and participant messaging tools.",
     "extensions": [
       "./index.js"
     ]

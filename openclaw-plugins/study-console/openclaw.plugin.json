@@ -18,6 +18,7 @@
   },
   "contracts": {
     "tools": [
+      "study_list_pending_tasks",
       "study_send_dm",
       "study_schedule_dm"
     ]
