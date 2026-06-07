@@ -1,5 +1,9 @@
 import { AgentTaskEventType, type Prisma } from "@prisma/client";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
+import {
+  deliverAgentReport,
+  type AgentReportDestination,
+} from "@/lib/agent-report-delivery";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import { runAgentTurn } from "@/lib/openclaw";
@@ -8,7 +12,8 @@ import { prisma } from "@/lib/prisma";
 type TaskDeliveryKind = "send_dm" | "schedule_dm";
 type AgentNextTaskAction =
   | {
-      action: "report_to_requester";
+      action: "report_result";
+      destination?: AgentReportDestination;
       message: string;
     }
   | {
@@ -41,6 +46,11 @@ type WaitingTaskSnapshot = {
     requester: {
       username: string;
     };
+    sourceRoom: {
+      name: string;
+      type: string;
+    } | null;
+    sourceRoomId: string | null;
     status: string;
     targetUserId: string | null;
     title: string;
@@ -120,6 +130,7 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
   try {
     const parsed = JSON.parse(jsonObject) as {
       action?: unknown;
+      destination?: unknown;
       message?: unknown;
       reason?: unknown;
     };
@@ -127,9 +138,18 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
     const message = typeof parsed.message === "string" ? cleanComposedMessage(parsed.message) : "";
     const reason = typeof parsed.reason === "string" ? parsed.reason : undefined;
 
-    if (action === "report_to_requester" && message) {
+    const destination =
+      parsed.destination === "source_room" ||
+      parsed.destination === "requester_dm" ||
+      parsed.destination === "owner_dm"
+        ? parsed.destination
+        : undefined;
+
+    if ((action === "report_result" || action === "report_to_requester") && message) {
       return {
-        action,
+        action: "report_result",
+        destination:
+          action === "report_to_requester" ? "requester_dm" : destination,
         message,
       };
     }
@@ -310,6 +330,11 @@ async function resolveInboundTaskReply({
               requester: {
                 username: string;
               };
+              sourceRoom: {
+                name: string;
+                type: string;
+              } | null;
+              sourceRoomId: string | null;
               status: string;
               targetUserId: string | null;
               title: string;
@@ -361,6 +386,7 @@ async function resolveInboundTaskReply({
             },
           },
           requester: true,
+          sourceRoom: true,
         },
       },
     },
@@ -390,6 +416,13 @@ async function resolveInboundTaskReply({
         requester: {
           username: message.task.requester.username,
         },
+        sourceRoom: message.task.sourceRoom
+          ? {
+              name: message.task.sourceRoom.name,
+              type: message.task.sourceRoom.type,
+            }
+          : null,
+        sourceRoomId: message.task.sourceRoomId,
         status: message.task.status,
         targetUserId: message.task.targetUserId,
         title: message.task.title,
@@ -780,6 +813,7 @@ export async function handleInboundTaskReply({
                 },
               },
               requester: true,
+              sourceRoom: true,
             },
           },
         },
@@ -822,6 +856,13 @@ export async function handleInboundTaskReply({
                 requester: {
                   username: inboundMessage.replyToMessage.task.requester.username,
                 },
+                sourceRoom: inboundMessage.replyToMessage.task.sourceRoom
+                  ? {
+                      name: inboundMessage.replyToMessage.task.sourceRoom.name,
+                      type: inboundMessage.replyToMessage.task.sourceRoom.type,
+                    }
+                  : null,
+                sourceRoomId: inboundMessage.replyToMessage.task.sourceRoomId,
                 status: inboundMessage.replyToMessage.task.status,
                 targetUserId: inboundMessage.replyToMessage.task.targetUserId,
                 title: inboundMessage.replyToMessage.task.title,
@@ -916,12 +957,23 @@ You are deciding the next action in a CyWorld task loop.
 - Return only JSON. No markdown. No extra text.
 
 Valid JSON shapes:
-{"action":"report_to_requester","message":"exact DM to send to @${task.requester.username}"}
+{"action":"report_result","message":"natural report message"}
+{"action":"report_result","message":"natural report message","destination":"source_room"}
+{"action":"report_result","message":"natural report message","destination":"requester_dm"}
+{"action":"report_result","message":"natural report message","destination":"owner_dm"}
 {"action":"ask_followup","message":"exact follow-up DM to send to @${replyingUsername}"}
 {"action":"wait","reason":"why no action should be taken yet"}
 {"action":"complete_no_message","reason":"why the task is complete without another message"}
 
-Choose report_to_requester when the reply answers the request sufficiently.
+Choose report_result when the reply answers the request sufficiently.
+Only set destination when the task or conversation explicitly indicates where the result should be reported.
+If destination is omitted, CyWorld will report to the original conversation and fall back to your owner DM only if that room is unavailable.
+The original conversation is ${
+      task.sourceRoom
+        ? `${task.sourceRoom.name} (${task.sourceRoom.type})`
+        : "not available"
+    }.
+The requester is @${task.requester.username}; your owner is @${ownerUsername}.
 Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
 Choose wait only when the best next step is to wait for more context.
 Choose complete_no_message only when no further message is useful.`,
@@ -951,26 +1003,13 @@ Decide the next action.`,
     },
   });
 
-  if (nextAction.action === "report_to_requester") {
-    const delivery = await sendAgentDm({
+  if (nextAction.action === "report_result") {
+    const delivery = await deliverAgentReport({
+      requestedDestination: nextAction.destination,
+      requesterUsername: task.requester.username,
+      sourceRoomId: task.sourceRoomId,
       message: nextAction.message,
-      senderAgentOpenclawId: agentOpenclawId,
-      taskId: task.id,
-      toUsername: task.requester.username,
-    });
-
-    await recordAgentActionReceipt({
-      action: "report_dm",
       agentOpenclawId,
-      eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
-      payload: {
-        delivery,
-        message: nextAction.message,
-      } satisfies Prisma.InputJsonValue,
-      status: delivery.ok ? "success" : "failure",
-      summary: delivery.ok
-        ? `Reported task result to @${task.requester.username}.`
-        : `Report-back delivery failed: ${delivery.reason}.`,
       taskId: task.id,
     });
 
@@ -986,7 +1025,7 @@ Decide the next action.`,
 
     return {
       acknowledgement: delivery.ok
-        ? `Thanks. I'll let @${task.requester.username} know.`
+        ? "Thanks. I passed the result along."
         : `I got your reply, but I could not report it back: ${delivery.reason}.`,
       nextAction,
       taskId: task.id,

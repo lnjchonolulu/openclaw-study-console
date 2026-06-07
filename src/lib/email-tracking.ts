@@ -5,6 +5,7 @@ import {
   buildRecentActionReceiptContext,
   recordAgentActionReceipt,
 } from "@/lib/action-receipts";
+import { deliverAgentReport } from "@/lib/agent-report-delivery";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -190,40 +191,15 @@ async function processEmailReply(message: GmailMessageView) {
       }),
   });
 
-  if (thread.sourceRoomId && result.assistantText.trim()) {
-    await prisma.message.create({
-      data: {
-        agentId: thread.agent.openclawAgentId,
-        content: result.assistantText,
-        role: "AGENT",
-        roomId: thread.sourceRoomId,
-        taskId: thread.taskId,
-      },
+  if (result.assistantText.trim()) {
+    await deliverAgentReport({
+      agentOpenclawId: thread.agent.openclawAgentId,
+      message: result.assistantText,
+      requesterUserId: thread.requesterUserId,
+      requesterUsername: thread.requester.username,
+      sourceRoomId: thread.sourceRoomId,
+      taskId: thread.taskId,
     });
-
-    await prisma.room.update({
-      where: {
-        id: thread.sourceRoomId,
-      },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
-
-    if (thread.taskId) {
-      await recordAgentActionReceipt({
-        action: "email_followup_report",
-        agentOpenclawId: thread.agent.openclawAgentId,
-        eventType: AgentTaskEventType.OUTBOUND_MESSAGE,
-        payload: {
-          message: result.assistantText,
-          sourceRoomId: thread.sourceRoomId,
-        },
-        status: "success",
-        summary: "Reported shared Gmail reply follow-up into the source CyWorld room.",
-        taskId: thread.taskId,
-      });
-    }
   }
 
   return {
