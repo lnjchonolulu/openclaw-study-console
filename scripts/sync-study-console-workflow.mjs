@@ -13,6 +13,20 @@ const LEGACY_START = "<!-- BEGIN:study-console-workflow -->";
 const LEGACY_END = "<!-- END:study-console-workflow -->";
 const forceBootstrap =
   process.argv.includes("--force-bootstrap") || process.env.CYWORLD_FORCE_BOOTSTRAP === "1";
+const agentFlagIndex = process.argv.findIndex((arg) => arg === "--agent");
+const targetAgentId =
+  agentFlagIndex >= 0 ? process.argv[agentFlagIndex + 1]?.trim() : undefined;
+const initializeAgentFlagIndex = process.argv.findIndex(
+  (arg) => arg === "--initialize-agent",
+);
+const initializeAgentId =
+  initializeAgentFlagIndex >= 0
+    ? process.argv[initializeAgentFlagIndex + 1]?.trim()
+    : undefined;
+
+if (initializeAgentFlagIndex >= 0 && !initializeAgentId) {
+  throw new Error("--initialize-agent requires an OpenClaw agent id.");
+}
 
 function managedBlock(body) {
   return `${MANAGED_START}
@@ -424,6 +438,7 @@ async function syncAgent(user) {
   const ownerDisplayName = user.displayName || user.username;
   const agentDisplayName = agent.displayName || `${user.username}'s agent`;
   const timezone = user.timezone || "Asia/Seoul";
+  const initializeOwnerFiles = initializeAgentId === agent.openclawAgentId;
 
   await fs.mkdir(workspacePath, { recursive: true });
 
@@ -455,14 +470,22 @@ async function syncAgent(user) {
 
   const created = [];
   const templates = [
-    ["USER.md", userTemplate({ displayName: ownerDisplayName, timezone, username: user.username })],
-    ["IDENTITY.md", identityTemplate({ agentDisplayName, username: user.username })],
-    ["SOUL.md", soulTemplate()],
-    ["HEARTBEAT.md", heartbeatTemplate()],
+    [
+      "USER.md",
+      userTemplate({ displayName: ownerDisplayName, timezone, username: user.username }),
+      { force: initializeOwnerFiles },
+    ],
+    [
+      "IDENTITY.md",
+      identityTemplate({ agentDisplayName, username: user.username }),
+      { force: initializeOwnerFiles },
+    ],
+    ["SOUL.md", soulTemplate(), { force: initializeOwnerFiles }],
+    ["HEARTBEAT.md", heartbeatTemplate(), { force: initializeOwnerFiles }],
     [
       "BOOTSTRAP.md",
       bootstrapTemplate({ agentDisplayName, displayName: ownerDisplayName, username: user.username }),
-      { force: forceBootstrap },
+      { force: forceBootstrap || initializeOwnerFiles },
     ],
   ];
 
@@ -484,6 +507,15 @@ async function main() {
       agent: {
         isNot: null,
       },
+      ...(targetAgentId
+        ? {
+            agent: {
+              is: {
+                openclawAgentId: targetAgentId,
+              },
+            },
+          }
+        : {}),
     },
     orderBy: {
       username: "asc",
@@ -492,6 +524,19 @@ async function main() {
       agent: true,
     },
   });
+
+  if (targetAgentId && users.length === 0) {
+    throw new Error(`No active CyWorld agent found for ${targetAgentId}.`);
+  }
+
+  if (
+    initializeAgentId &&
+    !users.some((user) => user.agent.openclawAgentId === initializeAgentId)
+  ) {
+    throw new Error(
+      `Cannot initialize ${initializeAgentId}; it is not in the selected CyWorld agents.`,
+    );
+  }
 
   for (const user of users) {
     await syncAgent(user);

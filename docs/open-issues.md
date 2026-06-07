@@ -231,12 +231,17 @@ integration paths, but they do not all follow the same action lifecycle.
    near-immediate visibility after users or agents change files. Sync timing,
    permission pruning, and agent-created revisions need end-to-end verification.
 
-7. Finalize participant onboarding and scaffold rollout.
+7. Finalize participant onboarding and scaffold rollout. **Status: repeatable
+   provisioning implemented; full study roster and participant first-run
+   sessions remain.**
 
-   Before deployment, every participant needs a CyWorld account, one OpenClaw
-   agent, the shared CyWorld scaffold, a clean owner-specific bootstrap, and
-   verified Drive/Calendar/Gmail/Team Chat behavior. Hyungjun-specific content
-   must not become the default template for future agents.
+   `npm run onboard:participant` now creates or resumes the CyWorld account,
+   OpenClaw agent, database link, General membership, personal Drive folder,
+   shared scaffold, Drive mirror, workspace security, and final verification.
+   Existing passwords and personalized Markdown are preserved. Before
+   deployment, the full roster still needs to be provisioned and each
+   participant must complete the owner-agent bootstrap conversation and
+   scenario checks.
 
 ### Known Missing Or Incomplete Capabilities
 
