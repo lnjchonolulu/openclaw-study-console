@@ -556,7 +556,7 @@ async function syncAgent(user) {
 async function main() {
   const users = await prisma.user.findMany({
     where: {
-      status: "ACTIVE",
+      status: targetAgentId ? { in: ["ACTIVE", "INVITED"] } : "ACTIVE",
       agent: {
         isNot: null,
       },

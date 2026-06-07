@@ -11,6 +11,8 @@
     "db:push": "prisma db push",
     "db:seed-demo": "node scripts/seed-demo-users.mjs",
     "onboard:participant": "node scripts/onboard-cyworld-participant.mjs",
+    "activate:placeholder": "node scripts/activate-cyworld-placeholder.mjs",
+    "reset:participants": "node scripts/reset-cyworld-participants.mjs",
     "sync:hyungjun-files": "node scripts/sync-hyungjun-study-files.mjs --agent hyungjun",
     "sync:cyworld-drive": "node scripts/sync-hyungjun-study-files.mjs",
     "sync:cyworld-drive:all": "node scripts/sync-hyungjun-study-files.mjs --all",

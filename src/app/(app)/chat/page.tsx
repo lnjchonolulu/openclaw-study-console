@@ -12,6 +12,7 @@ import {
 } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import { ChatClient } from "@/components/chat-client";
+import { ensureFirstAgentOnboardingMessage } from "@/lib/agent-onboarding";
 
 const INITIAL_DM_PAGE_SIZE = 100;
 
@@ -30,6 +31,15 @@ export default async function ChatPage({
     !selectedUserId && typeof selectedAgentParam === "string"
       ? selectedAgentParam
       : user.agent?.openclawAgentId;
+
+  if (
+    !selectedUserId &&
+    selectedAgentId &&
+    selectedAgentId === user.agent?.openclawAgentId
+  ) {
+    await ensureFirstAgentOnboardingMessage(user.id);
+  }
+
   const personDmRoom = selectedUserId
     ? await getOrCreatePersonDmRoom(user.id, selectedUserId)
     : null;
@@ -90,16 +100,7 @@ export default async function ChatPage({
 
   const initialMessages = room?.messages.length
     ? serializeChatMessages(room.messages, user.id)
-    : agentDmRoom
-      ? [
-          {
-            id: "welcome-agent",
-            role: "AGENT" as const,
-            content: `Hi. You are now talking with ${agentDmRoom.targetAgent.displayName}.`,
-            createdAt: new Date().toISOString(),
-          },
-        ]
-      : [];
+    : [];
 
   return (
     <section className="chat-page">

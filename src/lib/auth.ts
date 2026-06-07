@@ -100,6 +100,16 @@ export async function getCurrentUser() {
     return null;
   }
 
+  if (session.user.status !== "ACTIVE") {
+    await prisma.session.delete({
+      where: {
+        id: session.id,
+      },
+    });
+
+    return null;
+  }
+
   return session.user;
 }
 

@@ -22,7 +22,10 @@ function printHelp() {
     [--timezone <IANA timezone>] \\
     [--team <team name>] \\
     [--agent-name <display name>] \\
+    [--agent-id <internal OpenClaw agent id>] \\
     [--model <provider/model>] \\
+    [--status active|invited] \\
+    [--initialize-owner-files] \\
     [--skip-gateway-restart]
 
 Verification only:
@@ -47,6 +50,7 @@ function parseArgs(argv) {
 
     if (
       arg === "--help" ||
+      arg === "--initialize-owner-files" ||
       arg === "--verify-only" ||
       arg === "--skip-gateway-restart"
     ) {
@@ -65,11 +69,14 @@ function parseArgs(argv) {
   }
 
   return {
+    agentId: values.get("--agent-id")?.toLowerCase(),
     agentName: values.get("--agent-name"),
     displayName: values.get("--display-name"),
     help: flags.has("--help"),
+    initializeOwnerFiles: flags.has("--initialize-owner-files"),
     model: values.get("--model"),
     skipGatewayRestart: flags.has("--skip-gateway-restart"),
+    status: (values.get("--status") || "active").toLowerCase(),
     teamName: values.get("--team"),
     timezone: values.get("--timezone") || DEFAULT_TIMEZONE,
     username: values.get("--username")?.toLowerCase(),
@@ -380,12 +387,14 @@ async function ensurePersonalFolders(teamId) {
 }
 
 async function provisionDatabase({
+  agentId,
   agentName,
   displayName,
   password,
   teamId,
   timezone,
   username,
+  status,
 }) {
   const existing = await prisma.user.findUnique({
     where: {
@@ -405,7 +414,7 @@ async function provisionDatabase({
 
     if (
       existing.agent &&
-      existing.agent.openclawAgentId !== username
+      existing.agent.openclawAgentId !== agentId
     ) {
       throw new Error(
         `Existing user @${username} is linked to OpenClaw agent ${existing.agent.openclawAgentId}.`,
@@ -416,9 +425,17 @@ async function provisionDatabase({
       await prisma.agent.create({
         data: {
           displayName: agentName,
-          openclawAgentId: username,
+          openclawAgentId: agentId,
           userId: existing.id,
-          workspacePath: storedWorkspacePathFor(username),
+          workspacePath: storedWorkspacePathFor(agentId),
+        },
+      });
+    } else {
+      await prisma.agent.update({
+        where: { id: existing.agent.id },
+        data: {
+          displayName: agentName,
+          workspacePath: storedWorkspacePathFor(agentId),
         },
       });
     }
@@ -441,15 +458,15 @@ async function provisionDatabase({
       displayName,
       passwordHash,
       role: "PARTICIPANT",
-      status: "ACTIVE",
+      status: status === "invited" ? "INVITED" : "ACTIVE",
       teamId,
       timezone,
       username,
       agent: {
         create: {
           displayName: agentName,
-          openclawAgentId: username,
-          workspacePath: storedWorkspacePathFor(username),
+          openclawAgentId: agentId,
+          workspacePath: storedWorkspacePathFor(agentId),
         },
       },
     },
@@ -461,7 +478,7 @@ async function provisionDatabase({
   };
 }
 
-async function verifyParticipant(username) {
+async function verifyParticipant(username, { agentId = username, status = "active" } = {}) {
   const user = await prisma.user.findUnique({
     where: {
       username,
@@ -476,7 +493,7 @@ async function verifyParticipant(username) {
     },
   });
   const openclawAgents = await listOpenClawAgents();
-  const openclawAgent = openclawAgents.find((agent) => agent.id === username);
+  const openclawAgent = openclawAgents.find((agent) => agent.id === agentId);
 
   if (!user || !user.agent) {
     throw new Error(`CyWorld account or agent record is missing for @${username}.`);
@@ -522,7 +539,9 @@ async function verifyParticipant(username) {
     "SOUL.md",
     "TOOLS.md",
     "USER.md",
-    path.join("CYWORLD_DRIVE", "MANIFEST.md"),
+    ...(status === "active"
+      ? [path.join("CYWORLD_DRIVE", "MANIFEST.md")]
+      : []),
   ];
   const missingFiles = [];
 
@@ -535,15 +554,19 @@ async function verifyParticipant(username) {
   }
 
   const checks = {
-    account: user.status === "ACTIVE",
-    agentDatabaseLink: user.agent.openclawAgentId === username,
-    generalAgentMembership: Boolean(generalAgentMembership),
-    generalHumanMembership: Boolean(generalMembership),
+    account: user.status === (status === "invited" ? "INVITED" : "ACTIVE"),
+    agentDatabaseLink: user.agent.openclawAgentId === agentId,
+    generalAgentMembership:
+      status === "invited" ? !generalAgentMembership : Boolean(generalAgentMembership),
+    generalHumanMembership:
+      status === "invited" ? !generalMembership : Boolean(generalMembership),
     openclawAgent: openclawAgent.workspace === workspace,
     personalDrive:
-      Boolean(personalFolder) &&
-      personalKeys.includes(`user:${user.id}`) &&
-      personalKeys.includes(`agent:${user.agent.id}`),
+      status === "invited"
+        ? !personalFolder
+        : Boolean(personalFolder) &&
+          personalKeys.includes(`user:${user.id}`) &&
+          personalKeys.includes(`agent:${user.agent.id}`),
     workspaceFiles: missingFiles.length === 0,
   };
   const failed = Object.entries(checks)
@@ -573,9 +596,15 @@ async function main() {
   }
 
   validateUsername(args.username);
+  const agentId = args.agentId || args.username;
+  validateUsername(agentId);
+
+  if (args.status !== "active" && args.status !== "invited") {
+    throw new Error("--status must be active or invited.");
+  }
 
   if (args.verifyOnly) {
-    await verifyParticipant(args.username);
+    await verifyParticipant(args.username, { agentId, status: args.status });
     return;
   }
 
@@ -594,12 +623,14 @@ async function main() {
       agent: true,
     },
   });
-  const existingMarker = await readOnboardingMarker(args.username);
+  const existingMarker = await readOnboardingMarker(agentId);
   const initializeOwnerFiles =
-    existingMarker?.initializeOwnerFiles === true || !existingUser;
+    args.initializeOwnerFiles ||
+    existingMarker?.initializeOwnerFiles === true ||
+    !existingUser;
   const openclawAgents = await listOpenClawAgents();
   let openclawAgent = openclawAgents.find(
-    (agent) => agent.id === args.username,
+    (agent) => agent.id === agentId,
   );
   const model =
     args.model ||
@@ -611,34 +642,34 @@ async function main() {
   }
 
   if (!openclawAgent) {
-    console.log(`Creating OpenClaw agent -> ${args.username}`);
+    console.log(`Creating OpenClaw agent -> ${agentId}`);
     await run("openclaw", [
       "agents",
       "add",
-      args.username,
+      agentId,
       "--workspace",
-      workspacePathFor(args.username),
+      workspacePathFor(agentId),
       "--model",
       model,
       "--non-interactive",
       "--json",
     ]);
     openclawAgent = (await listOpenClawAgents()).find(
-      (agent) => agent.id === args.username,
+      (agent) => agent.id === agentId,
     );
   }
 
   if (!openclawAgent) {
-    throw new Error(`OpenClaw agent creation did not register ${args.username}.`);
+    throw new Error(`OpenClaw agent creation did not register ${agentId}.`);
   }
 
-  if (openclawAgent.workspace !== workspacePathFor(args.username)) {
+  if (openclawAgent.workspace !== workspacePathFor(agentId)) {
     throw new Error(
-      `OpenClaw agent ${args.username} uses unexpected workspace ${openclawAgent.workspace}.`,
+      `OpenClaw agent ${agentId} uses unexpected workspace ${openclawAgent.workspace}.`,
     );
   }
 
-  await writeOnboardingMarker(args.username, {
+  await writeOnboardingMarker(agentId, {
     initializeOwnerFiles,
     startedAt: existingMarker?.startedAt || new Date().toISOString(),
     username: args.username,
@@ -647,42 +678,48 @@ async function main() {
   const agentName =
     args.agentName || `${args.displayName} Agent`;
   const { createdUser } = await provisionDatabase({
+    agentId,
     agentName,
     displayName: args.displayName,
     password: process.env.CYWORLD_ONBOARD_PASSWORD?.trim(),
     teamId: team.id,
     timezone: args.timezone,
     username: args.username,
+    status: args.status,
   });
 
   console.log(`CyWorld account -> ${createdUser ? "created" : "already present"}`);
-  console.log("Initializing General channel and personal Drive folders...");
-  await ensureGeneralChannel(team.id);
-  await ensurePersonalFolders(team.id);
+  if (args.status === "active") {
+    console.log("Initializing General channel and personal Drive folders...");
+    await ensureGeneralChannel(team.id);
+    await ensurePersonalFolders(team.id);
+  }
 
-  const scaffoldArgs = ["scripts/sync-study-console-workflow.mjs", "--agent", args.username];
+  const scaffoldArgs = ["scripts/sync-study-console-workflow.mjs", "--agent", agentId];
 
   if (initializeOwnerFiles) {
-    scaffoldArgs.push("--initialize-agent", args.username);
+    scaffoldArgs.push("--initialize-agent", agentId);
   }
 
   console.log("Applying CyWorld agent scaffold...");
   await run(process.execPath, scaffoldArgs);
 
-  console.log("Synchronizing CyWorld Drive...");
-  await run(process.execPath, [
-    "scripts/sync-hyungjun-study-files.mjs",
-    "--agent",
-    args.username,
-  ]);
+  if (args.status === "active") {
+    console.log("Synchronizing CyWorld Drive...");
+    await run(process.execPath, [
+      "scripts/sync-hyungjun-study-files.mjs",
+      "--agent",
+      agentId,
+    ]);
+  }
 
   if (!args.skipGatewayRestart) {
     console.log("Restarting OpenClaw gateway...");
     await run("openclaw", ["gateway", "restart"]);
   }
 
-  await verifyParticipant(args.username);
-  await rm(onboardingMarkerPath(args.username), { force: true });
+  await verifyParticipant(args.username, { agentId, status: args.status });
+  await rm(onboardingMarkerPath(agentId), { force: true });
   console.log(`Participant onboarding complete -> @${args.username}`);
   console.log("Next: have the participant sign in and complete BOOTSTRAP.md with their agent.");
 }

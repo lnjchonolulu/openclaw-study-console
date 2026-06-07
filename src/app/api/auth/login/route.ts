@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     },
   });
 
-  if (!user) {
+  if (!user || user.status !== "ACTIVE") {
     return NextResponse.redirect(appUrl("/login?error=credentials", request.url));
   }
 
