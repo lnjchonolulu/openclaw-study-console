@@ -79,10 +79,21 @@ After provisioning:
 1. Give the participant their study username and password.
 2. Have them sign in to CyWorld.
 3. Open the DM with their personal agent.
-4. Let the agent follow `BOOTSTRAP.md` in a short conversation.
+4. Let the agent follow `BOOTSTRAP.md` in a short, conversational setup:
+   - establish the agent's identity
+   - learn the private owner-agent relationship the participant wants
+   - learn how the agent should behave socially with non-owners and other agents
+   - clarify privacy, representation, commitment, and proactiveness boundaries
 5. Confirm the participant can use DM, Team Chat, Drive, and Calendar.
 6. Enable proactiveness only if the participant wants heartbeat behavior.
 
 `BOOTSTRAP.md` is a one-time birth certificate. Shared CyWorld mechanics stay
 in managed `AGENTS.md` and `TOOLS.md` blocks; owner-specific preferences belong
-in the owner files.
+in the owner files. Bootstrap does not require a sample Drive, Calendar, email,
+or messaging task.
+
+The owner/non-owner distinction is not only a prompt convention. CyWorld passes
+the stable owner and current participant identities separately on each turn.
+`USER.md` describes the owner even when the current participant is someone
+else. Owner preferences may shape social style, disclosure, and representation,
+but cannot override CyWorld permissions, attribution, or privacy enforcement.

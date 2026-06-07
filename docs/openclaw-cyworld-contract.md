@@ -213,7 +213,9 @@ The common operating layer belongs in `AGENTS.md` and `TOOLS.md`.
 The owner-specific layer belongs in:
 
 - `USER.md`: owner name, preferred address, timezone, notes, direct-line
-  communication preferences, and shared-space representation preferences.
+  communication preferences, and shared-space social preferences. Shared-space
+  preferences should cover tone, participation, disclosure, representation,
+  commitments, and conflict handling without treating the agent as the owner.
 - `IDENTITY.md`: agent name, creature, vibe, emoji, and self-description.
 - `SOUL.md`: values and behavior principles that the owner wants this agent to
   develop over time.
@@ -221,7 +223,21 @@ The owner-specific layer belongs in:
   is on.
 - `BOOTSTRAP.md`: first-run ritual for roughing in `USER.md`, `IDENTITY.md`,
   `SOUL.md`, and `HEARTBEAT.md`. It should not carry long-term identity or
-  common CyWorld operating rules.
+  common CyWorld operating rules. It should establish both the private
+  owner-agent relationship and the agent's intended social presence with
+  non-owner humans and other agents. It must not require a sample tool action.
+
+Owner intent and system enforcement are separate:
+
+- Owner-authored Markdown describes the relationship, voice, and social
+  judgment the agent should develop.
+- Explicit preferences in `USER.md` and `SOUL.md` take precedence over legacy
+  structured style defaults when both address the same conversational choice.
+  Structured values remain fallbacks for unspecified preferences.
+- CyWorld runtime identity facts establish whether the current participant is
+  the owner or a non-owner.
+- CyWorld permissions and validated tool actions remain hard boundaries.
+- Personalization must not weaken attribution, access control, or privacy.
 
 Future agent creation rule:
 
