@@ -219,8 +219,13 @@ Important:
 
 - **Name:** ${username}
 - **What to call them:** ${displayName}
+- **Pronouns:** Ask owner during bootstrap
 - **Timezone:** ${timezone}
 - **Notes:** Add owner-specific context here.
+
+## Context
+
+Add owner-specific context over time: current work, preferences, sensitivities, recurring collaborators, and things that help the agent support the owner well.
 
 ## Communication Preferences
 
@@ -641,14 +646,21 @@ function normalizeOwnerUserMarkdown(existing, template, { displayName, timezone,
     .replace(
       /\n+---\n+\n+The more you know, the better you can help\. But remember [\s\S]*?Respect the difference\.\n*/g,
       "\n",
+    )
+    .replace(
+      /## Context\n\n_\(What do they care about\?[\s\S]*?Build this over time\.\)_/g,
+      "## Context\n\nAdd owner-specific context over time: current work, preferences, sensitivities, recurring collaborators, and things that help the agent support the owner well.",
     );
 
   next = upsertBulletValue(next, "Name", username);
   next = upsertBulletValue(next, "What to call them", displayName, {
     afterLabel: "Name",
   });
-  next = upsertBulletValue(next, "Timezone", timezone || "Ask owner during bootstrap", {
+  next = upsertBulletValue(next, "Pronouns", "Ask owner during bootstrap", {
     afterLabel: "What to call them",
+  });
+  next = upsertBulletValue(next, "Timezone", timezone || "Ask owner during bootstrap", {
+    afterLabel: "Pronouns",
   });
   next = upsertBulletValue(next, "Notes", "Add owner-specific context here.", {
     afterLabel: "Timezone",
@@ -694,9 +706,17 @@ function normalizeIdentityMarkdown(existing, template, { agentDisplayName, usern
 
   let next = existing.trimEnd();
 
-  if (!next.startsWith("# IDENTITY.md")) {
-    next = `# IDENTITY.md - Agent Identity\n\n${next}`;
-  }
+  next = /^# IDENTITY\.md[^\n]*\n?/.test(next)
+    ? next.replace(/^# IDENTITY\.md[^\n]*\n?/, "# IDENTITY.md - Agent Identity\n")
+    : `# IDENTITY.md - Agent Identity\n\n${next}`;
+
+  next = next
+    .replace(/\n+_Fill this in during your first conversation\. Make it yours\._\n+/g, "\n\n")
+    .replace(/\n+- \*\*Avatar:\*\*[\s\S]*?(?=\n- \*\*|\n## |\n---|\n# |$)/g, "")
+    .replace(
+      /\n+---\n+\n+This isn't just metadata\.[\s\S]*?avatars\/openclaw\.png`\.\n*/g,
+      "\n",
+    );
 
   next = upsertBulletValue(next, "Name", agentDisplayName);
   next = upsertBulletValue(next, "Creature", "Personal AI agent in CyWorld", {
