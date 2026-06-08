@@ -16,8 +16,44 @@ function toDefaultAgentBaseName(username) {
 
 function extractBulletValue(source, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`- \\*\\*${escaped}:\\*\\*\\s*(.+)$`, "m"));
-  return match?.[1]?.trim() || null;
+  const inlineMatch = source.match(
+    new RegExp(`- \\*\\*${escaped}:\\*\\*\\s*(.+)$`, "m"),
+  );
+
+  if (inlineMatch?.[1]?.trim()) {
+    return inlineMatch[1].trim();
+  }
+
+  const lines = source.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const labelOnlyPattern = new RegExp(`^\\s*-\\s*\\*\\*${escaped}:\\*\\*\\s*$`);
+
+    if (!labelOnlyPattern.test(line)) {
+      continue;
+    }
+
+    for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+      const nextLine = lines[nextIndex].trim();
+
+      if (!nextLine) {
+        continue;
+      }
+
+      if (
+        nextLine.startsWith("- **") ||
+        nextLine.startsWith("#") ||
+        nextLine.startsWith("---")
+      ) {
+        return null;
+      }
+
+      return nextLine;
+    }
+  }
+
+  return null;
 }
 
 function replaceBulletValue(source, label, value) {

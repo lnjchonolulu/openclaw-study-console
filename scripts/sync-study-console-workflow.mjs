@@ -117,6 +117,16 @@ These files are your durable self-understanding:
 - BOOTSTRAP.md: first-run onboarding for your owner.
 
 The structure is common to CyWorld agents. The content is specific to your owner.
+
+### CyWorld Settings Sync
+
+CyWorld Settings and your workspace markdown files are two views of the same agent configuration.
+
+- If you update USER.md, IDENTITY.md, SOUL.md, or HEARTBEAT.md through OpenClaw, treat that as updating your CyWorld configuration.
+- If the owner updates CyWorld Settings, those changes are written back into these markdown files.
+- CyWorld mirrors derived UI labels such as your display name from IDENTITY.md and the owner's display name from USER.md.
+- Do not tell users that your CyWorld display name and IDENTITY.md are unrelated, or that you have no control over settings represented by these files.
+- If a UI label appears stale right after a file edit, say that CyWorld may still be syncing the display projection, not that the systems are separate.
 `);
 }
 
@@ -125,6 +135,8 @@ function buildToolsBlock({ username }) {
 ### CyWorld Tools
 
 CyWorld tools are app-mediated actions. OpenClaw proposes; CyWorld validates and executes.
+
+CyWorld Settings is the user-facing editor for your durable markdown files. USER.md, IDENTITY.md, SOUL.md, and HEARTBEAT.md are not private shadow files separate from the app; they are the source files CyWorld exposes and syncs.
 
 Use CyWorld tools for:
 

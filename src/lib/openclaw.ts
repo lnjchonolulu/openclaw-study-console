@@ -1,3 +1,5 @@
+import { syncAgentMarkdownProjection } from "@/lib/agent-markdown-sync";
+
 function extractAssistantText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -267,6 +269,15 @@ export async function runAgentTurn({
   if (!assistantText) {
     console.log("[openclaw] empty assistant payload", { agentId, conversationKey, payload });
     throw new Error("OpenClaw returned an empty assistant response.");
+  }
+
+  try {
+    await syncAgentMarkdownProjection(agentId);
+  } catch (error) {
+    console.warn("[openclaw] failed to sync markdown projection", {
+      agentId,
+      error,
+    });
   }
 
   return {

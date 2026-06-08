@@ -31,8 +31,45 @@ export async function writeAgentMarkdownFile(
 
 export function extractMarkdownBulletValue(source: string, label: string) {
   const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`- \\*\\*${escapedLabel}:\\*\\*\\s*(.+)$`, "m"));
-  return match?.[1]?.trim() || null;
+  const inlineMatch = source.match(
+    new RegExp(`- \\*\\*${escapedLabel}:\\*\\*\\s*(.+)$`, "m"),
+  );
+
+  if (inlineMatch?.[1]?.trim()) {
+    return inlineMatch[1].trim();
+  }
+
+  const lines = source.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const labelOnlyPattern = new RegExp(`^\\s*-\\s*\\*\\*${escapedLabel}:\\*\\*\\s*$`);
+
+    if (!labelOnlyPattern.test(line)) {
+      continue;
+    }
+
+    for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+      const nextLine = lines[nextIndex];
+      const trimmed = nextLine.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      if (
+        trimmed.startsWith("- **") ||
+        trimmed.startsWith("#") ||
+        trimmed.startsWith("---")
+      ) {
+        return null;
+      }
+
+      return trimmed;
+    }
+  }
+
+  return null;
 }
 
 type OpenClawConfig = {

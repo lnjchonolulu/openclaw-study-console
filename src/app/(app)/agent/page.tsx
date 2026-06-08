@@ -4,6 +4,7 @@ import {
   readAgentMarkdownFile,
   readHeartbeatEnabled,
 } from "@/lib/agent-workspace";
+import { syncAgentMarkdownProjection } from "@/lib/agent-markdown-sync";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
 import { normalizeProfileConfig } from "@/lib/profile";
@@ -12,6 +13,9 @@ import { normalizeTimeZone } from "@/lib/timezone";
 export default async function AgentPage() {
   const user = await requireUser();
   const agentId = user.agent?.openclawAgentId ?? user.username;
+  const projection = user.agent
+    ? await syncAgentMarkdownProjection(user.agent.openclawAgentId)
+    : null;
   const [userMd, identityMd, soulMd, heartbeatEnabled] = await Promise.all([
     readAgentMarkdownFile(agentId, "USER.md"),
     readAgentMarkdownFile(agentId, "IDENTITY.md"),
@@ -26,7 +30,10 @@ export default async function AgentPage() {
     <SettingsClient
       agentId={agentId}
       initialAgentDisplayName={
-        agentNameFromMd ?? user.agent?.displayName ?? `${user.username}'s agent`
+        agentNameFromMd ??
+        projection?.agentDisplayName ??
+        user.agent?.displayName ??
+        `${user.username}'s agent`
       }
       initialAgentProfile={normalizeProfileConfig(
         user.agent?.profileConfigJson,
@@ -37,7 +44,7 @@ export default async function AgentPage() {
       initialHeartbeatEnabled={heartbeatEnabled}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}
-      initialUserDisplayName={userNameFromMd ?? user.displayName}
+      initialUserDisplayName={userNameFromMd ?? projection?.userDisplayName ?? user.displayName}
       initialUserMd={userMd}
       initialUserProfile={normalizeProfileConfig(
         user.profileConfigJson,
