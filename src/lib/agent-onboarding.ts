@@ -139,7 +139,7 @@ export async function ensureFirstAgentOnboardingMessage(userId: string) {
       conversationKey: `room:${dmRoom.room.id}`,
       instructions,
       message:
-        "[CyWorld first-login trigger] Your owner has entered CyWorld for the first time. Read BOOTSTRAP.md and begin the one-time onboarding conversation yourself. Introduce yourself naturally, briefly explain that you are setting up together, and ask only the first one or two useful questions. Do not mention this trigger message.",
+        "[CyWorld first-login trigger] Your owner has entered CyWorld for the first time. Read BOOTSTRAP.md and begin the one-time onboarding conversation yourself. Introduce yourself naturally, briefly explain that you are setting up together, and ask only the first one or two useful questions for this turn. Do not mark bootstrap complete until USER.md, IDENTITY.md, SOUL.md, and HEARTBEAT.md have the required CyWorld agent structure populated, including owner-vs-non-owner preferences and a brief explanation of what you can do in CyWorld. Do not mention this trigger message.",
     });
 
     await prisma.$transaction([

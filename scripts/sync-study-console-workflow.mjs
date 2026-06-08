@@ -208,6 +208,15 @@ The shared Gmail account belongs to CyWorld, not to any one agent.
 function userTemplate({ displayName, timezone, username }) {
   return `# USER.md - Owner Profile
 
+This file describes the agent's owner, not every person currently speaking.
+
+Important:
+
+- The current speaker is not always the owner.
+- Confirm whether the current speaker is the owner from CyWorld runtime context every turn.
+- Use this file to understand @${username}'s preferences and boundaries.
+- Do not apply owner facts to non-owner humans or other agents.
+
 - **Name:** ${username}
 - **What to call them:** ${displayName}
 - **Timezone:** ${timezone}
@@ -243,7 +252,7 @@ function identityTemplate({ agentDisplayName, username }) {
 - **Name:** ${agentDisplayName}
 - **Creature:** Personal AI agent in CyWorld
 - **Vibe:** Capable, careful, collaborative
-- **Emoji:** (pick one)
+- **Emoji:** 🤝
 
 ## Self-Description
 
@@ -251,7 +260,7 @@ I am ${agentDisplayName}, the personal CyWorld agent for @${username}. I help my
 `;
 }
 
-function soulTemplate() {
+function soulTemplate({ displayName, username }) {
   return `# SOUL.md - Behavior Principles
 
 ## Core Values
@@ -268,6 +277,45 @@ function soulTemplate() {
 - Do not impersonate the owner.
 - Keep CyWorld permissions and social context in mind.
 - Treat humans and agents as distinct participants.
+- Prefer natural collaboration over rigid scripts, but respect CyWorld action receipts and permissions.
+
+## Owner Relationship
+
+You are the personal CyWorld agent for ${displayName} (@${username}).
+
+When speaking with your owner:
+
+- Treat them as your primary human.
+- Follow USER.md Owner Direct Line preferences closely.
+- Help them think, decide, coordinate, and act without pretending to be them.
+
+When speaking with someone who is not your owner:
+
+- Remember that you are still ${displayName}'s personal agent.
+- Support collaboration from your owner's perspective.
+- Do not confuse the current speaker with your owner.
+- Do not share private owner context unless USER.md and CyWorld permissions allow it.
+- Do not make commitments on your owner's behalf unless they clearly authorized it.
+
+## CyWorld Social Presence
+
+You live inside CyWorld with human participants and other personal agents.
+
+- Treat humans and agents as real, separate participants in the same collaboration space.
+- In DMs, focus on the current counterpart and the relationship defined by USER.md.
+- In Team Chat, speak only when you add real progress: new information, a decision, a useful question, a conflict made clear, or a concrete next action.
+- You may coordinate with other agents when their owner-specific context or work would help, but do not use them as hidden subagents.
+- If you are unsure whether to speak, prefer staying quiet unless silence would block useful progress.
+
+## Action And Reporting
+
+When you do work through CyWorld tools:
+
+- Let CyWorld execute delivery, calendar, Drive, Gmail, and handoff actions.
+- Treat CyWorld receipts as the durable record of what happened.
+- Report completed work to the conversation where the work is relevant.
+- If work is still pending, say what is waiting and where you will continue from.
+- Do not claim success before CyWorld confirms the action.
 `;
 }
 
@@ -391,7 +439,19 @@ Examples:
 
 ## Completion
 
-After collecting enough initial preferences:
+Do not mark bootstrap complete while required personal fields are still blank, generic placeholders, or copied defaults.
+
+Before saying the bootstrap is complete, check that:
+
+- USER.md has owner facts plus both Owner Direct Line and Shared Spaces preferences.
+- IDENTITY.md has a usable name, creature, vibe, emoji, and self-description.
+- SOUL.md has stable values, behavior principles, and an Owner Relationship section.
+- HEARTBEAT.md records whether the owner wants proactive behavior once CyWorld Proactiveness is enabled.
+- You have explained, briefly, what you can do in CyWorld: DM, Team Chat, Drive, Calendar, agent handoffs, shared Gmail or external invites when available, and heartbeat-based follow-up when enabled.
+
+If the owner gives only sparse answers, write minimal honest defaults and clearly list what remains undecided. Do not leave template placeholders as if they were real preferences.
+
+After the required structure is populated:
 
 1. Summarize the setup in plain language.
 2. Update USER.md, IDENTITY.md, SOUL.md, and HEARTBEAT.md as appropriate.
@@ -497,6 +557,227 @@ async function ensureTemplateFile(filePath, template, { force = false } = {}) {
   return true;
 }
 
+function extractTemplateSection(template, heading) {
+  const start = template.indexOf(heading);
+
+  if (start < 0) {
+    return "";
+  }
+
+  const nextHeading = template.indexOf("\n## ", start + heading.length);
+  const end = nextHeading >= 0 ? nextHeading : template.length;
+
+  return template.slice(start, end).trim();
+}
+
+function appendSectionIfMissing(source, heading, section) {
+  if (source.includes(heading) || !section) {
+    return source;
+  }
+
+  return `${source.trimEnd()}\n\n${section}\n`;
+}
+
+function isPlaceholderValue(value) {
+  return (
+    !value.trim() ||
+    /pick something|pick one|placeholder|tbd|to be decided|optional|choose|learn about/i.test(
+      value,
+    )
+  );
+}
+
+function upsertBulletValue(source, label, value, { afterLabel } = {}) {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `^- \\*\\*${escapedLabel}:\\*\\*[^\\n]*(?:\\n(?!- \\*\\*|## |### |# ).+)?`,
+    "m",
+  );
+
+  if (pattern.test(source)) {
+    return source.replace(pattern, (match) => {
+      const currentValue = match
+        .replace(new RegExp(`^- \\*\\*${escapedLabel}:\\*\\*\\s*`, "m"), "")
+        .trim();
+      return isPlaceholderValue(currentValue) ? `- **${label}:** ${value}` : match;
+    });
+  }
+
+  if (afterLabel) {
+    const escapedAfter = afterLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const afterPattern = new RegExp(
+      `(^- \\*\\*${escapedAfter}:\\*\\*[^\\n]*(?:\\n(?!- \\*\\*|## |### |# ).+)?)`,
+      "m",
+    );
+
+    if (afterPattern.test(source)) {
+      return source.replace(afterPattern, `$1\n- **${label}:** ${value}`);
+    }
+  }
+
+  return source.replace(/^# [^\n]+\n/, (match) => `${match}\n- **${label}:** ${value}\n`);
+}
+
+function normalizeOwnerUserMarkdown(existing, template, { displayName, timezone, username }) {
+  if (!existing.trim()) {
+    return template;
+  }
+
+  let next = existing.trimEnd();
+
+  if (!next.includes("This file describes the agent's owner")) {
+    const ownerHeader = `# USER.md - Owner Profile\n\nThis file describes the agent's owner, not every person currently speaking.\n\nImportant:\n\n- The current speaker is not always the owner.\n- Confirm whether the current speaker is the owner from CyWorld runtime context every turn.\n- Use this file to understand @${username}'s preferences and boundaries.\n- Do not apply owner facts to non-owner humans or other agents.\n\n`;
+    next = /^# USER\.md[^\n]*\n?/.test(next)
+      ? next.replace(/^# USER\.md[^\n]*\n?/, ownerHeader)
+      : `${ownerHeader}${next}`;
+  }
+
+  next = upsertBulletValue(next, "Name", username);
+  next = upsertBulletValue(next, "What to call them", displayName, {
+    afterLabel: "Name",
+  });
+  next = upsertBulletValue(next, "Timezone", timezone || "Ask owner during bootstrap", {
+    afterLabel: "What to call them",
+  });
+  next = upsertBulletValue(next, "Notes", "Add owner-specific context here.", {
+    afterLabel: "Timezone",
+  });
+
+  if (!next.includes("## Communication Preferences")) {
+    next = appendSectionIfMissing(
+      next,
+      "## Communication Preferences",
+      extractTemplateSection(template, "## Communication Preferences"),
+    );
+  }
+
+  if (!next.includes("### Owner Direct Line")) {
+    next = next.replace(
+      /^### With (?!Others\b)[^\n]*$/m,
+      "### Owner Direct Line",
+    );
+  }
+
+  if (!next.includes("### Shared Spaces")) {
+    next = next.replace(/^### With Others$/m, "### Shared Spaces");
+  }
+
+  if (!next.includes("### Owner Direct Line")) {
+    next = next.replace(
+      "## Communication Preferences",
+      `## Communication Preferences\n\n### Owner Direct Line\n\nDescribe the relationship this owner wants with the agent in private:\n\n- tone and familiarity\n- whether the agent should challenge, reassure, or mostly follow\n- how much initiative and explanation the owner prefers\n- how the agent should handle disagreement, uncertainty, and sensitive topics\n`,
+    );
+  }
+
+  if (!next.includes("### Shared Spaces")) {
+    next = `${next.trimEnd()}\n\n### Shared Spaces\n\nDescribe the social presence this owner wants the agent to have with non-owner humans and other agents:\n\n- tone, formality, warmth, and assertiveness\n- when to speak, stay quiet, ask questions, or take initiative\n- how to support the owner's interests without impersonating the owner\n- what owner context may be shared and what should remain private\n- when the agent may relay the owner's position or make a commitment\n- how to handle disagreement, conflict, and collaboration\n`;
+  }
+
+  return next;
+}
+
+function normalizeIdentityMarkdown(existing, template, { agentDisplayName, username }) {
+  if (!existing.trim()) {
+    return template;
+  }
+
+  let next = existing.trimEnd();
+
+  if (!next.startsWith("# IDENTITY.md")) {
+    next = `# IDENTITY.md - Agent Identity\n\n${next}`;
+  }
+
+  const fieldDefaults = [
+    ["Name", agentDisplayName],
+    ["Creature", "Personal AI agent in CyWorld"],
+    ["Vibe", "Capable, careful, collaborative"],
+    ["Emoji", "🤝"],
+  ];
+
+  for (const [label, fallback] of fieldDefaults) {
+    const pattern = new RegExp(`^- \\*\\*${label}:\\*\\*\\s*(.*)$`, "m");
+    if (!pattern.test(next)) {
+      next = next.replace(
+        /^# IDENTITY\.md[^\n]*\n/,
+        (match) => `${match}\n- **${label}:** ${fallback}\n`,
+      );
+      continue;
+    }
+
+    next = next.replace(pattern, (line, value) => {
+      const normalizedValue = String(value || "").trim();
+      return isPlaceholderValue(normalizedValue) ? `- **${label}:** ${fallback}` : line;
+    });
+  }
+
+  if (!next.includes("## Self-Description")) {
+    next = `${next.trimEnd()}\n\n## Self-Description\n\nI am ${agentDisplayName}, the personal CyWorld agent for @${username}. I help my owner work with humans and other agents while respecting CyWorld permissions, context, and social boundaries.\n`;
+  }
+
+  return next;
+}
+
+function normalizeSoulMarkdown(existing, template) {
+  if (!existing.trim()) {
+    return template;
+  }
+
+  const isLegacyDefault =
+    existing.includes("# SOUL.md - Who You Are") &&
+    existing.includes("_You're not a chatbot") &&
+    existing.includes("## Core Truths");
+
+  if (isLegacyDefault) {
+    return template;
+  }
+
+  let next = existing.trimEnd();
+
+  next = appendSectionIfMissing(
+    next,
+    "## Core Values",
+    extractTemplateSection(template, "## Core Values"),
+  );
+  next = appendSectionIfMissing(
+    next,
+    "## Behavior Principles",
+    extractTemplateSection(template, "## Behavior Principles"),
+  );
+  next = appendSectionIfMissing(
+    next,
+    "## Owner Relationship",
+    extractTemplateSection(template, "## Owner Relationship"),
+  );
+  next = appendSectionIfMissing(
+    next,
+    "## CyWorld Social Presence",
+    extractTemplateSection(template, "## CyWorld Social Presence"),
+  );
+  next = appendSectionIfMissing(
+    next,
+    "## Action And Reporting",
+    extractTemplateSection(template, "## Action And Reporting"),
+  );
+
+  return next;
+}
+
+async function ensureNormalizedTemplateFile(
+  filePath,
+  template,
+  { force = false, normalize } = {},
+) {
+  const existing = await readTextIfExists(filePath);
+  const next = force ? template : normalize(existing, template);
+
+  if (next.trim() === existing.trim()) {
+    return false;
+  }
+
+  await writeText(filePath, next);
+  return existing.trim().length > 0 ? "updated" : "created";
+}
+
 async function syncAgent(user) {
   const agent = user.agent;
   const workspacePath = workspacePathFor(agent);
@@ -533,35 +814,97 @@ async function syncAgent(user) {
     ),
   );
 
-  const created = [];
-  const templates = [
+  const changed = [];
+  const ownerUserTemplate = userTemplate({
+    displayName: ownerDisplayName,
+    timezone,
+    username: user.username,
+  });
+  const ownerIdentityTemplate = identityTemplate({
+    agentDisplayName,
+    username: user.username,
+  });
+  const ownerSoulTemplate = soulTemplate({
+    displayName: ownerDisplayName,
+    username: user.username,
+  });
+  const ownerBootstrapTemplate = bootstrapTemplate({
+    agentDisplayName,
+    displayName: ownerDisplayName,
+    username: user.username,
+  });
+  const normalizedTemplates = [
     [
       "USER.md",
-      userTemplate({ displayName: ownerDisplayName, timezone, username: user.username }),
-      { force: initializeOwnerFiles },
+      ownerUserTemplate,
+      {
+        force: initializeOwnerFiles,
+        normalize: (existing, template) =>
+          normalizeOwnerUserMarkdown(existing, template, {
+            displayName: ownerDisplayName,
+            timezone,
+            username: user.username,
+          }),
+      },
     ],
     [
       "IDENTITY.md",
-      identityTemplate({ agentDisplayName, username: user.username }),
-      { force: initializeOwnerFiles },
+      ownerIdentityTemplate,
+      {
+        force: initializeOwnerFiles,
+        normalize: (existing, template) =>
+          normalizeIdentityMarkdown(existing, template, {
+            agentDisplayName,
+            username: user.username,
+          }),
+      },
     ],
-    ["SOUL.md", soulTemplate(), { force: initializeOwnerFiles }],
-    ["HEARTBEAT.md", heartbeatTemplate(), { force: initializeOwnerFiles }],
     [
-      "BOOTSTRAP.md",
-      bootstrapTemplate({ agentDisplayName, displayName: ownerDisplayName, username: user.username }),
-      { force: forceBootstrap || initializeOwnerFiles },
+      "SOUL.md",
+      ownerSoulTemplate,
+      {
+        force: initializeOwnerFiles,
+        normalize: normalizeSoulMarkdown,
+      },
     ],
   ];
 
-  for (const [fileName, template, options] of templates) {
-    if (await ensureTemplateFile(path.join(workspacePath, fileName), template, options)) {
-      created.push(fileName);
+  for (const [fileName, template, options] of normalizedTemplates) {
+    const status = await ensureNormalizedTemplateFile(
+      path.join(workspacePath, fileName),
+      template,
+      options,
+    );
+
+    if (status) {
+      changed.push(`${status} ${fileName}`);
+    }
+  }
+
+  if (
+    await ensureTemplateFile(path.join(workspacePath, "HEARTBEAT.md"), heartbeatTemplate(), {
+      force: initializeOwnerFiles,
+    })
+  ) {
+    changed.push("created HEARTBEAT.md");
+  }
+
+  const bootstrapPath = path.join(workspacePath, "BOOTSTRAP.md");
+  const existingBootstrap = await readTextIfExists(bootstrapPath);
+  const shouldWriteBootstrap =
+    forceBootstrap || initializeOwnerFiles || existingBootstrap.trim().length > 0;
+
+  if (shouldWriteBootstrap) {
+    const nextBootstrap = ownerBootstrapTemplate;
+
+    if (nextBootstrap.trim() !== existingBootstrap.trim()) {
+      await writeText(bootstrapPath, nextBootstrap);
+      changed.push(`${existingBootstrap.trim() ? "updated" : "created"} BOOTSTRAP.md`);
     }
   }
 
   console.log(
-    `synced CyWorld scaffold -> ${agent.openclawAgentId}${created.length ? ` (created ${created.join(", ")})` : ""}`,
+    `synced CyWorld scaffold -> ${agent.openclawAgentId}${changed.length ? ` (${changed.join(", ")})` : ""}`,
   );
 }
 
