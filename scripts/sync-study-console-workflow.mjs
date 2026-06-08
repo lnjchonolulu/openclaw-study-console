@@ -579,10 +579,13 @@ function appendSectionIfMissing(source, heading, section) {
 }
 
 function isPlaceholderValue(value) {
+  const trimmed = value.trim();
+
   return (
-    !value.trim() ||
+    !trimmed ||
+    /^_\(.*\)_?$/s.test(trimmed) ||
     /pick something|pick one|placeholder|tbd|to be decided|optional|choose|learn about/i.test(
-      value,
+      trimmed,
     )
   );
 }
@@ -599,7 +602,8 @@ function upsertBulletValue(source, label, value, { afterLabel } = {}) {
       const currentValue = match
         .replace(new RegExp(`^- \\*\\*${escapedLabel}:\\*\\*\\s*`, "m"), "")
         .trim();
-      return isPlaceholderValue(currentValue) ? `- **${label}:** ${value}` : match;
+      const nextValue = isPlaceholderValue(currentValue) ? value : currentValue;
+      return `- **${label}:** ${nextValue}`;
     });
   }
 
@@ -631,6 +635,13 @@ function normalizeOwnerUserMarkdown(existing, template, { displayName, timezone,
       ? next.replace(/^# USER\.md[^\n]*\n?/, ownerHeader)
       : `${ownerHeader}${next}`;
   }
+
+  next = next
+    .replace(/\n+_Learn about the person you're helping\. Update this as you go\._\n+/g, "\n\n")
+    .replace(
+      /\n+---\n+\n+The more you know, the better you can help\. But remember [\s\S]*?Respect the difference\.\n*/g,
+      "\n",
+    );
 
   next = upsertBulletValue(next, "Name", username);
   next = upsertBulletValue(next, "What to call them", displayName, {
@@ -687,28 +698,16 @@ function normalizeIdentityMarkdown(existing, template, { agentDisplayName, usern
     next = `# IDENTITY.md - Agent Identity\n\n${next}`;
   }
 
-  const fieldDefaults = [
-    ["Name", agentDisplayName],
-    ["Creature", "Personal AI agent in CyWorld"],
-    ["Vibe", "Capable, careful, collaborative"],
-    ["Emoji", "🤝"],
-  ];
-
-  for (const [label, fallback] of fieldDefaults) {
-    const pattern = new RegExp(`^- \\*\\*${label}:\\*\\*\\s*(.*)$`, "m");
-    if (!pattern.test(next)) {
-      next = next.replace(
-        /^# IDENTITY\.md[^\n]*\n/,
-        (match) => `${match}\n- **${label}:** ${fallback}\n`,
-      );
-      continue;
-    }
-
-    next = next.replace(pattern, (line, value) => {
-      const normalizedValue = String(value || "").trim();
-      return isPlaceholderValue(normalizedValue) ? `- **${label}:** ${fallback}` : line;
-    });
-  }
+  next = upsertBulletValue(next, "Name", agentDisplayName);
+  next = upsertBulletValue(next, "Creature", "Personal AI agent in CyWorld", {
+    afterLabel: "Name",
+  });
+  next = upsertBulletValue(next, "Vibe", "Capable, careful, collaborative", {
+    afterLabel: "Creature",
+  });
+  next = upsertBulletValue(next, "Emoji", "🤝", {
+    afterLabel: "Vibe",
+  });
 
   if (!next.includes("## Self-Description")) {
     next = `${next.trimEnd()}\n\n## Self-Description\n\nI am ${agentDisplayName}, the personal CyWorld agent for @${username}. I help my owner work with humans and other agents while respecting CyWorld permissions, context, and social boundaries.\n`;
