@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { handleInboundTaskReply } from "@/lib/agent-task-workflow";
 import {
   CYWORLD_AGENT_TOOLS,
@@ -114,6 +115,13 @@ export async function POST(request: Request) {
         username: true,
       },
     });
+    const relationshipContext =
+      audience === "shared_spaces"
+        ? await getAgentRelationshipContext({
+            agentDatabaseId: dmRoom.targetAgent.id,
+            targetUserId: user.id,
+          })
+        : null;
     const instructions = buildAgentRuntimeInstructions({
       agentDisplayName: dmRoom.targetAgent.displayName,
       audience,
@@ -141,6 +149,7 @@ export async function POST(request: Request) {
       ownerTimezone: dmRoom.targetAgent.user.timezone,
       ownerUsername: dmRoom.targetAgent.user.username,
       personaSummary: dmRoom.targetAgent.personaSummary,
+      relationshipContext,
     });
 
     const repliedToTaskMessage = replyToMessageId

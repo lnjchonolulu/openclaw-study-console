@@ -10,6 +10,7 @@ import {
 import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import { updateOwnerRelationshipGuidance } from "@/lib/agent-relationships";
 import {
   recallConversationHistory,
   updateOwnerSharingPolicies,
@@ -76,6 +77,47 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: "study_set_relationship_guidance",
+    description:
+      "Save whether the owner wants one general Shared Spaces approach or person-specific social guidance. Use only while speaking directly with this agent's owner. Person-specific entries are free-text owner preferences for how this agent should relate to known CyWorld users; they are not permissions and must not be invented.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["general", "person_specific"],
+        },
+        relationships: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              interactionGuidance: {
+                type: "string",
+                description:
+                  "Optional natural-language guidance for tone, distance, candor, or social stance with this person.",
+              },
+              relationshipLabel: {
+                type: "string",
+                description:
+                  "Optional owner-authored description such as senior colleague or close friend.",
+              },
+              username: {
+                type: "string",
+                description:
+                  "Existing active CyWorld username, without @.",
+              },
+            },
+            required: ["username"],
+          },
+        },
+      },
+      required: ["mode"],
     },
   },
   {
@@ -1600,6 +1642,15 @@ async function executeCyWorldAgentToolCall({
   if (call.name === "study_update_owner_sharing_policies") {
     return JSON.stringify(
       await updateOwnerSharingPolicies({
+        args,
+        context,
+      }),
+    );
+  }
+
+  if (call.name === "study_set_relationship_guidance") {
+    return JSON.stringify(
+      await updateOwnerRelationshipGuidance({
         args,
         context,
       }),

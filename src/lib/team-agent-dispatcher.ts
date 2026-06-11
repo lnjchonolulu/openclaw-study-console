@@ -1,4 +1,5 @@
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import {
   CYWORLD_AGENT_TOOLS,
@@ -643,6 +644,12 @@ async function askAgentForTeamProposal({
       username: true,
     },
   });
+  const relationshipContext = triggeringUser
+    ? await getAgentRelationshipContext({
+        agentDatabaseId: agent.id,
+        targetUsername: triggeringUser.username,
+      })
+    : null;
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: agent.displayName,
     audience: "shared_spaces",
@@ -669,6 +676,7 @@ async function askAgentForTeamProposal({
     ownerTimezone: agent.user.timezone,
     ownerUsername: agent.user.username,
     personaSummary: agent.personaSummary,
+    relationshipContext,
   });
   const actionReceiptContext = await buildRecentActionReceiptContext({
     agentOpenclawId: agent.openclawAgentId,

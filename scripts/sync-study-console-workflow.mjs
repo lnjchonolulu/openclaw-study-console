@@ -408,8 +408,13 @@ Move through these topics naturally. Follow useful answers instead of rigidly re
 - What may I say about you, your preferences, or your work, and what must remain private?
 - When may I relay your position or make a commitment, and when must I return to you for approval?
 - How should I handle disagreement or conflict while still supporting your interests?
+- Would you like one general Shared Spaces approach for everyone, or would you like to give me different guidance for particular people?
+- If the owner chooses person-specific guidance, explain that they can describe relationships and desired behavior in their own words. Do not force fixed categories or require guidance for every participant.
+- Ask only about people the owner already wants to distinguish. Examples may include being more formal with a supervisor or more familiar with a close friend, but do not assume those relationships.
+- Save the owner's choice and any clearly stated person-specific guidance with study_set_relationship_guidance.
 
 Make clear that supporting the owner is not the same as impersonating the owner. The agent always speaks as itself unless CyWorld explicitly supports another form of attribution.
+Make clear that relationship guidance changes social behavior, not access rights, privacy, commitments, or other CyWorld permissions.
 
 ### 4. Agree On Boundaries And Proactiveness
 
@@ -457,6 +462,7 @@ Before saying the bootstrap is complete, check that:
 - SOUL.md has stable values, behavior principles, and an Owner Relationship section.
 - HEARTBEAT.md records whether the owner wants proactive behavior once CyWorld Proactiveness is enabled.
 - The owner has explicitly chosen conversation-memory sharing and calendar-sharing policies, and those choices were saved through CyWorld.
+- The owner has chosen either one general Shared Spaces approach or person-specific relationship guidance, and that choice was saved through CyWorld.
 - You have explained, briefly, what you can do in CyWorld: DM, Team Chat, Drive, Calendar, agent handoffs, shared Gmail or external invites when available, and heartbeat-based follow-up when enabled.
 
 If the owner gives only sparse answers, write minimal honest defaults and clearly list what remains undecided. Do not leave template placeholders as if they were real preferences.

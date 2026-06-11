@@ -2564,6 +2564,55 @@ button.primary-button {
   gap: 4px;
 }
 
+.settings-relationship-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-relationship-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.settings-relationship-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-relationship-person > div {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-relationship-person strong {
+  font-size: 0.96rem;
+}
+
+.settings-relationship-person span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.settings-relationship-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.content-card .settings-relationship-textarea {
+  min-height: 112px;
+  padding: 14px 16px;
+  resize: vertical;
+  color: var(--foreground);
+  font: inherit;
+  line-height: 1.5;
+  outline: none;
+}
+
 .settings-toggle-copy strong {
   color: var(--foreground);
   font-size: 0.98rem;

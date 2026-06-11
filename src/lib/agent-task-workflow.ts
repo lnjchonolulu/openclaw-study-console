@@ -5,6 +5,7 @@ import {
   type AgentReportDestination,
 } from "@/lib/agent-report-delivery";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -585,24 +586,46 @@ async function composeOutboundMessage({
       username: true,
     },
   });
+  const relationshipContext = await getAgentRelationshipContext({
+    agentOpenclawId: input.agentOpenclawId,
+    targetUsername: input.targetUsername,
+  });
+  const targetUser = relationshipContext
+    ? {
+        displayName: relationshipContext.targetDisplayName,
+        timezone: relationshipContext.targetTimezone,
+        username: relationshipContext.targetUsername,
+      }
+    : await prisma.user.findUnique({
+        where: {
+          username: input.targetUsername,
+        },
+        select: {
+          displayName: true,
+          timezone: true,
+          username: true,
+        },
+      });
+  const targetUsername = targetUser?.username ?? input.targetUsername;
+  const targetDisplayName = targetUser?.displayName ?? input.targetUsername;
+  const targetIsOwner = targetUsername === input.ownerUsername;
 
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: input.agentDisplayName,
-    audience:
-      input.ownerUsername === input.requesterUsername ? "direct_line" : "shared_spaces",
+    audience: targetIsOwner ? "direct_line" : "shared_spaces",
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: input.behaviorConfig,
-    counterpartLabel:
-      input.ownerUsername === input.requesterUsername
-        ? `${input.requesterDisplayName} (@${input.requesterUsername})`
-        : `${input.requesterDisplayName} (@${input.requesterUsername}), who is not the owner of this agent`,
-    counterpartTimezone: input.requesterTimezone,
-    currentHumanDisplayName: input.requesterDisplayName,
-    currentHumanUsername: input.requesterUsername,
+    counterpartLabel: targetIsOwner
+      ? `${targetDisplayName} (@${targetUsername}), the owner of this agent and the recipient of this outbound DM`
+      : `${targetDisplayName} (@${targetUsername}), who is not the owner of this agent and is the recipient of this outbound DM`,
+    counterpartTimezone: targetUser?.timezone,
+    currentHumanDisplayName: targetDisplayName,
+    currentHumanUsername: targetUsername,
     ownerDisplayName: input.ownerDisplayName,
     ownerTimezone: input.ownerTimezone,
     ownerUsername: input.ownerUsername,
     personaSummary: input.personaSummary,
+    relationshipContext,
   });
 
   const result = await runAgentTurn({
@@ -924,6 +947,10 @@ export async function handleInboundTaskReply({
       username: true,
     },
   });
+  const relationshipContext = await getAgentRelationshipContext({
+    agentOpenclawId,
+    targetUsername: replyingUsername,
+  });
 
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName,
@@ -938,6 +965,7 @@ export async function handleInboundTaskReply({
     ownerTimezone,
     ownerUsername,
     personaSummary,
+    relationshipContext,
   });
 
   const eventLog = task.events

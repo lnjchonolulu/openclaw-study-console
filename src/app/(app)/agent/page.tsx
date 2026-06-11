@@ -8,6 +8,7 @@ import { syncAgentMarkdownProjection } from "@/lib/agent-markdown-sync";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { requireUser } from "@/lib/auth";
 import { normalizeProfileConfig } from "@/lib/profile";
+import { prisma } from "@/lib/prisma";
 import { normalizeTimeZone } from "@/lib/timezone";
 
 export default async function AgentPage() {
@@ -25,6 +26,34 @@ export default async function AgentPage() {
   const userNameFromMd = extractMarkdownBulletValue(userMd, "Name");
   const agentNameFromMd = extractMarkdownBulletValue(identityMd, "Name");
   const behaviorConfig = normalizeAgentBehaviorConfig(user.agent?.soulConfigJson);
+  const relationshipTargets = user.agent
+    ? await prisma.user.findMany({
+        where: {
+          id: {
+            not: user.id,
+          },
+          status: "ACTIVE",
+        },
+        orderBy: {
+          username: "asc",
+        },
+        select: {
+          displayName: true,
+          id: true,
+          profileConfigJson: true,
+          username: true,
+          relationshipGuidance: {
+            where: {
+              agentId: user.agent.id,
+            },
+            select: {
+              interactionGuidance: true,
+              relationshipLabel: true,
+            },
+          },
+        },
+      })
+    : [];
 
   return (
     <SettingsClient
@@ -44,6 +73,21 @@ export default async function AgentPage() {
       initialConversationMemorySharingPolicy={
         behaviorConfig.conversationMemorySharingPolicy
       }
+      initialRelationshipGuidance={relationshipTargets.map((target) => ({
+        displayName: target.displayName,
+        interactionGuidance:
+          target.relationshipGuidance[0]?.interactionGuidance ?? "",
+        profile: normalizeProfileConfig(
+          target.profileConfigJson,
+          target.username,
+          "user",
+        ),
+        relationshipLabel:
+          target.relationshipGuidance[0]?.relationshipLabel ?? "",
+        targetUserId: target.id,
+        username: target.username,
+      }))}
+      initialRelationshipGuidanceMode={behaviorConfig.relationshipGuidanceMode}
       initialHeartbeatEnabled={heartbeatEnabled}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}

@@ -91,10 +91,12 @@ type Commitment = (typeof commitmentOptions)[number]["value"];
 export type CalendarSharingPolicy = (typeof calendarSharingOptions)[number]["value"];
 export type ConversationMemorySharingPolicy =
   (typeof conversationMemorySharingOptions)[number]["value"];
+export type RelationshipGuidanceMode = "general" | "person_specific";
 
 export type AgentBehaviorConfig = {
   calendarSharingPolicy: CalendarSharingPolicy;
   conversationMemorySharingPolicy: ConversationMemorySharingPolicy;
+  relationshipGuidanceMode: RelationshipGuidanceMode;
   responseStyle: {
     tone: Tone;
     initiative: Level;
@@ -122,6 +124,7 @@ export type AgentBehaviorConfig = {
 export const defaultAgentBehaviorConfig: AgentBehaviorConfig = {
   calendarSharingPolicy: "ask_each_time",
   conversationMemorySharingPolicy: "ask_each_time",
+  relationshipGuidanceMode: "general",
   responseStyle: {
     tone: "warm",
     initiative: "medium",
@@ -175,6 +178,10 @@ export function normalizeAgentBehaviorConfig(input: unknown): AgentBehaviorConfi
       conversationMemorySharingOptions,
       defaultAgentBehaviorConfig.conversationMemorySharingPolicy,
     ),
+    relationshipGuidanceMode:
+      source.relationshipGuidanceMode === "person_specific"
+        ? "person_specific"
+        : "general",
     responseStyle: {
       tone: pickString(responseStyle.tone, toneOptions, defaultAgentBehaviorConfig.responseStyle.tone),
       initiative: pickString(

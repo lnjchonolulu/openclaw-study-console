@@ -5,6 +5,7 @@ import {
   writeHeartbeatEnabled,
 } from "@/lib/agent-workspace";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import { normalizeRelationshipGuidanceInput } from "@/lib/agent-relationships";
 import { getCurrentUser } from "@/lib/auth";
 import { deleteUserAvatarFiles, saveUserAvatarDataUrl } from "@/lib/avatar-storage";
 import { prisma } from "@/lib/prisma";
@@ -17,6 +18,7 @@ export async function PATCH(request: Request) {
   if (!user || !user.agent) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+  const agent = user.agent;
 
   const body = (await request.json()) as {
     agentId?: string;
@@ -26,6 +28,8 @@ export async function PATCH(request: Request) {
     conversationMemorySharingPolicy?: string;
     heartbeatEnabled?: boolean;
     identityMd?: string;
+    relationshipGuidance?: unknown;
+    relationshipGuidanceMode?: string;
     soulMd?: string;
     userDisplayName?: string;
     userMd?: string;
@@ -45,7 +49,7 @@ export async function PATCH(request: Request) {
     body.agentDisplayName?.trim() ||
     `${user.username}'s agent`;
   const userTimezone = normalizeTimeZone(body.userTimezone ?? user.timezone);
-  const agentId = body.agentId?.trim() || user.agent.openclawAgentId;
+  const agentId = body.agentId?.trim() || agent.openclawAgentId;
   const heartbeatEnabled = Boolean(body.heartbeatEnabled);
   const currentUserProfileConfig = normalizeProfileConfig(
     user.profileConfigJson,
@@ -63,7 +67,7 @@ export async function PATCH(request: Request) {
     `${user.username}-agent`,
     "agent",
   );
-  const nextBehaviorConfig = normalizeAgentBehaviorConfig(user.agent.soulConfigJson);
+  const nextBehaviorConfig = normalizeAgentBehaviorConfig(agent.soulConfigJson);
 
   if (
     body.calendarSharingPolicy === "never" ||
@@ -72,6 +76,36 @@ export async function PATCH(request: Request) {
   ) {
     nextBehaviorConfig.calendarSharingPolicy = body.calendarSharingPolicy;
   }
+
+  if (
+    body.relationshipGuidanceMode === "general" ||
+    body.relationshipGuidanceMode === "person_specific"
+  ) {
+    nextBehaviorConfig.relationshipGuidanceMode =
+      body.relationshipGuidanceMode;
+  }
+
+  const relationshipGuidance = normalizeRelationshipGuidanceInput(
+    body.relationshipGuidance,
+  );
+  const allowedRelationshipTargets = await prisma.user.findMany({
+    where: {
+      id: {
+        in: relationshipGuidance.map((item) => item.targetUserId),
+        not: user.id,
+      },
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+    },
+  });
+  const allowedTargetIds = new Set(
+    allowedRelationshipTargets.map((target) => target.id),
+  );
+  const validRelationshipGuidance = relationshipGuidance.filter((item) =>
+    allowedTargetIds.has(item.targetUserId),
+  );
 
   if (
     body.conversationMemorySharingPolicy === "never" ||
@@ -107,8 +141,17 @@ export async function PATCH(request: Request) {
     writeHeartbeatEnabled(agentId, heartbeatEnabled),
   ]);
 
-  await prisma.$transaction([
-    prisma.user.update({
+  const relationshipRows = validRelationshipGuidance
+    .filter((item) => item.relationshipLabel || item.interactionGuidance)
+    .map((item) => ({
+      agentId: agent.id,
+      interactionGuidance: item.interactionGuidance,
+      relationshipLabel: item.relationshipLabel,
+      targetUserId: item.targetUserId,
+    }));
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.user.update({
       where: {
         id: user.id,
       },
@@ -117,18 +160,29 @@ export async function PATCH(request: Request) {
         profileConfigJson: nextUserProfileConfig,
         timezone: userTimezone,
       },
-    }),
-    prisma.agent.update({
+    });
+    await transaction.agent.update({
       where: {
-        id: user.agent.id,
+        id: agent.id,
       },
       data: {
         displayName: agentDisplayName,
         profileConfigJson: nextAgentProfileConfig,
         soulConfigJson: nextBehaviorConfig,
       },
-    }),
-  ]);
+    });
+    await transaction.agentRelationshipGuidance.deleteMany({
+      where: {
+        agentId: agent.id,
+      },
+    });
+
+    if (relationshipRows.length > 0) {
+      await transaction.agentRelationshipGuidance.createMany({
+        data: relationshipRows,
+      });
+    }
+  });
 
   return NextResponse.json({ ok: true });
 }

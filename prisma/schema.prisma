@@ -126,6 +126,7 @@ model User {
   calendarTitleOverrides CalendarEventTitleOverride[]
   connectedIntegrations  ExternalIntegration[]
   requestedEmailThreads  EmailThread[]                @relation("EmailThreadRequester")
+  relationshipGuidance   AgentRelationshipGuidance[]  @relation("RelationshipTargetUser")
 }
 
 model Team {
@@ -158,6 +159,22 @@ model Agent {
   handoffTasks      AgentTask[]        @relation("AgentTaskTargetAgent")
   toolExecutions    AgentToolExecution[]
   emailThreads      EmailThread[]
+  relationshipGuidance AgentRelationshipGuidance[]
+}
+
+model AgentRelationshipGuidance {
+  id                  String   @id @default(cuid())
+  agentId             String
+  targetUserId        String
+  relationshipLabel   String?
+  interactionGuidance String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  agent               Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  targetUser          User     @relation("RelationshipTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, targetUserId])
+  @@index([targetUserId])
 }
 
 model FileRecord {
