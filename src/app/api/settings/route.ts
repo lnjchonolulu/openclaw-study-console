@@ -23,6 +23,7 @@ export async function PATCH(request: Request) {
     agentDisplayName?: string;
     agentProfileConfig?: unknown;
     calendarSharingPolicy?: string;
+    conversationMemorySharingPolicy?: string;
     heartbeatEnabled?: boolean;
     identityMd?: string;
     soulMd?: string;
@@ -70,6 +71,15 @@ export async function PATCH(request: Request) {
     body.calendarSharingPolicy === "always"
   ) {
     nextBehaviorConfig.calendarSharingPolicy = body.calendarSharingPolicy;
+  }
+
+  if (
+    body.conversationMemorySharingPolicy === "never" ||
+    body.conversationMemorySharingPolicy === "ask_each_time" ||
+    body.conversationMemorySharingPolicy === "always"
+  ) {
+    nextBehaviorConfig.conversationMemorySharingPolicy =
+      body.conversationMemorySharingPolicy;
   }
 
   if (typeof nextUserProfileConfig.imageDataUrl === "string") {

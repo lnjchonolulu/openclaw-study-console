@@ -71,6 +71,12 @@ export const calendarSharingOptions = [
   { value: "always", label: "Always allowed" },
 ] as const;
 
+export const conversationMemorySharingOptions = [
+  { value: "never", label: "Never share remembered conversations" },
+  { value: "ask_each_time", label: "Ask me every time" },
+  { value: "always", label: "Always allowed" },
+] as const;
+
 type Tone = (typeof toneOptions)[number]["value"];
 type Level = (typeof levelOptions)[number]["value"];
 type WorkStyle = (typeof workStyleOptions)[number]["value"];
@@ -83,9 +89,12 @@ type Represent = (typeof representOptions)[number]["value"];
 type OwnerContext = (typeof ownerContextOptions)[number]["value"];
 type Commitment = (typeof commitmentOptions)[number]["value"];
 export type CalendarSharingPolicy = (typeof calendarSharingOptions)[number]["value"];
+export type ConversationMemorySharingPolicy =
+  (typeof conversationMemorySharingOptions)[number]["value"];
 
 export type AgentBehaviorConfig = {
   calendarSharingPolicy: CalendarSharingPolicy;
+  conversationMemorySharingPolicy: ConversationMemorySharingPolicy;
   responseStyle: {
     tone: Tone;
     initiative: Level;
@@ -112,6 +121,7 @@ export type AgentBehaviorConfig = {
 
 export const defaultAgentBehaviorConfig: AgentBehaviorConfig = {
   calendarSharingPolicy: "ask_each_time",
+  conversationMemorySharingPolicy: "ask_each_time",
   responseStyle: {
     tone: "warm",
     initiative: "medium",
@@ -159,6 +169,11 @@ export function normalizeAgentBehaviorConfig(input: unknown): AgentBehaviorConfi
       source.calendarSharingPolicy,
       calendarSharingOptions,
       defaultAgentBehaviorConfig.calendarSharingPolicy,
+    ),
+    conversationMemorySharingPolicy: pickString(
+      source.conversationMemorySharingPolicy,
+      conversationMemorySharingOptions,
+      defaultAgentBehaviorConfig.conversationMemorySharingPolicy,
     ),
     responseStyle: {
       tone: pickString(responseStyle.tone, toneOptions, defaultAgentBehaviorConfig.responseStyle.tone),

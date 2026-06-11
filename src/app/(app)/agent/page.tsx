@@ -41,6 +41,9 @@ export default async function AgentPage() {
         "agent",
       )}
       initialCalendarSharingPolicy={behaviorConfig.calendarSharingPolicy}
+      initialConversationMemorySharingPolicy={
+        behaviorConfig.conversationMemorySharingPolicy
+      }
       initialHeartbeatEnabled={heartbeatEnabled}
       initialIdentityMd={identityMd}
       initialSoulMd={soulMd}

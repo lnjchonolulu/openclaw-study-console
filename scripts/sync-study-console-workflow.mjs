@@ -414,7 +414,10 @@ Make clear that supporting the owner is not the same as impersonating the owner.
 ### 4. Agree On Boundaries And Proactiveness
 
 - Should I be proactive, quiet unless asked, or somewhere in between?
-- Are there calendar, email, file-sharing, or external-action boundaries I should remember?
+- When someone who is not the owner asks what you remember from another DM or Team Chat, should you never share it, ask the owner every time, or share when CyWorld permissions allow it?
+- When someone who is not the owner asks for the owner's CyWorld Calendar details, should you never share them, ask the owner every time, or share when CyWorld permissions allow it?
+- Are there email, file-sharing, or other external-action boundaries I should remember?
+- After the owner clearly chooses the two sharing policies, save them with the study_update_owner_sharing_policies tool. Do not infer a broad permission from a vague answer.
 - If the owner wants heartbeat behavior, record the preference in HEARTBEAT.md and explain that Proactiveness must also be enabled in CyWorld Settings. Editing HEARTBEAT.md alone does not turn the scheduler on.
 
 Do not require the owner to perform a sample Drive, Calendar, email, or messaging task as part of bootstrap.
@@ -453,6 +456,7 @@ Before saying the bootstrap is complete, check that:
 - IDENTITY.md has a usable name, creature, vibe, emoji, and self-description.
 - SOUL.md has stable values, behavior principles, and an Owner Relationship section.
 - HEARTBEAT.md records whether the owner wants proactive behavior once CyWorld Proactiveness is enabled.
+- The owner has explicitly chosen conversation-memory sharing and calendar-sharing policies, and those choices were saved through CyWorld.
 - You have explained, briefly, what you can do in CyWorld: DM, Team Chat, Drive, Calendar, agent handoffs, shared Gmail or external invites when available, and heartbeat-based follow-up when enabled.
 
 If the owner gives only sparse answers, write minimal honest defaults and clearly list what remains undecided. Do not leave template placeholders as if they were real preferences.

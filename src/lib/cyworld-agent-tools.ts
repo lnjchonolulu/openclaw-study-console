@@ -10,6 +10,10 @@ import {
 import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
+import {
+  recallConversationHistory,
+  updateOwnerSharingPolicies,
+} from "@/lib/conversation-memory";
 import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import { sendSharedGmail } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
@@ -23,6 +27,57 @@ import {
 } from "@/lib/timezone";
 
 export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
+  {
+    name: "study_recall_conversation",
+    description:
+      "Recall CyWorld conversation history that this agent is allowed to use. Omit withUsername and teamChannelName for the current DM or Team Chat. Set withUsername to recall this agent's DM with a specific human, or teamChannelName to recall a Team Chat. Use this only when older conversation context is actually needed. CyWorld enforces room membership and the owner's conversation-memory sharing policy.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Maximum matching messages to return, from 1 to 30.",
+        },
+        query: {
+          type: "string",
+          description:
+            "Optional text to search for. Omit it to retrieve the most recent messages in the selected conversation.",
+        },
+        teamChannelName: {
+          type: "string",
+          description:
+            "Optional CyWorld Team Chat channel name. Do not combine with withUsername.",
+        },
+        withUsername: {
+          type: "string",
+          description:
+            "Optional CyWorld username whose DM with this agent should be recalled, without @. Do not combine with teamChannelName.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "study_update_owner_sharing_policies",
+    description:
+      "Save the owner's choices for calendar sharing and remembered-conversation sharing. Use only while speaking directly with this agent's owner, especially during bootstrap after the owner has clearly chosen Never, Ask every time, or Always allowed. Omit a field that the owner has not decided.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        calendarSharingPolicy: {
+          type: "string",
+          enum: ["never", "ask_each_time", "always"],
+        },
+        conversationMemorySharingPolicy: {
+          type: "string",
+          enum: ["never", "ask_each_time", "always"],
+        },
+      },
+      required: [],
+    },
+  },
   {
     name: "study_list_pending_tasks",
     description:
@@ -302,7 +357,10 @@ function toolReceiptEventType(toolName: string, ok: boolean) {
 }
 
 function shouldRecordToolReceipt(toolName: string) {
-  return toolName !== "study_list_pending_tasks";
+  return ![
+    "study_list_pending_tasks",
+    "study_recall_conversation",
+  ].includes(toolName);
 }
 
 function toolReceiptSummary(toolName: string, result: Record<string, unknown> | null) {
@@ -1526,6 +1584,24 @@ async function executeCyWorldAgentToolCall({
       await listPendingAgentTasks({
         agentOpenclawId: senderAgentOpenclawId,
         limit,
+      }),
+    );
+  }
+
+  if (call.name === "study_recall_conversation") {
+    return JSON.stringify(
+      await recallConversationHistory({
+        args,
+        context,
+      }),
+    );
+  }
+
+  if (call.name === "study_update_owner_sharing_policies") {
+    return JSON.stringify(
+      await updateOwnerSharingPolicies({
+        args,
+        context,
       }),
     );
   }

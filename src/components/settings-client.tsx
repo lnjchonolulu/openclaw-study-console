@@ -12,6 +12,8 @@ import { ProfileAvatar } from "@/components/profile-avatar";
 import {
   calendarSharingOptions,
   type CalendarSharingPolicy,
+  conversationMemorySharingOptions,
+  type ConversationMemorySharingPolicy,
 } from "@/lib/agent-behavior";
 import {
   getAgentMeta,
@@ -44,6 +46,7 @@ type SettingsClientProps = {
   initialAgentDisplayName: string;
   initialAgentProfile: ProfileConfig;
   initialCalendarSharingPolicy: CalendarSharingPolicy;
+  initialConversationMemorySharingPolicy: ConversationMemorySharingPolicy;
   initialHeartbeatEnabled: boolean;
   initialIdentityMd: string;
   initialSoulMd: string;
@@ -478,6 +481,7 @@ export function SettingsClient({
   initialAgentDisplayName,
   initialAgentProfile,
   initialCalendarSharingPolicy,
+  initialConversationMemorySharingPolicy,
   initialHeartbeatEnabled,
   initialIdentityMd,
   initialSoulMd,
@@ -498,6 +502,8 @@ export function SettingsClient({
   const [calendarSharingPolicy, setCalendarSharingPolicy] = useState(
     initialCalendarSharingPolicy,
   );
+  const [conversationMemorySharingPolicy, setConversationMemorySharingPolicy] =
+    useState(initialConversationMemorySharingPolicy);
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(initialHeartbeatEnabled);
   const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [agentProfile, setAgentProfile] = useState(initialAgentProfile);
@@ -524,6 +530,7 @@ export function SettingsClient({
         agentId,
         agentProfileConfig: agentProfile,
         calendarSharingPolicy,
+        conversationMemorySharingPolicy,
         heartbeatEnabled,
         identityMd,
         soulMd,
@@ -905,6 +912,36 @@ export function SettingsClient({
                     value={calendarSharingPolicy}
                   >
                     {calendarSharingOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="settings-select-icon">⌄</span>
+                </span>
+              </div>
+            </section>
+
+            <section className="settings-section-block">
+              <div className="settings-section-header">
+                <span className="context-label">Conversation Memory Sharing</span>
+                <p>
+                  Choose when your agent can share things it remembers from
+                  other CyWorld conversations with people who are not you.
+                </p>
+              </div>
+              <div className="settings-field-span-2 settings-select-control">
+                <span className="settings-select-wrap">
+                  <select
+                    className="settings-select"
+                    onChange={(event) => {
+                      setConversationMemorySharingPolicy(
+                        event.target.value as ConversationMemorySharingPolicy,
+                      );
+                    }}
+                    value={conversationMemorySharingPolicy}
+                  >
+                    {conversationMemorySharingOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>

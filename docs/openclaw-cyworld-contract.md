@@ -392,6 +392,29 @@ Rules:
 - External `.ics` email invites can be sent through shared Gmail, but external
   acceptance/decline is not tracked inside CyWorld.
 
+## Conversation Memory
+
+Canonical conversation history remains in CyWorld `Message` records. OpenClaw
+session continuity may help inside one room, but it is not the only durable
+memory source.
+
+Rules:
+
+- Each Team Chat has one logical shared room memory generated from room purpose,
+  membership, active tasks, active chain state, and recent canonical messages.
+  It is read-only context, not a second editable transcript.
+- DM recall is isolated by agent and human counterpart. Owner DMs and non-owner
+  DMs must not be merged merely because they discuss the same topic.
+- Agents use the CyWorld conversation-recall tool when older context is needed.
+- CyWorld enforces agent participation, human room membership, and the owner's
+  conversation-memory sharing policy.
+- Conversation-memory sharing has three owner-controlled states: never, ask
+  every time, and always allowed.
+- "Always allowed" does not bypass Team Chat membership or other CyWorld
+  permissions.
+- Bootstrap must explicitly ask for both conversation-memory sharing and
+  calendar-sharing choices and save them as structured CyWorld policy.
+
 ## Shared Gmail
 
 CyWorld has one shared Gmail account for outbound email and tracked replies.

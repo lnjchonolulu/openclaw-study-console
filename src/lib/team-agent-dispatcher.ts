@@ -4,6 +4,7 @@ import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
 } from "@/lib/cyworld-agent-tools";
+import { buildTeamRoomMemoryContext } from "@/lib/conversation-memory";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -673,6 +674,7 @@ async function askAgentForTeamProposal({
     agentOpenclawId: agent.openclawAgentId,
     roomId: room.id,
   });
+  const sharedRoomMemoryContext = await buildTeamRoomMemoryContext(room.id);
   const chainRecord = await prisma.teamAgentChain.findUnique({
     where: {
       id: chain.id,
@@ -697,7 +699,7 @@ async function askAgentForTeamProposal({
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
     conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
-    instructions: `${[instructions, actionReceiptContext]
+    instructions: `${[instructions, sharedRoomMemoryContext, actionReceiptContext]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n")}
 

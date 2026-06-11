@@ -1,5 +1,6 @@
 import {
   calendarSharingOptions,
+  conversationMemorySharingOptions,
   normalizeAgentBehaviorConfig,
   type AgentBehaviorConfig,
 } from "@/lib/agent-behavior";
@@ -192,6 +193,29 @@ function instructionForCalendarSharing(value: AgentBehaviorConfig["calendarShari
   }
 }
 
+function labelForConversationMemorySharing(
+  value: AgentBehaviorConfig["conversationMemorySharingPolicy"],
+) {
+  const option = conversationMemorySharingOptions.find(
+    (candidate) => candidate.value === value,
+  );
+
+  return option?.label ?? "Ask me every time";
+}
+
+function instructionForConversationMemorySharing(
+  value: AgentBehaviorConfig["conversationMemorySharingPolicy"],
+) {
+  switch (value) {
+    case "never":
+      return "Do not reveal remembered content from your owner's other DMs or private conversations to a non-owner.";
+    case "ask_each_time":
+      return "Before revealing remembered content from your owner's other DMs or private conversations to a non-owner, ask your owner for permission and wait for explicit approval.";
+    case "always":
+      return "You may use relevant remembered conversation context with non-owners when CyWorld room membership and privacy enforcement allow it. Share only what is useful, not an indiscriminate transcript.";
+  }
+}
+
 export function buildAgentRuntimeInstructions({
   agentDisplayName,
   agentHandoffsEnabled = true,
@@ -319,6 +343,9 @@ export function buildAgentRuntimeInstructions({
     "- A request to ask, tell, contact, remind, or message another CyWorld participant may require a CyWorld DM. A phrase addressed to the current conversational partner, such as 'tell me', is ordinary conversation and is not a delivery request.",
     "- A reference to this room, this channel, the group, everyone here, or the team means the current CyWorld Team Chat when the current context is a team room.",
     "- A request involving email, an outside address, CC, or an external calendar invitation may require Shared Gmail or an external .ics invite.",
+    "- CyWorld conversation history is stored by room. Your current DM or Team Chat is a distinct conversation; do not merge people or rooms merely because the topics overlap.",
+    "- When older conversation details are needed, use study_recall_conversation rather than claiming you forgot, inventing history, or treating private OpenClaw workspace files as chat history.",
+    "- Team Chat room memory is shared room context. Private DM memory remains scoped to this agent and the specific human counterpart.",
     "- First use conversational context to resolve pronouns and rough wording. Never choose a random person or resource merely because one name or keyword appeared.",
     "- If exactly one interpretation fits the conversation and current permissions, proceed with that interpretation. If two or more materially different interpretations remain plausible, ask one concise clarification.",
     "",
@@ -366,6 +393,11 @@ export function buildAgentRuntimeInstructions({
     "External calendar invite emails include an .ics attachment. They can help outside recipients add the event to their own calendar app, but CyWorld does not track whether those external email recipients accept or decline.",
     `Owner calendar sharing policy: ${labelForCalendarSharing(normalized.calendarSharingPolicy)}.`,
     `- ${instructionForCalendarSharing(normalized.calendarSharingPolicy)}`,
+    `Owner conversation-memory sharing policy: ${labelForConversationMemorySharing(normalized.conversationMemorySharingPolicy)}.`,
+    `- ${instructionForConversationMemorySharing(normalized.conversationMemorySharingPolicy)}`,
+    isCurrentHumanOwner
+      ? "- The owner may ask you to recall any DM or Team Chat in which you participated, but CyWorld still enforces room membership and resource permissions."
+      : "- A non-owner may always ask about the current conversation. Do not expose another private DM or inaccessible Team Chat merely because you remember it.",
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
     "Use these CyWorld tools only when you truly want the app to act on a CyWorld resource or deliver something outside the current conversation.",
     "Do not claim that pairing is required for CyWorld human DMs. CyWorld DM tools are the supported delivery path.",

@@ -84,6 +84,8 @@ After provisioning:
    - learn the private owner-agent relationship the participant wants
    - learn how the agent should behave socially with non-owners and other agents
    - clarify privacy, representation, commitment, and proactiveness boundaries
+   - explicitly choose whether remembered conversations and calendar details
+     may be shared with non-owners: never, ask every time, or always allowed
 5. Confirm the participant can use DM, Team Chat, Drive, and Calendar.
 6. Enable proactiveness only if the participant wants heartbeat behavior.
 
