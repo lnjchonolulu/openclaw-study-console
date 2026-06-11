@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const openclawRoot = path.join(os.homedir(), ".openclaw");
 const openclawConfigPath = path.join(openclawRoot, "openclaw.json");
+const cyworldSandboxImage = "cyworld-openclaw-sandbox:bookworm-python";
 
 const MANAGED_START = "<!-- BEGIN:cyworld-agent-scaffold -->";
 const MANAGED_END = "<!-- END:cyworld-agent-scaffold -->";
@@ -529,6 +530,10 @@ async function applyOpenClawWorkspaceSecurity(agentIds) {
       mode: "all",
       scope: "agent",
       workspaceAccess: "rw",
+      docker: {
+        ...(agent.sandbox?.docker ?? {}),
+        image: cyworldSandboxImage,
+      },
     };
     pendingAgentIds.delete(agent.id);
   }

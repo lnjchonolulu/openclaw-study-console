@@ -9,6 +9,7 @@ const prisma = new PrismaClient();
 const DRIVE_DIRNAME = "CYWORLD_DRIVE";
 const MANAGED_INDEX = ".study-console-managed.json";
 const OPENCLAW_CONFIG_PATH = path.join(os.homedir(), ".openclaw", "openclaw.json");
+const CYWORLD_SANDBOX_IMAGE = "cyworld-openclaw-sandbox:bookworm-python";
 
 function expandHome(input) {
   if (input === "~") {
@@ -205,6 +206,12 @@ async function verifyOpenClawSecurity(users) {
     ) {
       errors.push(
         `${agentId}: sandbox must use mode=all, scope=agent, workspaceAccess=rw.`,
+      );
+    }
+
+    if (configuredAgent.sandbox?.docker?.image !== CYWORLD_SANDBOX_IMAGE) {
+      errors.push(
+        `${agentId}: sandbox must use ${CYWORLD_SANDBOX_IMAGE} so OpenClaw edit/write tools work.`,
       );
     }
   }
