@@ -119,10 +119,10 @@ Google Workspace actions. Agents should use CyWorld tools for these actions; the
 not treat the Google account as their own personal account. CyWorld Calendar remains the
 source of truth inside the app and is not mirrored to Google Calendar.
 
-Google Slides editing uses the Slides API directly. The presentation owner must share the
-file with the connected Google account and grant Editor access. The agent inspects the
-presentation first, proposes native Slides `batchUpdate` requests, and CyWorld validates,
-executes, and records the result.
+Google Slides, Docs, and Sheets editing use their native Google Workspace APIs directly.
+The file owner must share the file with the connected Google account and grant Editor
+access. The agent inspects the file first, proposes native API `batchUpdate` requests, and
+CyWorld validates, executes, and records the result.
 
 Create a Google OAuth client and add these environment variables:
 
@@ -137,10 +137,12 @@ The OAuth client needs these scopes:
 - `https://www.googleapis.com/auth/gmail.send`
 - `https://www.googleapis.com/auth/gmail.readonly`
 - `https://www.googleapis.com/auth/presentations`
+- `https://www.googleapis.com/auth/documents`
+- `https://www.googleapis.com/auth/spreadsheets`
 - `https://www.googleapis.com/auth/userinfo.email`
 
-Enable the Google Slides API in the same Google Cloud project. Existing installations must
-reconnect Google once after adding the Slides scope.
+Enable the Google Slides API, Google Docs API, and Google Sheets API in the same Google
+Cloud project. Existing installations must reconnect Google once after adding these scopes.
 
 ## Next implementation steps
 

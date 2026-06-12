@@ -17,8 +17,12 @@ import {
 } from "@/lib/conversation-memory";
 import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import {
+  inspectSharedGoogleDocs,
+  inspectSharedGoogleSheets,
   inspectSharedGoogleSlides,
   sendSharedGmail,
+  updateSharedGoogleDocs,
+  updateSharedGoogleSheets,
   updateSharedGoogleSlides,
 } from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
@@ -408,6 +412,90 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["presentation", "requestsJson"],
+    },
+  },
+  {
+    name: "study_inspect_google_docs",
+    description:
+      "Inspect a Google Docs document before editing it. Accepts a Google Docs URL or document ID and returns the title, revision ID, tabs, structural element indices, element types, and visible text. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        document: {
+          type: "string",
+          description: "A Google Docs URL or document ID.",
+        },
+      },
+      required: ["document"],
+    },
+  },
+  {
+    name: "study_update_google_docs",
+    description:
+      "Modify a Google Docs document through the shared CyWorld Google account. Inspect the document first, then pass a JSON array of native Google Docs documents.batchUpdate request objects. Prefer requiredRevisionId from the inspection result so concurrent changes are not overwritten. Examples: [{\"insertText\":{\"location\":{\"index\":1},\"text\":\"New opening paragraph\\n\"}}] or [{\"replaceAllText\":{\"containsText\":{\"text\":\"Old\",\"matchCase\":true},\"replaceText\":\"New\"}}]. Do not claim the edit succeeded unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        document: {
+          type: "string",
+          description: "A Google Docs URL or document ID.",
+        },
+        requestsJson: {
+          type: "string",
+          description:
+            "A JSON array containing 1 to 50 native Google Docs batchUpdate request objects.",
+        },
+        requiredRevisionId: {
+          type: "string",
+          description:
+            "Optional revision ID returned by study_inspect_google_docs. Include it when editing an existing document.",
+        },
+      },
+      required: ["document", "requestsJson"],
+    },
+  },
+  {
+    name: "study_inspect_google_sheets",
+    description:
+      "Inspect a Google Sheets spreadsheet before editing it. Accepts a Google Sheets URL or spreadsheet ID and returns spreadsheet metadata and sheet IDs. Optionally pass rangesJson as a JSON array of up to 20 A1 ranges, such as [\"Sheet1!A1:D20\"], to retrieve only the values needed for the task instead of loading the entire spreadsheet. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description: "A Google Sheets URL or spreadsheet ID.",
+        },
+        rangesJson: {
+          type: "string",
+          description:
+            "Optional JSON array of up to 20 A1 notation ranges to inspect, for example [\"Sheet1!A1:D20\"].",
+        },
+      },
+      required: ["spreadsheet"],
+    },
+  },
+  {
+    name: "study_update_google_sheets",
+    description:
+      "Modify a Google Sheets spreadsheet through the shared CyWorld Google account. Inspect the spreadsheet and the relevant ranges first, then pass a JSON array of native Google Sheets spreadsheets.batchUpdate request objects. Example: [{\"updateCells\":{\"range\":{\"sheetId\":0,\"startRowIndex\":0,\"endRowIndex\":1,\"startColumnIndex\":0,\"endColumnIndex\":2},\"rows\":[{\"values\":[{\"userEnteredValue\":{\"stringValue\":\"Name\"}},{\"userEnteredValue\":{\"stringValue\":\"Status\"}}]}],\"fields\":\"userEnteredValue\"}}]. Do not claim the edit succeeded unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description: "A Google Sheets URL or spreadsheet ID.",
+        },
+        requestsJson: {
+          type: "string",
+          description:
+            "A JSON array containing 1 to 50 native Google Sheets batchUpdate request objects.",
+        },
+      },
+      required: ["spreadsheet", "requestsJson"],
     },
   },
 ];
@@ -1835,6 +1923,78 @@ async function executeCyWorldAgentToolCall({
         presentation,
         requestsJson,
         requiredRevisionId: requiredRevisionId || null,
+      }),
+    );
+  }
+
+  if (call.name === "study_inspect_google_docs") {
+    const document = cleanMessage(args.document);
+
+    if (!document) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_docs_url_or_id",
+      });
+    }
+
+    return JSON.stringify(await inspectSharedGoogleDocs(document));
+  }
+
+  if (call.name === "study_update_google_docs") {
+    const document = cleanMessage(args.document);
+    const requestsJson = cleanMessage(args.requestsJson);
+    const requiredRevisionId = cleanMessage(args.requiredRevisionId);
+
+    if (!document || !requestsJson) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_docs_url_or_id_or_requests",
+      });
+    }
+
+    return JSON.stringify(
+      await updateSharedGoogleDocs({
+        document,
+        requestsJson,
+        requiredRevisionId: requiredRevisionId || null,
+      }),
+    );
+  }
+
+  if (call.name === "study_inspect_google_sheets") {
+    const spreadsheet = cleanMessage(args.spreadsheet);
+    const rangesJson = cleanMessage(args.rangesJson);
+
+    if (!spreadsheet) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_sheets_url_or_id",
+      });
+    }
+
+    return JSON.stringify(
+      await inspectSharedGoogleSheets({
+        rangesJson: rangesJson || null,
+        spreadsheet,
+      }),
+    );
+  }
+
+  if (call.name === "study_update_google_sheets") {
+    const spreadsheet = cleanMessage(args.spreadsheet);
+    const requestsJson = cleanMessage(args.requestsJson);
+
+    if (!spreadsheet || !requestsJson) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_sheets_url_or_id_or_requests",
+      });
+    }
+
+    return JSON.stringify(
+      await updateSharedGoogleSheets({
+        requestsJson,
+        spreadsheet,
       }),
     );
   }

@@ -5,11 +5,17 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/presentations",
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
 export const GOOGLE_SLIDES_SCOPE =
   "https://www.googleapis.com/auth/presentations";
+export const GOOGLE_DOCS_SCOPE =
+  "https://www.googleapis.com/auth/documents";
+export const GOOGLE_SHEETS_SCOPE =
+  "https://www.googleapis.com/auth/spreadsheets";
 
 type GoogleTokenJson = {
   access_token?: string;
@@ -79,6 +85,100 @@ type GoogleSlidesPresentation = {
     pageElements?: GoogleSlidesPageElement[];
   }>;
   title?: string;
+};
+
+type GoogleDocsStructuralElement = {
+  endIndex?: number;
+  paragraph?: {
+    elements?: Array<{
+      endIndex?: number;
+      startIndex?: number;
+      textRun?: {
+        content?: string;
+      };
+    }>;
+  };
+  sectionBreak?: unknown;
+  startIndex?: number;
+  table?: {
+    tableRows?: Array<{
+      tableCells?: Array<{
+        content?: GoogleDocsStructuralElement[];
+      }>;
+    }>;
+  };
+  tableOfContents?: {
+    content?: GoogleDocsStructuralElement[];
+  };
+};
+
+type GoogleDocsTab = {
+  childTabs?: GoogleDocsTab[];
+  documentTab?: {
+    body?: {
+      content?: GoogleDocsStructuralElement[];
+    };
+  };
+  tabProperties?: {
+    index?: number;
+    parentTabId?: string;
+    tabId?: string;
+    title?: string;
+  };
+};
+
+type GoogleDocument = {
+  body?: {
+    content?: GoogleDocsStructuralElement[];
+  };
+  documentId?: string;
+  revisionId?: string;
+  tabs?: GoogleDocsTab[];
+  title?: string;
+};
+
+type GoogleSpreadsheet = {
+  properties?: {
+    locale?: string;
+    timeZone?: string;
+    title?: string;
+  };
+  sheets?: Array<{
+    properties?: {
+      gridProperties?: {
+        columnCount?: number;
+        frozenColumnCount?: number;
+        frozenRowCount?: number;
+        rowCount?: number;
+      };
+      index?: number;
+      sheetId?: number;
+      sheetType?: string;
+      title?: string;
+    };
+  }>;
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+};
+
+type GoogleValueRange = {
+  majorDimension?: string;
+  range?: string;
+  values?: unknown[][];
+};
+
+type GoogleDocsTabSummary = {
+  childTabs: GoogleDocsTabSummary[];
+  elements: Array<{
+    endIndex: number | null;
+    startIndex: number | null;
+    text: string | null;
+    type: string;
+  }>;
+  index: number | null;
+  parentTabId: string | null;
+  tabId: string | null;
+  title: string | null;
 };
 
 function getGoogleRedirectUri() {
@@ -163,6 +263,48 @@ function extractGoogleSlidesPresentationId(value: string) {
   return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
 }
 
+function extractGoogleDocsDocumentId(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const url = new URL(cleaned);
+    const match = url.pathname.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+  } catch {
+    // A bare document ID is also accepted.
+  }
+
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
+}
+
+function extractGoogleSheetsSpreadsheetId(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const url = new URL(cleaned);
+    const match = url.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+  } catch {
+    // A bare spreadsheet ID is also accepted.
+  }
+
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
+}
+
 function textFromElements(elements: GoogleSlidesTextElement[] | undefined) {
   return (elements ?? [])
     .map((element) => element.textRun?.content ?? "")
@@ -212,6 +354,73 @@ function pageElementText(element: GoogleSlidesPageElement) {
     .join("\n");
 
   return tableText || null;
+}
+
+function googleDocsStructuralText(
+  elements: GoogleDocsStructuralElement[] | undefined,
+): string {
+  return (elements ?? [])
+    .map((element) => {
+      const paragraphText = (element.paragraph?.elements ?? [])
+        .map((paragraphElement) => paragraphElement.textRun?.content ?? "")
+        .join("");
+      const tableText = (element.table?.tableRows ?? [])
+        .flatMap((row) => row.tableCells ?? [])
+        .map((cell) => googleDocsStructuralText(cell.content))
+        .filter(Boolean)
+        .join("\n");
+      const tableOfContentsText = googleDocsStructuralText(
+        element.tableOfContents?.content,
+      );
+
+      return paragraphText || tableText || tableOfContentsText;
+    })
+    .join("")
+    .trim();
+}
+
+function googleDocsStructuralType(element: GoogleDocsStructuralElement) {
+  if (element.paragraph) {
+    return "paragraph";
+  }
+
+  if (element.table) {
+    return "table";
+  }
+
+  if (element.tableOfContents) {
+    return "table_of_contents";
+  }
+
+  if (element.sectionBreak) {
+    return "section_break";
+  }
+
+  return "structural_element";
+}
+
+function summarizeGoogleDocsElements(
+  elements: GoogleDocsStructuralElement[] | undefined,
+) {
+  return (elements ?? []).map((element) => ({
+    endIndex: element.endIndex ?? null,
+    startIndex: element.startIndex ?? null,
+    text: googleDocsStructuralText([element]) || null,
+    type: googleDocsStructuralType(element),
+  }));
+}
+
+function summarizeGoogleDocsTabs(
+  tabs: GoogleDocsTab[] | undefined,
+): GoogleDocsTabSummary[] {
+  return (tabs ?? []).map((tab) => ({
+    childTabs: summarizeGoogleDocsTabs(tab.childTabs),
+    elements: summarizeGoogleDocsElements(tab.documentTab?.body?.content),
+    index: tab.tabProperties?.index ?? null,
+    parentTabId: tab.tabProperties?.parentTabId ?? null,
+    tabId: tab.tabProperties?.tabId ?? null,
+    title: tab.tabProperties?.title ?? null,
+  }));
 }
 
 const ALLOWED_GOOGLE_SLIDES_REQUESTS = new Set([
@@ -305,6 +514,221 @@ function parseGoogleSlidesRequests(value: string) {
   };
 }
 
+const ALLOWED_GOOGLE_DOCS_REQUESTS = new Set([
+  "addDocumentTab",
+  "createFooter",
+  "createFootnote",
+  "createHeader",
+  "createNamedRange",
+  "createParagraphBullets",
+  "deleteContentRange",
+  "deleteDocumentTab",
+  "deleteFooter",
+  "deleteHeader",
+  "deleteNamedRange",
+  "deleteParagraphBullets",
+  "deletePositionedObject",
+  "deleteTab",
+  "insertDate",
+  "insertInlineImage",
+  "insertInlineSheetsChart",
+  "insertPageBreak",
+  "insertPerson",
+  "insertRichLink",
+  "insertSectionBreak",
+  "insertTable",
+  "insertTableColumn",
+  "insertTableRow",
+  "insertText",
+  "mergeTableCells",
+  "pinTableHeaderRows",
+  "replaceAllText",
+  "replaceImage",
+  "replaceNamedRangeContent",
+  "unmergeTableCells",
+  "updateDocumentStyle",
+  "updateDocumentTabProperties",
+  "updateNamedStyle",
+  "updateParagraphStyle",
+  "updateSectionStyle",
+  "updateTableCellStyle",
+  "updateTableColumnProperties",
+  "updateTableRowStyle",
+  "updateTextStyle",
+]);
+
+const ALLOWED_GOOGLE_SHEETS_REQUESTS = new Set([
+  "addBanding",
+  "addChart",
+  "addConditionalFormatRule",
+  "addDataSource",
+  "addDimensionGroup",
+  "addFilterView",
+  "addNamedRange",
+  "addProtectedRange",
+  "addSheet",
+  "addSlicer",
+  "addTable",
+  "appendCells",
+  "appendDimension",
+  "autoFill",
+  "autoResizeDimensions",
+  "cancelDataSourceRefresh",
+  "clearBasicFilter",
+  "copyPaste",
+  "createDeveloperMetadata",
+  "cutPaste",
+  "deleteBanding",
+  "deleteConditionalFormatRule",
+  "deleteDataSource",
+  "deleteDeveloperMetadata",
+  "deleteDimension",
+  "deleteDimensionGroup",
+  "deleteDuplicates",
+  "deleteEmbeddedObject",
+  "deleteFilterView",
+  "deleteNamedRange",
+  "deleteProtectedRange",
+  "deleteRange",
+  "deleteSheet",
+  "deleteTable",
+  "duplicateFilterView",
+  "duplicateSheet",
+  "findReplace",
+  "insertDimension",
+  "insertRange",
+  "mergeCells",
+  "moveDimension",
+  "pasteData",
+  "randomizeRange",
+  "refreshDataSource",
+  "repeatCell",
+  "setBasicFilter",
+  "setDataValidation",
+  "sortRange",
+  "textToColumns",
+  "trimWhitespace",
+  "unmergeCells",
+  "updateBanding",
+  "updateBorders",
+  "updateCells",
+  "updateChartSpec",
+  "updateConditionalFormatRule",
+  "updateDataSource",
+  "updateDeveloperMetadata",
+  "updateDimensionGroup",
+  "updateDimensionProperties",
+  "updateEmbeddedObjectBorder",
+  "updateEmbeddedObjectPosition",
+  "updateFilterView",
+  "updateNamedRange",
+  "updateProtectedRange",
+  "updateSheetProperties",
+  "updateSlicerSpec",
+  "updateSpreadsheetProperties",
+  "updateTable",
+]);
+
+function parseGoogleBatchRequests(
+  value: string,
+  allowedRequests: Set<string>,
+  unsupportedReason: string,
+) {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return {
+      ok: false as const,
+      reason: "invalid_requests_json",
+    };
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 50) {
+    return {
+      ok: false as const,
+      reason: "requests_must_be_a_nonempty_array_with_at_most_50_items",
+    };
+  }
+
+  for (const request of parsed) {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      return {
+        ok: false as const,
+        reason: "each_request_must_be_an_object",
+      };
+    }
+
+    const keys = Object.keys(request);
+
+    if (keys.length !== 1 || !allowedRequests.has(keys[0])) {
+      return {
+        ok: false as const,
+        reason: unsupportedReason,
+        requestType: keys[0] ?? null,
+      };
+    }
+  }
+
+  return {
+    ok: true as const,
+    requests: parsed as Array<Record<string, unknown>>,
+  };
+}
+
+function parseGoogleDocsRequests(value: string) {
+  return parseGoogleBatchRequests(
+    value,
+    ALLOWED_GOOGLE_DOCS_REQUESTS,
+    "unsupported_google_docs_request",
+  );
+}
+
+function parseGoogleSheetsRequests(value: string) {
+  return parseGoogleBatchRequests(
+    value,
+    ALLOWED_GOOGLE_SHEETS_REQUESTS,
+    "unsupported_google_sheets_request",
+  );
+}
+
+function parseGoogleSheetsRanges(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return {
+      ok: true as const,
+      ranges: [] as string[],
+    };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return {
+      ok: false as const,
+      reason: "invalid_ranges_json",
+    };
+  }
+
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length > 20 ||
+    parsed.some((range) => typeof range !== "string" || !range.trim())
+  ) {
+    return {
+      ok: false as const,
+      reason: "ranges_must_be_a_json_array_with_at_most_20_nonempty_strings",
+    };
+  }
+
+  return {
+    ok: true as const,
+    ranges: parsed.map((range) => range.trim()),
+  };
+}
+
 async function googleSlidesAccessStatus() {
   const status = await getGoogleIntegrationStatus();
 
@@ -342,6 +766,59 @@ async function googleSlidesAccessStatus() {
 
 function googleSlidesSharingGuidance(accountEmail: string | null) {
   return `Share the Google Slides file with ${
+    accountEmail ?? "the Google account connected in CyWorld Admin Settings"
+  } and grant Editor access, then try again.`;
+}
+
+async function googleWorkspaceAccessStatus({
+  reconnectReason,
+  requiredScope,
+}: {
+  reconnectReason: string;
+  requiredScope: string;
+}) {
+  const status = await getGoogleIntegrationStatus();
+
+  if (!status.connected) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: "google_not_connected",
+    };
+  }
+
+  if (!hasGoogleScope(status.scopes, requiredScope)) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: reconnectReason,
+    };
+  }
+
+  const access = await getGoogleAccess();
+
+  if (!access) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: "google_access_token_unavailable",
+    };
+  }
+
+  return {
+    ...access,
+    ok: true as const,
+  };
+}
+
+function googleWorkspaceSharingGuidance({
+  accountEmail,
+  fileType,
+}: {
+  accountEmail: string | null;
+  fileType: string;
+}) {
+  return `Share the ${fileType} file with ${
     accountEmail ?? "the Google account connected in CyWorld Admin Settings"
   } and grant Editor access, then try again.`;
 }
@@ -691,6 +1168,378 @@ export async function updateSharedGoogleSlides({
       ok: false as const,
       presentationId,
       reason: "google_slides_update_failed",
+    };
+  }
+}
+
+export async function inspectSharedGoogleDocs(document: string) {
+  const documentId = extractGoogleDocsDocumentId(document);
+
+  if (!documentId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_docs_url_or_id",
+    };
+  }
+
+  const access = await googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_docs",
+    requiredScope: GOOGLE_DOCS_SCOPE,
+  });
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_docs"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Docs access."
+          : googleWorkspaceSharingGuidance({
+              accountEmail: access.accountEmail,
+              fileType: "Google Docs",
+            }),
+    };
+  }
+
+  try {
+    const result = await googleJson<GoogleDocument>(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(
+        documentId,
+      )}?includeTabsContent=true`,
+      {
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+        },
+        method: "GET",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      document: {
+        documentId: result.documentId ?? documentId,
+        elements: summarizeGoogleDocsElements(result.body?.content),
+        revisionId: result.revisionId ?? null,
+        tabs: summarizeGoogleDocsTabs(result.tabs),
+        title: result.title ?? null,
+      },
+      ok: true as const,
+      sharingRequirement:
+        "The document must be shared with this connected CyWorld Google account with Editor access before an agent can modify it.",
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      documentId,
+      error: error instanceof Error ? error.message : "Unknown Google Docs error.",
+      guidance: googleWorkspaceSharingGuidance({
+        accountEmail: access.accountEmail,
+        fileType: "Google Docs",
+      }),
+      ok: false as const,
+      reason: "google_docs_not_accessible",
+    };
+  }
+}
+
+export async function updateSharedGoogleDocs({
+  document,
+  requestsJson,
+  requiredRevisionId,
+}: {
+  document: string;
+  requestsJson: string;
+  requiredRevisionId?: string | null;
+}) {
+  const documentId = extractGoogleDocsDocumentId(document);
+
+  if (!documentId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_docs_url_or_id",
+    };
+  }
+
+  const parsedRequests = parseGoogleDocsRequests(requestsJson);
+
+  if (!parsedRequests.ok) {
+    return parsedRequests;
+  }
+
+  const access = await googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_docs",
+    requiredScope: GOOGLE_DOCS_SCOPE,
+  });
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_docs"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Docs access."
+          : googleWorkspaceSharingGuidance({
+              accountEmail: access.accountEmail,
+              fileType: "Google Docs",
+            }),
+    };
+  }
+
+  try {
+    const result = await googleJson<{
+      documentId?: string;
+      replies?: unknown[];
+      writeControl?: {
+        requiredRevisionId?: string;
+      };
+    }>(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(
+        documentId,
+      )}:batchUpdate`,
+      {
+        body: JSON.stringify({
+          requests: parsedRequests.requests,
+          ...(requiredRevisionId?.trim()
+            ? {
+                writeControl: {
+                  requiredRevisionId: requiredRevisionId.trim(),
+                },
+              }
+            : {}),
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      appliedRequestCount: parsedRequests.requests.length,
+      documentId: result.documentId ?? documentId,
+      ok: true as const,
+      replies: result.replies ?? [],
+      writeControl: result.writeControl ?? null,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      documentId,
+      error: error instanceof Error ? error.message : "Unknown Google Docs error.",
+      guidance: googleWorkspaceSharingGuidance({
+        accountEmail: access.accountEmail,
+        fileType: "Google Docs",
+      }),
+      ok: false as const,
+      reason: "google_docs_update_failed",
+    };
+  }
+}
+
+export async function inspectSharedGoogleSheets({
+  rangesJson,
+  spreadsheet,
+}: {
+  rangesJson?: string | null;
+  spreadsheet: string;
+}) {
+  const spreadsheetId = extractGoogleSheetsSpreadsheetId(spreadsheet);
+
+  if (!spreadsheetId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_sheets_url_or_id",
+    };
+  }
+
+  const parsedRanges = parseGoogleSheetsRanges(rangesJson);
+
+  if (!parsedRanges.ok) {
+    return parsedRanges;
+  }
+
+  const access = await googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_sheets",
+    requiredScope: GOOGLE_SHEETS_SCOPE,
+  });
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_sheets"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Sheets access."
+          : googleWorkspaceSharingGuidance({
+              accountEmail: access.accountEmail,
+              fileType: "Google Sheets",
+            }),
+    };
+  }
+
+  try {
+    const metadata = await googleJson<GoogleSpreadsheet>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+        spreadsheetId,
+      )}?includeGridData=false`,
+      {
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+        },
+        method: "GET",
+      },
+    );
+    let valueRanges: GoogleValueRange[] = [];
+
+    if (parsedRanges.ranges.length) {
+      const valuesUrl = new URL(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+          spreadsheetId,
+        )}/values:batchGet`,
+      );
+
+      for (const range of parsedRanges.ranges) {
+        valuesUrl.searchParams.append("ranges", range);
+      }
+
+      valuesUrl.searchParams.set("majorDimension", "ROWS");
+      valuesUrl.searchParams.set("valueRenderOption", "FORMATTED_VALUE");
+      const values = await googleJson<{ valueRanges?: GoogleValueRange[] }>(
+        valuesUrl.toString(),
+        {
+          headers: {
+            Authorization: `Bearer ${access.accessToken}`,
+          },
+          method: "GET",
+        },
+      );
+      valueRanges = values.valueRanges ?? [];
+    }
+
+    return {
+      accountEmail: access.accountEmail,
+      ok: true as const,
+      sharingRequirement:
+        "The spreadsheet must be shared with this connected CyWorld Google account with Editor access before an agent can modify it.",
+      spreadsheet: {
+        locale: metadata.properties?.locale ?? null,
+        sheets: (metadata.sheets ?? []).map((sheet) => ({
+          columnCount: sheet.properties?.gridProperties?.columnCount ?? null,
+          frozenColumnCount:
+            sheet.properties?.gridProperties?.frozenColumnCount ?? null,
+          frozenRowCount:
+            sheet.properties?.gridProperties?.frozenRowCount ?? null,
+          index: sheet.properties?.index ?? null,
+          rowCount: sheet.properties?.gridProperties?.rowCount ?? null,
+          sheetId: sheet.properties?.sheetId ?? null,
+          sheetType: sheet.properties?.sheetType ?? null,
+          title: sheet.properties?.title ?? null,
+        })),
+        spreadsheetId: metadata.spreadsheetId ?? spreadsheetId,
+        spreadsheetUrl: metadata.spreadsheetUrl ?? null,
+        timeZone: metadata.properties?.timeZone ?? null,
+        title: metadata.properties?.title ?? null,
+        valueRanges: valueRanges.map((range) => ({
+          majorDimension: range.majorDimension ?? null,
+          range: range.range ?? null,
+          values: range.values ?? [],
+        })),
+      },
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Sheets error.",
+      guidance: googleWorkspaceSharingGuidance({
+        accountEmail: access.accountEmail,
+        fileType: "Google Sheets",
+      }),
+      ok: false as const,
+      reason: "google_sheets_not_accessible",
+      spreadsheetId,
+    };
+  }
+}
+
+export async function updateSharedGoogleSheets({
+  requestsJson,
+  spreadsheet,
+}: {
+  requestsJson: string;
+  spreadsheet: string;
+}) {
+  const spreadsheetId = extractGoogleSheetsSpreadsheetId(spreadsheet);
+
+  if (!spreadsheetId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_sheets_url_or_id",
+    };
+  }
+
+  const parsedRequests = parseGoogleSheetsRequests(requestsJson);
+
+  if (!parsedRequests.ok) {
+    return parsedRequests;
+  }
+
+  const access = await googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_sheets",
+    requiredScope: GOOGLE_SHEETS_SCOPE,
+  });
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_sheets"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Sheets access."
+          : googleWorkspaceSharingGuidance({
+              accountEmail: access.accountEmail,
+              fileType: "Google Sheets",
+            }),
+    };
+  }
+
+  try {
+    const result = await googleJson<{
+      replies?: unknown[];
+      spreadsheetId?: string;
+      updatedSpreadsheet?: GoogleSpreadsheet;
+    }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(
+        spreadsheetId,
+      )}:batchUpdate`,
+      {
+        body: JSON.stringify({
+          includeSpreadsheetInResponse: false,
+          requests: parsedRequests.requests,
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      appliedRequestCount: parsedRequests.requests.length,
+      ok: true as const,
+      replies: result.replies ?? [],
+      spreadsheetId: result.spreadsheetId ?? spreadsheetId,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Sheets error.",
+      guidance: googleWorkspaceSharingGuidance({
+        accountEmail: access.accountEmail,
+        fileType: "Google Sheets",
+      }),
+      ok: false as const,
+      reason: "google_sheets_update_failed",
+      spreadsheetId,
     };
   }
 }

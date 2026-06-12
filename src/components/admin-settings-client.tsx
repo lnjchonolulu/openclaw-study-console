@@ -12,6 +12,10 @@ type GoogleIntegrationStatus = {
 
 const GOOGLE_SLIDES_SCOPE =
   "https://www.googleapis.com/auth/presentations";
+const GOOGLE_DOCS_SCOPE =
+  "https://www.googleapis.com/auth/documents";
+const GOOGLE_SHEETS_SCOPE =
+  "https://www.googleapis.com/auth/spreadsheets";
 
 export function AdminSettingsClient({
   initialGoogleIntegration,
@@ -22,8 +26,11 @@ export function AdminSettingsClient({
   const [googleIntegration, setGoogleIntegration] = useState(initialGoogleIntegration);
   const [isDisconnectingGoogle, setIsDisconnectingGoogle] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const hasGoogleSlidesAccess =
-    googleIntegration.scopes.includes(GOOGLE_SLIDES_SCOPE);
+  const hasGoogleWorkspaceAccess = [
+    GOOGLE_SLIDES_SCOPE,
+    GOOGLE_DOCS_SCOPE,
+    GOOGLE_SHEETS_SCOPE,
+  ].every((scope) => googleIntegration.scopes.includes(scope));
 
   async function handleGoogleDisconnect() {
     setIsDisconnectingGoogle(true);
@@ -62,7 +69,7 @@ export function AdminSettingsClient({
           <p>
             Connect one shared Google account for CyWorld email and Google
             Workspace actions. Agents may send approved email and edit Google
-            Slides shared with this account.
+            Slides, Docs, and Sheets shared with this account.
           </p>
           {googleIntegration.connected ? (
             <p>
@@ -72,17 +79,17 @@ export function AdminSettingsClient({
           ) : (
             <p>Not connected yet.</p>
           )}
-          {googleIntegration.connected && !hasGoogleSlidesAccess ? (
+          {googleIntegration.connected && !hasGoogleWorkspaceAccess ? (
             <p>
-              Reconnect Google once to grant the newly added Google Slides
-              permission.
+              Reconnect Google once to grant the Google Slides, Docs, and
+              Sheets permissions.
             </p>
           ) : null}
           {notice ? <p>{notice}</p> : null}
         </div>
         <div className="settings-inline-actions">
           <span />
-          {googleIntegration.connected && hasGoogleSlidesAccess ? (
+          {googleIntegration.connected && hasGoogleWorkspaceAccess ? (
             <button
               className="secondary-button"
               disabled={isDisconnectingGoogle}
