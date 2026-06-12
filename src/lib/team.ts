@@ -127,6 +127,14 @@ function mapAgentParticipant(agent: {
   };
 }
 
+function compareParticipants(a: TeamParticipant, b: TeamParticipant) {
+  const usernameOrder = a.username.localeCompare(b.username, "en", {
+    sensitivity: "base",
+  });
+
+  return usernameOrder || a.id.localeCompare(b.id);
+}
+
 async function syncRoomAgents(roomId: string, memberUserIds: string[]) {
   const teamAgents = await prisma.agent.findMany({
     where: {
@@ -200,9 +208,16 @@ function mergeParticipants(
     };
   }>,
 ) {
+  const users = userMembers
+    .map((member) => mapParticipant(member.user))
+    .sort(compareParticipants);
+  const agents = agentMembers
+    .map((member) => mapAgentParticipant(member.agent))
+    .sort(compareParticipants);
+
   return [
-    ...userMembers.map((member) => mapParticipant(member.user)),
-    ...agentMembers.map((member) => mapAgentParticipant(member.agent)),
+    ...users,
+    ...agents,
   ];
 }
 
