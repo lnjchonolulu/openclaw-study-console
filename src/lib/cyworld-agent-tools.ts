@@ -576,7 +576,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_request_google_file_review",
     description:
-      "Request review of a Google Slides, Docs, or Sheets file by adding a CyWorld review comment and emailing reviewers through Shared Gmail. This is a CyWorld review workflow, not Google's native request-review UI, and it does not grant file access. Use only when the user explicitly asks or approves notifying the reviewers.",
+      "Mark a Google Slides, Docs, or Sheets file for review by adding a CyWorld review-request comment to the file. This does not send email, use Google's native request-review UI, notify a specific person, or grant file access.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -589,15 +589,8 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
           type: "string",
           description: "What the reviewers should review or respond to.",
         },
-        reviewerEmails: {
-          type: "array",
-          items: {
-            type: "string",
-          },
-          description: "Email addresses that should receive the review request.",
-        },
       },
-      required: ["file", "message", "reviewerEmails"],
+      required: ["file", "message"],
     },
   },
 ];
@@ -2170,12 +2163,11 @@ async function executeCyWorldAgentToolCall({
   if (call.name === "study_request_google_file_review") {
     const file = cleanMessage(args.file);
     const message = cleanMessage(args.message);
-    const reviewerEmails = cleanEmailArray(args.reviewerEmails);
 
-    if (!file || !message || !reviewerEmails.length) {
+    if (!file || !message) {
       return JSON.stringify({
         ok: false,
-        reason: "missing_review_file_message_or_valid_reviewer_emails",
+        reason: "missing_review_file_or_message",
       });
     }
 
@@ -2183,7 +2175,6 @@ async function executeCyWorldAgentToolCall({
       await requestGoogleFileReview({
         file,
         message,
-        reviewerEmails,
       }),
     );
   }

@@ -220,11 +220,12 @@ Google Workspace files are external resources, not files in CyWorld Drive and no
 - For Google Docs, use \`study_inspect_google_docs\` before \`study_update_google_docs\`. Inspection includes native suggestion IDs when present.
 - For Google Sheets, use \`study_inspect_google_sheets\` with only the relevant A1 ranges before \`study_update_google_sheets\`.
 - Use \`study_inspect_google_file_review\` and \`study_update_google_file_review\` for comments, replies, and resolved comment threads.
-- Use \`study_request_google_file_review\` only after the user asks or approves reviewer notification. It adds a CyWorld review comment and emails reviewers through Shared Gmail; it is not Google's native request-review UI and does not grant access.
+- Use \`study_request_google_file_review\` when the user asks to mark a Google file for review. It adds a review-request comment only; it does not send email, notify a specific person, use Google's native request-review UI, or grant access.
 - Google public APIs do not create, accept, or reject native Docs suggestion-mode edits. You may inspect existing suggestions, make normal edits, and use comments, but do not claim unsupported suggestion actions succeeded.
 - Drive comment access under \`drive.file\` is limited to files created by CyWorld or explicitly authorized for the connected shared account.
 - Include the inspected revision ID for Slides and Docs when possible so CyWorld can reject stale edits instead of overwriting concurrent work.
 - Do not claim success unless the update tool returns \`ok: true\`; CyWorld stores the result as a durable action receipt.
+- After creating, editing, or commenting on a Google file, report what actually changed when that result is useful to the current conversation. Base the report on the tool result and receipt; do not invent recipients or notifications.
 `);
 }
 

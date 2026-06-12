@@ -1565,21 +1565,16 @@ export async function updateGoogleFileReview({
 export async function requestGoogleFileReview({
   file,
   message,
-  reviewerEmails,
 }: {
   file: string;
   message: string;
-  reviewerEmails: string[];
 }) {
   const cleanedMessage = message.trim();
-  const cleanedReviewerEmails = reviewerEmails
-    .map((email) => email.trim())
-    .filter(Boolean);
 
-  if (!cleanedMessage || !cleanedReviewerEmails.length) {
+  if (!cleanedMessage) {
     return {
       ok: false as const,
-      reason: "missing_review_message_or_reviewer_emails",
+      reason: "missing_review_message",
     };
   }
 
@@ -1593,58 +1588,15 @@ export async function requestGoogleFileReview({
     return commentResult;
   }
 
-  const access = await googleDriveFileAccessStatus();
   const fileId = extractGoogleDriveFileId(file);
 
-  if (!access.ok || !fileId) {
-    return {
-      ...commentResult,
-      ok: false as const,
-      reason: "review_comment_created_but_file_metadata_unavailable",
-    };
-  }
-
-  const metadata = await getGoogleDriveFileMetadata({
-    accessToken: access.accessToken,
-    fileId,
-  });
-  const fileUrl = metadata.webViewLink ?? file;
-  const emailResult = await sendSharedGmail({
-    body: [
-      cleanedMessage,
-      "",
-      `File: ${metadata.name ?? "Google Workspace file"}`,
-      fileUrl,
-      "",
-      "This is a CyWorld review request sent through the shared CyWorld Google account. It does not grant file access; the file owner must share the file separately.",
-    ].join("\n"),
-    subject: `Review requested: ${metadata.name ?? "Google Workspace file"}`,
-    to: cleanedReviewerEmails.join(", "),
-  });
-
-  if (!emailResult.ok) {
-    return {
-      accountEmail: access.accountEmail,
-      comment: commentResult.comment,
-      fileId,
-      notification: emailResult,
-      ok: false as const,
-      reason: "review_comment_created_but_notification_failed",
-    };
-  }
-
   return {
-    accountEmail: access.accountEmail,
+    accountEmail: commentResult.accountEmail,
     comment: commentResult.comment,
-    file: {
-      fileId,
-      title: metadata.name ?? null,
-      url: fileUrl,
-    },
+    fileId,
     nativeGoogleReviewRequest: false,
-    notification: emailResult,
+    notificationSent: false,
     ok: true as const,
-    reviewerEmails: cleanedReviewerEmails,
   };
 }
 
