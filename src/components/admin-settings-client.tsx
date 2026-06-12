@@ -16,6 +16,8 @@ const GOOGLE_DOCS_SCOPE =
   "https://www.googleapis.com/auth/documents";
 const GOOGLE_SHEETS_SCOPE =
   "https://www.googleapis.com/auth/spreadsheets";
+const GOOGLE_DRIVE_FILE_SCOPE =
+  "https://www.googleapis.com/auth/drive.file";
 
 export function AdminSettingsClient({
   initialGoogleIntegration,
@@ -30,6 +32,7 @@ export function AdminSettingsClient({
     GOOGLE_SLIDES_SCOPE,
     GOOGLE_DOCS_SCOPE,
     GOOGLE_SHEETS_SCOPE,
+    GOOGLE_DRIVE_FILE_SCOPE,
   ].every((scope) => googleIntegration.scopes.includes(scope));
 
   async function handleGoogleDisconnect() {
@@ -68,8 +71,9 @@ export function AdminSettingsClient({
         <div className="settings-google-copy">
           <p>
             Connect one shared Google account for CyWorld email and Google
-            Workspace actions. Agents may send approved email and edit Google
-            Slides, Docs, and Sheets shared with this account.
+            Workspace actions. Agents may send approved email, create new
+            Slides, Docs, and Sheets, edit accessible files, and work with
+            review comments.
           </p>
           {googleIntegration.connected ? (
             <p>
@@ -81,8 +85,8 @@ export function AdminSettingsClient({
           )}
           {googleIntegration.connected && !hasGoogleWorkspaceAccess ? (
             <p>
-              Reconnect Google once to grant the Google Slides, Docs, and
-              Sheets permissions.
+              Reconnect Google once to grant Google Slides, Docs, Sheets, and
+              drive.file permissions for file creation and review comments.
             </p>
           ) : null}
           {notice ? <p>{notice}</p> : null}

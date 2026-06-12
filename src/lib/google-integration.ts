@@ -7,6 +7,7 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/presentations",
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
 
@@ -16,6 +17,10 @@ export const GOOGLE_DOCS_SCOPE =
   "https://www.googleapis.com/auth/documents";
 export const GOOGLE_SHEETS_SCOPE =
   "https://www.googleapis.com/auth/spreadsheets";
+export const GOOGLE_DRIVE_FILE_SCOPE =
+  "https://www.googleapis.com/auth/drive.file";
+
+export type GoogleWorkspaceFileType = "docs" | "sheets" | "slides";
 
 type GoogleTokenJson = {
   access_token?: string;
@@ -135,6 +140,56 @@ type GoogleDocument = {
   revisionId?: string;
   tabs?: GoogleDocsTab[];
   title?: string;
+};
+
+type GoogleDriveFile = {
+  createdTime?: string;
+  id?: string;
+  mimeType?: string;
+  modifiedTime?: string;
+  name?: string;
+  webViewLink?: string;
+};
+
+type GoogleDriveComment = {
+  author?: {
+    displayName?: string;
+    me?: boolean;
+    photoLink?: string;
+  };
+  content?: string;
+  createdTime?: string;
+  deleted?: boolean;
+  htmlContent?: string;
+  id?: string;
+  modifiedTime?: string;
+  quotedFileContent?: {
+    mimeType?: string;
+    value?: string;
+  };
+  replies?: GoogleDriveReply[];
+  resolved?: boolean;
+};
+
+type GoogleDriveReply = {
+  action?: string;
+  author?: {
+    displayName?: string;
+    me?: boolean;
+    photoLink?: string;
+  };
+  content?: string;
+  createdTime?: string;
+  deleted?: boolean;
+  htmlContent?: string;
+  id?: string;
+  modifiedTime?: string;
+};
+
+type GoogleDocsSuggestionOccurrence = {
+  ids: string[];
+  kind: string;
+  path: string;
 };
 
 type GoogleSpreadsheet = {
@@ -303,6 +358,137 @@ function extractGoogleSheetsSpreadsheetId(value: string) {
   }
 
   return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
+}
+
+function extractGoogleDriveFileId(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const url = new URL(cleaned);
+    const match =
+      url.pathname.match(
+        /\/(?:presentation|document|spreadsheets)\/d\/([a-zA-Z0-9_-]+)/,
+      ) ?? url.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+
+    const queryId = url.searchParams.get("id");
+
+    if (queryId && /^[a-zA-Z0-9_-]{10,}$/.test(queryId)) {
+      return queryId;
+    }
+  } catch {
+    // A bare Drive file ID is also accepted.
+  }
+
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
+}
+
+function googleWorkspaceFileConfig(fileType: GoogleWorkspaceFileType) {
+  if (fileType === "slides") {
+    return {
+      label: "Google Slides",
+      mimeType: "application/vnd.google-apps.presentation",
+      url: (id: string) => `https://docs.google.com/presentation/d/${id}/edit`,
+    };
+  }
+
+  if (fileType === "docs") {
+    return {
+      label: "Google Docs",
+      mimeType: "application/vnd.google-apps.document",
+      url: (id: string) => `https://docs.google.com/document/d/${id}/edit`,
+    };
+  }
+
+  return {
+    label: "Google Sheets",
+    mimeType: "application/vnd.google-apps.spreadsheet",
+    url: (id: string) => `https://docs.google.com/spreadsheets/d/${id}/edit`,
+  };
+}
+
+function collectGoogleDocsSuggestions(
+  value: unknown,
+  path = "$",
+  occurrences: GoogleDocsSuggestionOccurrence[] = [],
+  ids = new Set<string>(),
+) {
+  if (occurrences.length >= 200 || value === null || value === undefined) {
+    return {
+      ids,
+      occurrences,
+    };
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      collectGoogleDocsSuggestions(entry, `${path}[${index}]`, occurrences, ids);
+    });
+
+    return {
+      ids,
+      occurrences,
+    };
+  }
+
+  if (typeof value !== "object") {
+    return {
+      ids,
+      occurrences,
+    };
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const nextPath = `${path}.${key}`;
+
+    if (/^suggested.+Ids$/.test(key) && Array.isArray(entry)) {
+      const suggestionIds = entry.filter(
+        (candidate): candidate is string =>
+          typeof candidate === "string" && Boolean(candidate.trim()),
+      );
+
+      suggestionIds.forEach((suggestionId) => ids.add(suggestionId));
+
+      if (suggestionIds.length) {
+        occurrences.push({
+          ids: suggestionIds,
+          kind: key,
+          path: nextPath,
+        });
+      }
+    } else if (
+      /^suggested.+Changes$/.test(key) &&
+      entry &&
+      typeof entry === "object" &&
+      !Array.isArray(entry)
+    ) {
+      const suggestionIds = Object.keys(entry);
+
+      suggestionIds.forEach((suggestionId) => ids.add(suggestionId));
+
+      if (suggestionIds.length) {
+        occurrences.push({
+          ids: suggestionIds,
+          kind: key,
+          path: nextPath,
+        });
+      }
+    }
+
+    collectGoogleDocsSuggestions(entry, nextPath, occurrences, ids);
+  }
+
+  return {
+    ids,
+    occurrences,
+  };
 }
 
 function textFromElements(elements: GoogleSlidesTextElement[] | undefined) {
@@ -823,6 +1009,12 @@ function googleWorkspaceSharingGuidance({
   } and grant Editor access, then try again.`;
 }
 
+function googleDriveFileGuidance(accountEmail: string | null) {
+  return `Google Drive review actions use drive.file access. The file must either be created by CyWorld or explicitly opened/authorized for ${
+    accountEmail ?? "the Google account connected in CyWorld Admin Settings"
+  }.`;
+}
+
 export function googleAuthUrl(state: string) {
   const { clientId, redirectUri } = getGoogleClientConfig();
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -925,6 +1117,12 @@ export async function saveGoogleAuthCode({
       : tokens.expiry_date,
     refresh_token: tokens.refresh_token ?? currentTokens.refresh_token,
   };
+  const returnedScopes =
+    nextTokens.scope
+      ?.split(/\s+/)
+      .map((scope) => scope.trim())
+      .filter(Boolean) ?? [];
+  const grantedScopes = returnedScopes.length ? returnedScopes : GOOGLE_SCOPES;
   const accountEmail = nextTokens.access_token
     ? await fetchGoogleUserEmail(nextTokens.access_token)
     : null;
@@ -937,14 +1135,14 @@ export async function saveGoogleAuthCode({
       accountEmail,
       connectedAt: new Date(),
       connectedById,
-      scopes: GOOGLE_SCOPES,
+      scopes: grantedScopes,
       tokenJson: nextTokens as Prisma.InputJsonValue,
     },
     create: {
       accountEmail,
       connectedById,
       provider: "GOOGLE",
-      scopes: GOOGLE_SCOPES,
+      scopes: grantedScopes,
       tokenJson: nextTokens as Prisma.InputJsonValue,
     },
   });
@@ -1014,6 +1212,439 @@ async function getGoogleAccess(): Promise<GoogleAccess | null> {
   return {
     accessToken: tokens.access_token,
     accountEmail: integration.accountEmail,
+  };
+}
+
+async function googleDriveFileAccessStatus() {
+  return googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_drive_file",
+    requiredScope: GOOGLE_DRIVE_FILE_SCOPE,
+  });
+}
+
+async function getGoogleDriveFileMetadata({
+  accessToken,
+  fileId,
+}: {
+  accessToken: string;
+  fileId: string;
+}) {
+  const url = new URL(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
+  );
+  url.searchParams.set(
+    "fields",
+    "id,name,mimeType,webViewLink,createdTime,modifiedTime",
+  );
+
+  return googleJson<GoogleDriveFile>(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    method: "GET",
+  });
+}
+
+export async function createGoogleWorkspaceFile({
+  fileType,
+  title,
+}: {
+  fileType: GoogleWorkspaceFileType;
+  title: string;
+}) {
+  const cleanedTitle = title.trim();
+
+  if (!cleanedTitle) {
+    return {
+      ok: false as const,
+      reason: "missing_google_workspace_file_title",
+    };
+  }
+
+  const access = await googleDriveFileAccessStatus();
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_drive_file"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants drive.file access."
+          : googleDriveFileGuidance(access.accountEmail),
+    };
+  }
+
+  const config = googleWorkspaceFileConfig(fileType);
+
+  try {
+    const url = new URL("https://www.googleapis.com/drive/v3/files");
+    url.searchParams.set(
+      "fields",
+      "id,name,mimeType,webViewLink,createdTime,modifiedTime",
+    );
+    const result = await googleJson<GoogleDriveFile>(url.toString(), {
+      body: JSON.stringify({
+        mimeType: config.mimeType,
+        name: cleanedTitle,
+      }),
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    const fileId = result.id;
+
+    if (!fileId) {
+      return {
+        accountEmail: access.accountEmail,
+        ok: false as const,
+        reason: "google_workspace_file_created_without_id",
+      };
+    }
+
+    return {
+      accountEmail: access.accountEmail,
+      file: {
+        createdTime: result.createdTime ?? null,
+        fileId,
+        fileType,
+        mimeType: result.mimeType ?? config.mimeType,
+        modifiedTime: result.modifiedTime ?? null,
+        title: result.name ?? cleanedTitle,
+        url: result.webViewLink ?? config.url(fileId),
+      },
+      nextStep:
+        "The file is blank. Use the matching Google Slides, Docs, or Sheets update tool to add content.",
+      ok: true as const,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unknown Google Drive creation error.",
+      ok: false as const,
+      reason: "google_workspace_file_creation_failed",
+    };
+  }
+}
+
+function summarizeGoogleDriveReply(reply: GoogleDriveReply) {
+  return {
+    action: reply.action ?? null,
+    author: reply.author?.displayName ?? null,
+    authorIsConnectedAccount: reply.author?.me ?? false,
+    content: reply.content ?? null,
+    createdTime: reply.createdTime ?? null,
+    deleted: reply.deleted ?? false,
+    id: reply.id ?? null,
+    modifiedTime: reply.modifiedTime ?? null,
+  };
+}
+
+function summarizeGoogleDriveComment(comment: GoogleDriveComment) {
+  return {
+    author: comment.author?.displayName ?? null,
+    authorIsConnectedAccount: comment.author?.me ?? false,
+    content: comment.content ?? null,
+    createdTime: comment.createdTime ?? null,
+    deleted: comment.deleted ?? false,
+    id: comment.id ?? null,
+    modifiedTime: comment.modifiedTime ?? null,
+    quotedFileContent: comment.quotedFileContent?.value ?? null,
+    replies: (comment.replies ?? []).map(summarizeGoogleDriveReply),
+    resolved: comment.resolved ?? false,
+  };
+}
+
+export async function inspectGoogleFileReview({
+  file,
+  includeResolved = true,
+}: {
+  file: string;
+  includeResolved?: boolean;
+}) {
+  const fileId = extractGoogleDriveFileId(file);
+
+  if (!fileId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_drive_file_url_or_id",
+    };
+  }
+
+  const access = await googleDriveFileAccessStatus();
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_drive_file"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants drive.file access."
+          : googleDriveFileGuidance(access.accountEmail),
+    };
+  }
+
+  try {
+    const commentsUrl = new URL(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        fileId,
+      )}/comments`,
+    );
+    commentsUrl.searchParams.set(
+      "fields",
+      "comments(id,content,htmlContent,createdTime,modifiedTime,resolved,deleted,quotedFileContent(mimeType,value),author(displayName,me,photoLink),replies(id,content,htmlContent,createdTime,modifiedTime,deleted,action,author(displayName,me,photoLink)))",
+    );
+    commentsUrl.searchParams.set("includeDeleted", "false");
+    commentsUrl.searchParams.set("pageSize", "100");
+    const [metadata, result] = await Promise.all([
+      getGoogleDriveFileMetadata({
+        accessToken: access.accessToken,
+        fileId,
+      }),
+      googleJson<{ comments?: GoogleDriveComment[] }>(commentsUrl.toString(), {
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+        },
+        method: "GET",
+      }),
+    ]);
+    const comments = (result.comments ?? [])
+      .filter((comment) => includeResolved || comment.resolved !== true)
+      .map(summarizeGoogleDriveComment);
+
+    return {
+      accountEmail: access.accountEmail,
+      comments,
+      file: {
+        fileId,
+        mimeType: metadata.mimeType ?? null,
+        title: metadata.name ?? null,
+        url: metadata.webViewLink ?? null,
+      },
+      limitations: {
+        nativeReviewRequest:
+          "Google's public APIs do not expose the native Docs/Slides/Sheets request-review UI action.",
+        suggestions:
+          "Native Google Docs suggestions can be inspected through the Docs inspection tool, but public APIs do not create, accept, or reject suggestion-mode edits.",
+      },
+      ok: true as const,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error:
+        error instanceof Error ? error.message : "Unknown Google Drive review error.",
+      fileId,
+      guidance: googleDriveFileGuidance(access.accountEmail),
+      ok: false as const,
+      reason: "google_file_review_not_accessible",
+    };
+  }
+}
+
+export async function updateGoogleFileReview({
+  action,
+  commentId,
+  content,
+  file,
+}: {
+  action: "add_comment" | "reply" | "resolve";
+  commentId?: string | null;
+  content?: string | null;
+  file: string;
+}) {
+  const fileId = extractGoogleDriveFileId(file);
+  const cleanedCommentId = commentId?.trim() ?? "";
+  const cleanedContent = content?.trim() ?? "";
+
+  if (!fileId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_drive_file_url_or_id",
+    };
+  }
+
+  if (
+    (action === "add_comment" && !cleanedContent) ||
+    (action !== "add_comment" && !cleanedCommentId) ||
+    (action === "reply" && !cleanedContent)
+  ) {
+    return {
+      ok: false as const,
+      reason: "missing_google_review_action_fields",
+    };
+  }
+
+  const access = await googleDriveFileAccessStatus();
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_drive_file"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants drive.file access."
+          : googleDriveFileGuidance(access.accountEmail),
+    };
+  }
+
+  try {
+    if (action === "add_comment") {
+      const url = new URL(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          fileId,
+        )}/comments`,
+      );
+      url.searchParams.set(
+        "fields",
+        "id,content,createdTime,modifiedTime,resolved,author(displayName,me)",
+      );
+      const result = await googleJson<GoogleDriveComment>(url.toString(), {
+        body: JSON.stringify({
+          content: cleanedContent,
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+
+      return {
+        accountEmail: access.accountEmail,
+        action,
+        comment: summarizeGoogleDriveComment(result),
+        fileId,
+        ok: true as const,
+      };
+    }
+
+    const url = new URL(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        fileId,
+      )}/comments/${encodeURIComponent(cleanedCommentId)}/replies`,
+    );
+    url.searchParams.set(
+      "fields",
+      "id,content,createdTime,modifiedTime,action,author(displayName,me)",
+    );
+    const result = await googleJson<GoogleDriveReply>(url.toString(), {
+      body: JSON.stringify({
+        ...(cleanedContent ? { content: cleanedContent } : {}),
+        ...(action === "resolve" ? { action: "resolve" } : {}),
+      }),
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+
+    return {
+      accountEmail: access.accountEmail,
+      action,
+      commentId: cleanedCommentId,
+      fileId,
+      ok: true as const,
+      reply: summarizeGoogleDriveReply(result),
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      action,
+      error:
+        error instanceof Error ? error.message : "Unknown Google Drive review error.",
+      fileId,
+      ok: false as const,
+      reason: "google_file_review_update_failed",
+    };
+  }
+}
+
+export async function requestGoogleFileReview({
+  file,
+  message,
+  reviewerEmails,
+}: {
+  file: string;
+  message: string;
+  reviewerEmails: string[];
+}) {
+  const cleanedMessage = message.trim();
+  const cleanedReviewerEmails = reviewerEmails
+    .map((email) => email.trim())
+    .filter(Boolean);
+
+  if (!cleanedMessage || !cleanedReviewerEmails.length) {
+    return {
+      ok: false as const,
+      reason: "missing_review_message_or_reviewer_emails",
+    };
+  }
+
+  const commentResult = await updateGoogleFileReview({
+    action: "add_comment",
+    content: `CyWorld review request: ${cleanedMessage}`,
+    file,
+  });
+
+  if (!commentResult.ok) {
+    return commentResult;
+  }
+
+  const access = await googleDriveFileAccessStatus();
+  const fileId = extractGoogleDriveFileId(file);
+
+  if (!access.ok || !fileId) {
+    return {
+      ...commentResult,
+      ok: false as const,
+      reason: "review_comment_created_but_file_metadata_unavailable",
+    };
+  }
+
+  const metadata = await getGoogleDriveFileMetadata({
+    accessToken: access.accessToken,
+    fileId,
+  });
+  const fileUrl = metadata.webViewLink ?? file;
+  const emailResult = await sendSharedGmail({
+    body: [
+      cleanedMessage,
+      "",
+      `File: ${metadata.name ?? "Google Workspace file"}`,
+      fileUrl,
+      "",
+      "This is a CyWorld review request sent through the shared CyWorld Google account. It does not grant file access; the file owner must share the file separately.",
+    ].join("\n"),
+    subject: `Review requested: ${metadata.name ?? "Google Workspace file"}`,
+    to: cleanedReviewerEmails.join(", "),
+  });
+
+  if (!emailResult.ok) {
+    return {
+      accountEmail: access.accountEmail,
+      comment: commentResult.comment,
+      fileId,
+      notification: emailResult,
+      ok: false as const,
+      reason: "review_comment_created_but_notification_failed",
+    };
+  }
+
+  return {
+    accountEmail: access.accountEmail,
+    comment: commentResult.comment,
+    file: {
+      fileId,
+      title: metadata.name ?? null,
+      url: fileUrl,
+    },
+    nativeGoogleReviewRequest: false,
+    notification: emailResult,
+    ok: true as const,
+    reviewerEmails: cleanedReviewerEmails,
   };
 }
 
@@ -1201,10 +1832,15 @@ export async function inspectSharedGoogleDocs(document: string) {
   }
 
   try {
-    const result = await googleJson<GoogleDocument>(
+    const documentUrl = new URL(
       `https://docs.googleapis.com/v1/documents/${encodeURIComponent(
         documentId,
-      )}?includeTabsContent=true`,
+      )}`,
+    );
+    documentUrl.searchParams.set("includeTabsContent", "true");
+    documentUrl.searchParams.set("suggestionsViewMode", "SUGGESTIONS_INLINE");
+    const result = await googleJson<GoogleDocument>(
+      documentUrl.toString(),
       {
         headers: {
           Authorization: `Bearer ${access.accessToken}`,
@@ -1212,6 +1848,7 @@ export async function inspectSharedGoogleDocs(document: string) {
         method: "GET",
       },
     );
+    const suggestionSummary = collectGoogleDocsSuggestions(result);
 
     return {
       accountEmail: access.accountEmail,
@@ -1221,6 +1858,12 @@ export async function inspectSharedGoogleDocs(document: string) {
         revisionId: result.revisionId ?? null,
         tabs: summarizeGoogleDocsTabs(result.tabs),
         title: result.title ?? null,
+      },
+      suggestions: {
+        ids: [...suggestionSummary.ids],
+        occurrences: suggestionSummary.occurrences,
+        publicApiLimitation:
+          "Google Docs suggestions are visible here, but the public Docs API does not create, accept, or reject suggestion-mode edits.",
       },
       ok: true as const,
       sharingRequirement:

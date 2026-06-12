@@ -17,10 +17,14 @@ import {
 } from "@/lib/conversation-memory";
 import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import {
+  createGoogleWorkspaceFile,
+  inspectGoogleFileReview,
   inspectSharedGoogleDocs,
   inspectSharedGoogleSheets,
   inspectSharedGoogleSlides,
+  requestGoogleFileReview,
   sendSharedGmail,
+  updateGoogleFileReview,
   updateSharedGoogleDocs,
   updateSharedGoogleSheets,
   updateSharedGoogleSlides,
@@ -373,6 +377,27 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
+    name: "study_create_google_workspace_file",
+    description:
+      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account. Use this when the user asks for a new Google presentation, document, or spreadsheet. After creation, use the matching Google update tool to add content. Files created this way are covered by CyWorld's drive.file permission.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        fileType: {
+          type: "string",
+          enum: ["slides", "docs", "sheets"],
+          description: "The Google Workspace file type to create.",
+        },
+        title: {
+          type: "string",
+          description: "The new file title.",
+        },
+      },
+      required: ["fileType", "title"],
+    },
+  },
+  {
     name: "study_inspect_google_slides",
     description:
       "Inspect a Google Slides presentation before editing it. Accepts a Google Slides URL or presentation ID and returns the title, revision ID, slide object IDs, page-element object IDs, element types, and visible text. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
@@ -417,7 +442,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_inspect_google_docs",
     description:
-      "Inspect a Google Docs document before editing it. Accepts a Google Docs URL or document ID and returns the title, revision ID, tabs, structural element indices, element types, and visible text. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
+      "Inspect a Google Docs document before editing it. Accepts a Google Docs URL or document ID and returns the title, revision ID, tabs, structural element indices, visible text, and native suggestion IDs/locations. Native suggestions can be inspected, but Google's public API cannot create, accept, or reject suggestion-mode edits. All CyWorld agents use the one Google account connected by the administrator.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -496,6 +521,83 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["spreadsheet", "requestsJson"],
+    },
+  },
+  {
+    name: "study_inspect_google_file_review",
+    description:
+      "Inspect Drive comments and replies on a Google Slides, Docs, or Sheets file. This uses drive.file access, so the file must have been created by CyWorld or explicitly authorized for the connected shared Google account. Use study_inspect_google_docs separately when native Docs suggestion details are also needed.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        file: {
+          type: "string",
+          description: "A Google Slides, Docs, Sheets, or Drive file URL or ID.",
+        },
+        includeResolved: {
+          type: "boolean",
+          description:
+            "Whether resolved comment threads should be included. Defaults to true.",
+        },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "study_update_google_file_review",
+    description:
+      "Add a Drive comment, reply to a comment, or resolve a comment thread on a Google Slides, Docs, or Sheets file. Inspect review comments first when replying or resolving. This does not create or accept native Google Docs suggestion-mode edits.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: {
+          type: "string",
+          enum: ["add_comment", "reply", "resolve"],
+        },
+        commentId: {
+          type: "string",
+          description: "Required for reply and resolve actions.",
+        },
+        content: {
+          type: "string",
+          description:
+            "Required when adding a comment or reply. Optional when resolving.",
+        },
+        file: {
+          type: "string",
+          description: "A Google Slides, Docs, Sheets, or Drive file URL or ID.",
+        },
+      },
+      required: ["file", "action"],
+    },
+  },
+  {
+    name: "study_request_google_file_review",
+    description:
+      "Request review of a Google Slides, Docs, or Sheets file by adding a CyWorld review comment and emailing reviewers through Shared Gmail. This is a CyWorld review workflow, not Google's native request-review UI, and it does not grant file access. Use only when the user explicitly asks or approves notifying the reviewers.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        file: {
+          type: "string",
+          description: "A Google Slides, Docs, Sheets, or Drive file URL or ID.",
+        },
+        message: {
+          type: "string",
+          description: "What the reviewers should review or respond to.",
+        },
+        reviewerEmails: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description: "Email addresses that should receive the review request.",
+        },
+      },
+      required: ["file", "message", "reviewerEmails"],
     },
   },
 ];
@@ -1893,6 +1995,28 @@ async function executeCyWorldAgentToolCall({
     });
   }
 
+  if (call.name === "study_create_google_workspace_file") {
+    const fileType = cleanMessage(args.fileType);
+    const title = cleanMessage(args.title);
+
+    if (
+      !title ||
+      !["slides", "docs", "sheets"].includes(fileType)
+    ) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_or_invalid_google_workspace_file_type_or_title",
+      });
+    }
+
+    return JSON.stringify(
+      await createGoogleWorkspaceFile({
+        fileType: fileType as "slides" | "docs" | "sheets",
+        title,
+      }),
+    );
+  }
+
   if (call.name === "study_inspect_google_slides") {
     const presentation = cleanMessage(args.presentation);
 
@@ -1995,6 +2119,71 @@ async function executeCyWorldAgentToolCall({
       await updateSharedGoogleSheets({
         requestsJson,
         spreadsheet,
+      }),
+    );
+  }
+
+  if (call.name === "study_inspect_google_file_review") {
+    const file = cleanMessage(args.file);
+
+    if (!file) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_drive_file_url_or_id",
+      });
+    }
+
+    return JSON.stringify(
+      await inspectGoogleFileReview({
+        file,
+        includeResolved: args.includeResolved !== false,
+      }),
+    );
+  }
+
+  if (call.name === "study_update_google_file_review") {
+    const action = cleanMessage(args.action);
+    const file = cleanMessage(args.file);
+    const commentId = cleanMessage(args.commentId);
+    const content = cleanMessage(args.content);
+
+    if (
+      !file ||
+      !["add_comment", "reply", "resolve"].includes(action)
+    ) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_or_invalid_google_review_file_or_action",
+      });
+    }
+
+    return JSON.stringify(
+      await updateGoogleFileReview({
+        action: action as "add_comment" | "reply" | "resolve",
+        commentId: commentId || null,
+        content: content || null,
+        file,
+      }),
+    );
+  }
+
+  if (call.name === "study_request_google_file_review") {
+    const file = cleanMessage(args.file);
+    const message = cleanMessage(args.message);
+    const reviewerEmails = cleanEmailArray(args.reviewerEmails);
+
+    if (!file || !message || !reviewerEmails.length) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_review_file_message_or_valid_reviewer_emails",
+      });
+    }
+
+    return JSON.stringify(
+      await requestGoogleFileReview({
+        file,
+        message,
+        reviewerEmails,
       }),
     );
   }

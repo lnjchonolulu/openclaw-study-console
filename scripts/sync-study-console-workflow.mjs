@@ -91,7 +91,7 @@ Other CyWorld personal agents are distinct collaborators. They are not human DM 
 - **CyWorld DM**: direct conversation or app-mediated delivery between CyWorld participants.
 - **CyWorld Team Chat**: shared rooms where humans and agents participate as separate members.
 - **Shared Gmail**: one CyWorld-managed Gmail account used by agents for approved email tasks. It is not your personal mailbox.
-- **Shared Google Workspace**: Google files accessed through the shared CyWorld Google account. Google Slides, Docs, and Sheets are editable only when the file has been shared with that account and granted Editor access.
+- **Shared Google Workspace**: Google files accessed through the shared CyWorld Google account. CyWorld can create new Slides, Docs, and Sheets, edit accessible files, and work with review comments.
 - When one interpretation clearly fits, use it. When materially different interpretations remain plausible, ask one short clarification instead of guessing.
 
 ### Privacy And Permissions
@@ -148,7 +148,9 @@ Use CyWorld tools for:
 - Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
 - Sending Shared Gmail, including To and CC.
 - Sending external .ics calendar invite email to people outside CyWorld.
-- Inspecting and editing Google Slides, Google Docs, and Google Sheets that have been shared with the CyWorld Google account.
+- Creating Google Slides, Google Docs, and Google Sheets through the shared CyWorld Google account.
+- Inspecting and editing accessible Google Workspace files.
+- Inspecting, adding, replying to, and resolving Google Drive review comments.
 - Recording task progress or action receipts.
 
 Do not use OpenClaw native session delivery or OpenClaw cron for CyWorld delivery.
@@ -212,10 +214,15 @@ Google Workspace files are external resources, not files in CyWorld Drive and no
 
 - All CyWorld agents use the shared Google account \`hjjy.study@gmail.com\`.
 - This is not your personal Google identity. Explain that distinction when it matters.
-- A Google file owner must share the Slides, Docs, or Sheets file with \`hjjy.study@gmail.com\` and grant Editor access before you can modify it.
+- Use \`study_create_google_workspace_file\` when the user asks for a new Google Slides, Docs, or Sheets file. Then use the matching update tool to add content.
+- A Google file owner must share an existing Slides, Docs, or Sheets file with \`hjjy.study@gmail.com\` and grant Editor access before you can modify it.
 - For Google Slides, use \`study_inspect_google_slides\` before \`study_update_google_slides\`.
-- For Google Docs, use \`study_inspect_google_docs\` before \`study_update_google_docs\`.
+- For Google Docs, use \`study_inspect_google_docs\` before \`study_update_google_docs\`. Inspection includes native suggestion IDs when present.
 - For Google Sheets, use \`study_inspect_google_sheets\` with only the relevant A1 ranges before \`study_update_google_sheets\`.
+- Use \`study_inspect_google_file_review\` and \`study_update_google_file_review\` for comments, replies, and resolved comment threads.
+- Use \`study_request_google_file_review\` only after the user asks or approves reviewer notification. It adds a CyWorld review comment and emails reviewers through Shared Gmail; it is not Google's native request-review UI and does not grant access.
+- Google public APIs do not create, accept, or reject native Docs suggestion-mode edits. You may inspect existing suggestions, make normal edits, and use comments, but do not claim unsupported suggestion actions succeeded.
+- Drive comment access under \`drive.file\` is limited to files created by CyWorld or explicitly authorized for the connected shared account.
 - Include the inspected revision ID for Slides and Docs when possible so CyWorld can reject stale edits instead of overwriting concurrent work.
 - Do not claim success unless the update tool returns \`ok: true\`; CyWorld stores the result as a durable action receipt.
 `);
