@@ -4,8 +4,12 @@ import { prisma } from "@/lib/prisma";
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/presentations",
   "https://www.googleapis.com/auth/userinfo.email",
 ];
+
+export const GOOGLE_SLIDES_SCOPE =
+  "https://www.googleapis.com/auth/presentations";
 
 type GoogleTokenJson = {
   access_token?: string;
@@ -32,6 +36,49 @@ export type GmailMessageView = {
   subject: string | null;
   threadId: string;
   to: string | null;
+};
+
+type GoogleSlidesTextElement = {
+  endIndex?: number;
+  startIndex?: number;
+  textRun?: {
+    content?: string;
+  };
+};
+
+type GoogleSlidesPageElement = {
+  objectId?: string;
+  description?: string;
+  image?: unknown;
+  line?: unknown;
+  shape?: {
+    shapeType?: string;
+    text?: {
+      textElements?: GoogleSlidesTextElement[];
+    };
+  };
+  table?: {
+    tableRows?: Array<{
+      tableCells?: Array<{
+        text?: {
+          textElements?: GoogleSlidesTextElement[];
+        };
+      }>;
+    }>;
+  };
+  title?: string;
+  video?: unknown;
+  wordArt?: unknown;
+};
+
+type GoogleSlidesPresentation = {
+  presentationId?: string;
+  revisionId?: string;
+  slides?: Array<{
+    objectId?: string;
+    pageElements?: GoogleSlidesPageElement[];
+  }>;
+  title?: string;
 };
 
 function getGoogleRedirectUri() {
@@ -89,6 +136,214 @@ async function googleJson<T>(url: string, init: RequestInit) {
   }
 
   return data as T;
+}
+
+function hasGoogleScope(scopes: string[], requiredScope: string) {
+  return scopes.includes(requiredScope);
+}
+
+function extractGoogleSlidesPresentationId(value: string) {
+  const cleaned = value.trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const url = new URL(cleaned);
+    const match = url.pathname.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+  } catch {
+    // A bare presentation ID is also accepted.
+  }
+
+  return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
+}
+
+function textFromElements(elements: GoogleSlidesTextElement[] | undefined) {
+  return (elements ?? [])
+    .map((element) => element.textRun?.content ?? "")
+    .join("")
+    .trim();
+}
+
+function pageElementType(element: GoogleSlidesPageElement) {
+  if (element.shape) {
+    return element.shape.shapeType ? `shape:${element.shape.shapeType}` : "shape";
+  }
+
+  if (element.table) {
+    return "table";
+  }
+
+  if (element.image) {
+    return "image";
+  }
+
+  if (element.video) {
+    return "video";
+  }
+
+  if (element.line) {
+    return "line";
+  }
+
+  if (element.wordArt) {
+    return "word_art";
+  }
+
+  return "page_element";
+}
+
+function pageElementText(element: GoogleSlidesPageElement) {
+  const shapeText = textFromElements(element.shape?.text?.textElements);
+
+  if (shapeText) {
+    return shapeText;
+  }
+
+  const tableText = (element.table?.tableRows ?? [])
+    .flatMap((row) => row.tableCells ?? [])
+    .map((cell) => textFromElements(cell.text?.textElements))
+    .filter(Boolean)
+    .join("\n");
+
+  return tableText || null;
+}
+
+const ALLOWED_GOOGLE_SLIDES_REQUESTS = new Set([
+  "createImage",
+  "createLine",
+  "createParagraphBullets",
+  "createShape",
+  "createSlide",
+  "createSheetsChart",
+  "createTable",
+  "createVideo",
+  "deleteObject",
+  "deleteParagraphBullets",
+  "deleteTableColumn",
+  "deleteTableRow",
+  "deleteText",
+  "duplicateObject",
+  "groupObjects",
+  "insertTableColumns",
+  "insertTableRows",
+  "insertText",
+  "mergeTableCells",
+  "refreshSheetsChart",
+  "replaceAllShapesWithImage",
+  "replaceAllShapesWithSheetsChart",
+  "replaceAllText",
+  "replaceImage",
+  "rerouteLine",
+  "ungroupObjects",
+  "unmergeTableCells",
+  "updateImageProperties",
+  "updateLineCategory",
+  "updateLineProperties",
+  "updatePageElementAltText",
+  "updatePageElementTransform",
+  "updatePageElementsZOrder",
+  "updatePageProperties",
+  "updateParagraphStyle",
+  "updateShapeProperties",
+  "updateSlideProperties",
+  "updateSlidesPosition",
+  "updateTableBorderProperties",
+  "updateTableCellProperties",
+  "updateTableColumnProperties",
+  "updateTableRowProperties",
+  "updateTextStyle",
+  "updateVideoProperties",
+]);
+
+function parseGoogleSlidesRequests(value: string) {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return {
+      ok: false as const,
+      reason: "invalid_requests_json",
+    };
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 50) {
+    return {
+      ok: false as const,
+      reason: "requests_must_be_a_nonempty_array_with_at_most_50_items",
+    };
+  }
+
+  for (const request of parsed) {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      return {
+        ok: false as const,
+        reason: "each_request_must_be_an_object",
+      };
+    }
+
+    const keys = Object.keys(request);
+
+    if (keys.length !== 1 || !ALLOWED_GOOGLE_SLIDES_REQUESTS.has(keys[0])) {
+      return {
+        ok: false as const,
+        reason: "unsupported_google_slides_request",
+        requestType: keys[0] ?? null,
+      };
+    }
+  }
+
+  return {
+    ok: true as const,
+    requests: parsed as Array<Record<string, unknown>>,
+  };
+}
+
+async function googleSlidesAccessStatus() {
+  const status = await getGoogleIntegrationStatus();
+
+  if (!status.connected) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: "google_not_connected",
+    };
+  }
+
+  if (!hasGoogleScope(status.scopes, GOOGLE_SLIDES_SCOPE)) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: "google_reconnect_required_for_slides",
+    };
+  }
+
+  const access = await getGoogleAccess();
+
+  if (!access) {
+    return {
+      accountEmail: status.accountEmail,
+      ok: false as const,
+      reason: "google_access_token_unavailable",
+    };
+  }
+
+  return {
+    ...access,
+    ok: true as const,
+  };
+}
+
+function googleSlidesSharingGuidance(accountEmail: string | null) {
+  return `Share the Google Slides file with ${
+    accountEmail ?? "the Google account connected in CyWorld Admin Settings"
+  } and grant Editor access, then try again.`;
 }
 
 export function googleAuthUrl(state: string) {
@@ -283,6 +538,161 @@ async function getGoogleAccess(): Promise<GoogleAccess | null> {
     accessToken: tokens.access_token,
     accountEmail: integration.accountEmail,
   };
+}
+
+export async function inspectSharedGoogleSlides(presentation: string) {
+  const presentationId = extractGoogleSlidesPresentationId(presentation);
+
+  if (!presentationId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_slides_url_or_id",
+    };
+  }
+
+  const access = await googleSlidesAccessStatus();
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_slides"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Slides access."
+          : googleSlidesSharingGuidance(access.accountEmail),
+    };
+  }
+
+  try {
+    const result = await googleJson<GoogleSlidesPresentation>(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(
+        presentationId,
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+        },
+        method: "GET",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      ok: true as const,
+      presentation: {
+        presentationId: result.presentationId ?? presentationId,
+        revisionId: result.revisionId ?? null,
+        slides: (result.slides ?? []).map((slide, slideIndex) => ({
+          elements: (slide.pageElements ?? []).map((element) => ({
+            description: element.description ?? null,
+            objectId: element.objectId ?? null,
+            text: pageElementText(element),
+            title: element.title ?? null,
+            type: pageElementType(element),
+          })),
+          objectId: slide.objectId ?? null,
+          slideNumber: slideIndex + 1,
+        })),
+        title: result.title ?? null,
+      },
+      sharingRequirement:
+        "The presentation must be shared with this connected CyWorld Google account with Editor access before an agent can modify it.",
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Slides error.",
+      guidance: googleSlidesSharingGuidance(access.accountEmail),
+      ok: false as const,
+      presentationId,
+      reason: "google_slides_not_accessible",
+    };
+  }
+}
+
+export async function updateSharedGoogleSlides({
+  presentation,
+  requestsJson,
+  requiredRevisionId,
+}: {
+  presentation: string;
+  requestsJson: string;
+  requiredRevisionId?: string | null;
+}) {
+  const presentationId = extractGoogleSlidesPresentationId(presentation);
+
+  if (!presentationId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_slides_url_or_id",
+    };
+  }
+
+  const parsedRequests = parseGoogleSlidesRequests(requestsJson);
+
+  if (!parsedRequests.ok) {
+    return parsedRequests;
+  }
+
+  const access = await googleSlidesAccessStatus();
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_slides"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Slides access."
+          : googleSlidesSharingGuidance(access.accountEmail),
+    };
+  }
+
+  try {
+    const result = await googleJson<{
+      presentationId?: string;
+      replies?: unknown[];
+      writeControl?: {
+        requiredRevisionId?: string;
+      };
+    }>(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(
+        presentationId,
+      )}:batchUpdate`,
+      {
+        body: JSON.stringify({
+          requests: parsedRequests.requests,
+          ...(requiredRevisionId?.trim()
+            ? {
+                writeControl: {
+                  requiredRevisionId: requiredRevisionId.trim(),
+                },
+              }
+            : {}),
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      appliedRequestCount: parsedRequests.requests.length,
+      ok: true as const,
+      presentationId: result.presentationId ?? presentationId,
+      replies: result.replies ?? [],
+      writeControl: result.writeControl ?? null,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Slides error.",
+      guidance: googleSlidesSharingGuidance(access.accountEmail),
+      ok: false as const,
+      presentationId,
+      reason: "google_slides_update_failed",
+    };
+  }
 }
 
 function getHeader(headers: Array<{ name?: string; value?: string }> | undefined, name: string) {

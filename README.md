@@ -112,12 +112,17 @@ OPENCLAW_GATEWAY_TOKEN="..."
 
 This keeps local web development fast while still using the real Hetzner-hosted agent state.
 
-## Shared Gmail integration
+## Shared Google integration
 
-CyWorld connects one shared Google account in the app backend for outbound email.
-Agents should use CyWorld tools for calendar and email actions; they should not treat the
-Google account as their own personal account. CyWorld Calendar remains the source of truth
-inside the app and is not mirrored to Google Calendar.
+CyWorld connects one shared Google account in the app backend for outbound email and
+Google Workspace actions. Agents should use CyWorld tools for these actions; they should
+not treat the Google account as their own personal account. CyWorld Calendar remains the
+source of truth inside the app and is not mirrored to Google Calendar.
+
+Google Slides editing uses the Slides API directly. The presentation owner must share the
+file with the connected Google account and grant Editor access. The agent inspects the
+presentation first, proposes native Slides `batchUpdate` requests, and CyWorld validates,
+executes, and records the result.
 
 Create a Google OAuth client and add these environment variables:
 
@@ -130,7 +135,12 @@ GOOGLE_REDIRECT_URI="http://SERVER_IP:3000/api/integrations/google/callback"
 The OAuth client needs these scopes:
 
 - `https://www.googleapis.com/auth/gmail.send`
+- `https://www.googleapis.com/auth/gmail.readonly`
+- `https://www.googleapis.com/auth/presentations`
 - `https://www.googleapis.com/auth/userinfo.email`
+
+Enable the Google Slides API in the same Google Cloud project. Existing installations must
+reconnect Google once after adding the Slides scope.
 
 ## Next implementation steps
 

@@ -16,7 +16,11 @@ import {
   updateOwnerSharingPolicies,
 } from "@/lib/conversation-memory";
 import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
-import { sendSharedGmail } from "@/lib/google-integration";
+import {
+  inspectSharedGoogleSlides,
+  sendSharedGmail,
+  updateSharedGoogleSlides,
+} from "@/lib/google-integration";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { listPendingAgentTasks } from "@/lib/pending-agent-tasks";
@@ -362,6 +366,48 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["toEmails", "title", "startAt", "endAt"],
+    },
+  },
+  {
+    name: "study_inspect_google_slides",
+    description:
+      "Inspect a Google Slides presentation before editing it. Accepts a Google Slides URL or presentation ID and returns the title, revision ID, slide object IDs, page-element object IDs, element types, and visible text. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        presentation: {
+          type: "string",
+          description: "A Google Slides URL or presentation ID.",
+        },
+      },
+      required: ["presentation"],
+    },
+  },
+  {
+    name: "study_update_google_slides",
+    description:
+      "Modify a Google Slides presentation through the shared CyWorld Google account. Inspect the presentation first, then pass a JSON array of native Google Slides presentations.batchUpdate request objects. Prefer requiredRevisionId from the inspection result so concurrent changes are not overwritten. Examples: [{\"replaceAllText\":{\"containsText\":{\"text\":\"Old\",\"matchCase\":true},\"replaceText\":\"New\"}}], [{\"insertText\":{\"objectId\":\"shapeId\",\"text\":\"Added text\",\"insertionIndex\":0}}], or [{\"createSlide\":{\"insertionIndex\":2,\"slideLayoutReference\":{\"predefinedLayout\":\"TITLE_AND_BODY\"}}}]. Do not claim the edit succeeded unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        presentation: {
+          type: "string",
+          description: "A Google Slides URL or presentation ID.",
+        },
+        requestsJson: {
+          type: "string",
+          description:
+            "A JSON array containing 1 to 50 native Google Slides batchUpdate request objects.",
+        },
+        requiredRevisionId: {
+          type: "string",
+          description:
+            "Optional revision ID returned by study_inspect_google_slides. Include it when editing an existing presentation.",
+        },
+      },
+      required: ["presentation", "requestsJson"],
     },
   },
 ];
@@ -1757,6 +1803,40 @@ async function executeCyWorldAgentToolCall({
       senderPolicy:
         "Email is sent through the shared CyWorld Gmail account, not a personal agent address.",
     });
+  }
+
+  if (call.name === "study_inspect_google_slides") {
+    const presentation = cleanMessage(args.presentation);
+
+    if (!presentation) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_slides_url_or_id",
+      });
+    }
+
+    return JSON.stringify(await inspectSharedGoogleSlides(presentation));
+  }
+
+  if (call.name === "study_update_google_slides") {
+    const presentation = cleanMessage(args.presentation);
+    const requestsJson = cleanMessage(args.requestsJson);
+    const requiredRevisionId = cleanMessage(args.requiredRevisionId);
+
+    if (!presentation || !requestsJson) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_slides_url_or_id_or_requests",
+      });
+    }
+
+    return JSON.stringify(
+      await updateSharedGoogleSlides({
+        presentation,
+        requestsJson,
+        requiredRevisionId: requiredRevisionId || null,
+      }),
+    );
   }
 
   const requestedToUsername = cleanUsername(args.toUsername);

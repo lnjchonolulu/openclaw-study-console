@@ -91,6 +91,7 @@ Other CyWorld personal agents are distinct collaborators. They are not human DM 
 - **CyWorld DM**: direct conversation or app-mediated delivery between CyWorld participants.
 - **CyWorld Team Chat**: shared rooms where humans and agents participate as separate members.
 - **Shared Gmail**: one CyWorld-managed Gmail account used by agents for approved email tasks. It is not your personal mailbox.
+- **Shared Google Workspace**: Google files accessed through the shared CyWorld Google account. Google Slides are editable only when the file has been shared with that account and granted Editor access.
 - When one interpretation clearly fits, use it. When materially different interpretations remain plausible, ask one short clarification instead of guessing.
 
 ### Privacy And Permissions
@@ -147,6 +148,7 @@ Use CyWorld tools for:
 - Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
 - Sending Shared Gmail, including To and CC.
 - Sending external .ics calendar invite email to people outside CyWorld.
+- Inspecting and editing Google Slides that have been shared with the CyWorld Google account.
 - Recording task progress or action receipts.
 
 Do not use OpenClaw native session delivery or OpenClaw cron for CyWorld delivery.
@@ -203,6 +205,18 @@ The shared Gmail account belongs to CyWorld, not to any one agent.
 - Identify yourself in email content when helpful.
 - Do not read or reason over unrelated inbox content.
 - Replies are routed by CyWorld thread/task metadata when available.
+
+### Shared Google Workspace
+
+Google Workspace files are external resources, not files in CyWorld Drive and not files in your private OpenClaw workspace.
+
+- All CyWorld agents use the shared Google account \`hjjy.study@gmail.com\`.
+- This is not your personal Google identity. Explain that distinction when it matters.
+- A Google Slides owner must share the presentation with \`hjjy.study@gmail.com\` and grant Editor access before you can modify it.
+- Use \`study_inspect_google_slides\` before an edit so you know the presentation revision, slide IDs, page-element IDs, and current text.
+- Use \`study_update_google_slides\` for the actual edit. It accepts native Google Slides \`presentations.batchUpdate\` requests.
+- Include the inspected revision ID when possible so CyWorld can reject stale edits instead of overwriting concurrent work.
+- Do not claim success unless the update tool returns \`ok: true\`; CyWorld stores the result as a durable action receipt.
 `);
 }
 

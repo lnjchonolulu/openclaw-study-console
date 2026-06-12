@@ -10,6 +10,9 @@ type GoogleIntegrationStatus = {
   scopes: string[];
 };
 
+const GOOGLE_SLIDES_SCOPE =
+  "https://www.googleapis.com/auth/presentations";
+
 export function AdminSettingsClient({
   initialGoogleIntegration,
 }: {
@@ -19,6 +22,8 @@ export function AdminSettingsClient({
   const [googleIntegration, setGoogleIntegration] = useState(initialGoogleIntegration);
   const [isDisconnectingGoogle, setIsDisconnectingGoogle] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const hasGoogleSlidesAccess =
+    googleIntegration.scopes.includes(GOOGLE_SLIDES_SCOPE);
 
   async function handleGoogleDisconnect() {
     setIsDisconnectingGoogle(true);
@@ -55,9 +60,9 @@ export function AdminSettingsClient({
         </div>
         <div className="settings-google-copy">
           <p>
-            Connect one shared Google account for CyWorld email sending. Agents
-            may send email through this shared account when the CyWorld email tool
-            is used.
+            Connect one shared Google account for CyWorld email and Google
+            Workspace actions. Agents may send approved email and edit Google
+            Slides shared with this account.
           </p>
           {googleIntegration.connected ? (
             <p>
@@ -67,11 +72,17 @@ export function AdminSettingsClient({
           ) : (
             <p>Not connected yet.</p>
           )}
+          {googleIntegration.connected && !hasGoogleSlidesAccess ? (
+            <p>
+              Reconnect Google once to grant the newly added Google Slides
+              permission.
+            </p>
+          ) : null}
           {notice ? <p>{notice}</p> : null}
         </div>
         <div className="settings-inline-actions">
           <span />
-          {googleIntegration.connected ? (
+          {googleIntegration.connected && hasGoogleSlidesAccess ? (
             <button
               className="secondary-button"
               disabled={isDisconnectingGoogle}
@@ -81,6 +92,16 @@ export function AdminSettingsClient({
               type="button"
             >
               {isDisconnectingGoogle ? "Disconnecting..." : "Disconnect Google"}
+            </button>
+          ) : googleIntegration.connected ? (
+            <button
+              className="primary-button"
+              onClick={() => {
+                window.location.href = "/api/integrations/google/start";
+              }}
+              type="button"
+            >
+              Reconnect Google
             </button>
           ) : (
             <button
