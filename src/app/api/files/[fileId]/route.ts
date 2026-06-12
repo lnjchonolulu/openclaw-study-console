@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { triggerCyWorldDriveSyncAll } from "@/lib/cyworld-drive-sync";
 import {
-  deleteWorkspaceFolder,
+  deleteWorkspaceEntry,
   getDownloadableFile,
   moveWorkspaceRecord,
   renameWorkspaceEntry,
@@ -26,6 +26,10 @@ export async function GET(
 
     if (!file) {
       return NextResponse.json({ error: "File not found." }, { status: 404 });
+    }
+
+    if (file.kind === "external") {
+      return NextResponse.redirect(file.url);
     }
 
     return new NextResponse(file.buffer, {
@@ -111,13 +115,13 @@ export async function DELETE(
   const { fileId } = await context.params;
 
   try {
-    await deleteWorkspaceFolder(user.id, fileId);
+    await deleteWorkspaceEntry(user.id, fileId);
     after(triggerCyWorldDriveSyncAll);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Folder could not be deleted.",
+        error: error instanceof Error ? error.message : "Item could not be deleted.",
       },
       { status: 400 },
     );

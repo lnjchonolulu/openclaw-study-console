@@ -2,6 +2,12 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import {
+  createGoogleWorkspaceFile,
+  renameGoogleWorkspaceFile,
+  trashGoogleWorkspaceFile,
+  type GoogleWorkspaceFileType,
+} from "@/lib/google-integration";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
 
 type FileAccessConfig = {
@@ -15,6 +21,9 @@ type FileRecordLite = {
   accessConfigJson: unknown;
   createdAt: Date;
   filename: string;
+  externalFileId?: string | null;
+  externalProvider?: string | null;
+  externalUrl?: string | null;
   id: string;
   isFolder: boolean;
   mimeType: string | null;
@@ -39,6 +48,8 @@ export type WorkspaceEntry = {
   createdByName: string;
   id: string;
   filename: string;
+  externalProvider: string | null;
+  externalUrl: string | null;
   isFolder: boolean;
   isLocked: boolean;
   isSystemManaged: boolean;
@@ -436,6 +447,8 @@ function mapEntry(
       ? participantNameForKey(createdByKey, context)
       : entry.owner?.displayName ?? "Unknown",
     filename: entry.filename,
+    externalProvider: entry.externalProvider ?? null,
+    externalUrl: entry.externalUrl ?? null,
     id: entry.id,
     isFolder: entry.isFolder,
     isLocked,
@@ -535,6 +548,9 @@ export async function buildStudyFilesRuntimeContext({
       accessConfigJson: true,
       createdAt: true,
       filename: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
       id: true,
       isFolder: true,
       mimeType: true,
@@ -574,9 +590,17 @@ export async function buildStudyFilesRuntimeContext({
     .slice(0, maxInaccessibleFolders);
   const visibleLines = visibleRecords.map((record) => {
     const access = accessLabelForConfig(parseAccessConfig(record.accessConfigJson), context);
-    const kind = record.isFolder ? "folder" : "file";
+    const kind = record.isFolder
+      ? "folder"
+      : record.externalProvider === "GOOGLE"
+        ? "Google file"
+        : "file";
+    const link =
+      record.externalProvider === "GOOGLE" && record.externalUrl
+        ? `; Google URL: ${record.externalUrl}`
+        : "";
 
-    return `- ${buildStudyFilePath(record, recordsById)} (${kind}; access: ${access})`;
+    return `- ${buildStudyFilePath(record, recordsById)} (${kind}; access: ${access}${link})`;
   });
   const inaccessibleLines = inaccessibleFolders.map((record) => {
     const access = accessLabelForConfig(parseAccessConfig(record.accessConfigJson), context);
@@ -596,6 +620,8 @@ export async function buildStudyFilesRuntimeContext({
     "- UI path /X maps directly to workspace path CYWORLD_DRIVE/X. Do not add or remove a home segment.",
     "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
     "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
+    "- Google Docs, Sheets, and Slides entries listed here are live Google files registered in CyWorld Drive. Use the matching Google Workspace tools to inspect or edit them; do not edit their managed mirror reference as if it were the live document.",
+    "- A Google URL shared directly in conversation can be used independently of its CyWorld Drive location only when the shared Google account has access to that URL.",
     "",
     `Recently updated visible CyWorld Drive entries (showing ${visibleRecords.length} of ${accessibleRecords.length}):`,
     visibleLines.length > 0 ? visibleLines.join("\n") : "- (none)",
@@ -634,6 +660,9 @@ export async function listWorkspaceFolder(
         accessConfigJson: true,
         createdAt: true,
         filename: true,
+        externalFileId: true,
+        externalProvider: true,
+        externalUrl: true,
         id: true,
         isFolder: true,
         mimeType: true,
@@ -731,6 +760,9 @@ export async function createWorkspaceFolder({
       accessConfigJson: true,
       createdAt: true,
       filename: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
       id: true,
       isFolder: true,
       mimeType: true,
@@ -897,6 +929,301 @@ export async function uploadWorkspaceFiles({
   };
 }
 
+export async function createGoogleWorkspaceEntry({
+  createdByParticipantKey,
+  createdByUserId,
+  fileType,
+  parentId,
+  sourceType = "USER_CREATED_GOOGLE_FILE",
+  title,
+}: {
+  createdByParticipantKey?: string;
+  createdByUserId: string;
+  fileType: GoogleWorkspaceFileType;
+  parentId: string | null;
+  sourceType?: string;
+  title: string;
+}) {
+  const cleanedTitle = title.trim();
+
+  if (!cleanedTitle) {
+    throw new Error("File name is required.");
+  }
+
+  const context = await getFileWorkspaceContext(createdByUserId);
+  const actorKey = createdByParticipantKey ?? context.currentUserKey;
+
+  if (parentId) {
+    const parentFolder = await getFolderOrThrow(parentId);
+    await requireParticipantAccess(
+      parentFolder.id,
+      actorKey,
+      "You do not have access to this folder.",
+    );
+  }
+
+  const googleResult = await createGoogleWorkspaceFile({
+    anyoneWithLinkCanEdit: true,
+    fileType,
+    title: cleanedTitle,
+  });
+
+  if (!googleResult.ok) {
+    throw new Error(
+      "error" in googleResult && googleResult.error
+        ? googleResult.error
+        : "Google file could not be created.",
+    );
+  }
+
+  try {
+    const created = await prisma.fileRecord.create({
+      data: {
+        ownerUserId: createdByUserId,
+        teamId: context.teamId,
+        parentId,
+        filename: googleResult.file.title,
+        storageKey: `google:${googleResult.file.fileId}`,
+        mimeType: googleResult.file.mimeType,
+        visibility: "TEAM",
+        sourceType,
+        externalProvider: "GOOGLE",
+        externalFileId: googleResult.file.fileId,
+        externalUrl: googleResult.file.url,
+        accessConfigJson: serializeAccessConfig({
+          createdByParticipantKey: actorKey,
+          participantKeys: [],
+          updatedByParticipantKey: actorKey,
+        }),
+      },
+      select: {
+        accessConfigJson: true,
+        createdAt: true,
+        filename: true,
+        externalFileId: true,
+        externalProvider: true,
+        externalUrl: true,
+        id: true,
+        isFolder: true,
+        mimeType: true,
+        owner: {
+          select: {
+            displayName: true,
+          },
+        },
+        ownerUserId: true,
+        parentId: true,
+        sizeBytes: true,
+        storageKey: true,
+        sourceType: true,
+        systemKey: true,
+        teamId: true,
+        updatedAt: true,
+      },
+    });
+
+    return mapEntry(created, context);
+  } catch (error) {
+    await trashGoogleWorkspaceFile(googleResult.file.fileId);
+    throw error;
+  }
+}
+
+async function resolveWorkspaceFolderPathForParticipant({
+  participantKey,
+  teamId,
+  folderPath,
+}: {
+  participantKey: string;
+  teamId: string | null;
+  folderPath: string;
+}) {
+  const normalized = folderPath.trim().replace(/^\/+|\/+$/g, "");
+
+  if (!normalized) {
+    return null;
+  }
+
+  let parentId: string | null = null;
+
+  for (const segment of normalized.split("/").filter(Boolean)) {
+    const folder: { id: string } | null = await prisma.fileRecord.findFirst({
+      where: {
+        filename: segment,
+        isFolder: true,
+        parentId,
+        OR: [{ teamId }, { teamId: null }],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!folder) {
+      throw new Error(`CyWorld Drive folder not found: /${normalized}`);
+    }
+
+    await requireParticipantAccess(
+      folder.id,
+      participantKey,
+      "You do not have access to the requested CyWorld Drive folder.",
+    );
+    parentId = folder.id;
+  }
+
+  return parentId;
+}
+
+export async function createGoogleWorkspaceEntryForAgent({
+  agentOpenclawId,
+  fileType,
+  folderPath,
+  title,
+}: {
+  agentOpenclawId: string;
+  fileType: GoogleWorkspaceFileType;
+  folderPath?: string | null;
+  title: string;
+}) {
+  const agent = await prisma.agent.findUnique({
+    where: { openclawAgentId: agentOpenclawId },
+    select: {
+      id: true,
+      user: {
+        select: {
+          id: true,
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!agent?.user) {
+    throw new Error("CyWorld agent owner was not found.");
+  }
+
+  const participantKey = `agent:${agent.id}`;
+  const parentId = folderPath?.trim()
+    ? await resolveWorkspaceFolderPathForParticipant({
+        folderPath,
+        participantKey,
+        teamId: agent.user.teamId,
+      })
+    : (
+        await prisma.fileRecord.findUnique({
+          where: { systemKey: `personals:${agent.user.id}` },
+          select: { id: true },
+        })
+      )?.id ?? null;
+
+  return createGoogleWorkspaceEntry({
+    createdByParticipantKey: participantKey,
+    createdByUserId: agent.user.id,
+    fileType,
+    parentId,
+    sourceType: "AGENT_CREATED_GOOGLE_FILE",
+    title,
+  });
+}
+
+export async function authorizeGoogleWorkspaceFileForAgent({
+  agentOpenclawId,
+  fileId,
+  sourceRoomId,
+}: {
+  agentOpenclawId: string;
+  fileId: string;
+  sourceRoomId?: string | null;
+}) {
+  const registeredFile = await prisma.fileRecord.findUnique({
+    where: {
+      externalFileId: fileId,
+    },
+    select: {
+      externalFileId: true,
+      filename: true,
+      id: true,
+    },
+  });
+
+  // Files outside CyWorld Drive continue to use the connected Google account's
+  // native permissions. CyWorld ACLs apply only to registered Drive entries.
+  if (!registeredFile) {
+    return {
+      allowed: true as const,
+      authorization: "google_native_access" as const,
+    };
+  }
+
+  const agent = await prisma.agent.findUnique({
+    where: {
+      openclawAgentId: agentOpenclawId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!agent) {
+    return {
+      allowed: false as const,
+      reason: "cyworld_agent_not_found",
+    };
+  }
+
+  if (await canParticipantAccessRecord(registeredFile.id, `agent:${agent.id}`)) {
+    return {
+      allowed: true as const,
+      authorization: "cyworld_drive_folder_access" as const,
+    };
+  }
+
+  if (sourceRoomId) {
+    const roomMembership = await prisma.roomAgent.findUnique({
+      where: {
+        roomId_agentId: {
+          agentId: agent.id,
+          roomId: sourceRoomId,
+        },
+      },
+      select: {
+        roomId: true,
+      },
+    });
+
+    if (roomMembership) {
+      const directShare = await prisma.message.findFirst({
+        where: {
+          content: {
+            contains: fileId,
+          },
+          role: "USER",
+          roomId: sourceRoomId,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (directShare) {
+        return {
+          allowed: true as const,
+          authorization: "human_shared_link_in_current_room" as const,
+        };
+      }
+    }
+  }
+
+  return {
+    allowed: false as const,
+    filename: registeredFile.filename,
+    reason: "cyworld_drive_access_denied",
+  };
+}
+
 export async function updateWorkspaceFolderAccess(
   userId: string,
   folderId: string,
@@ -964,6 +1291,7 @@ export async function renameWorkspaceEntry(userId: string, fileId: string, name:
     },
     select: {
       accessConfigJson: true,
+      externalFileId: true,
       id: true,
       systemKey: true,
     },
@@ -983,6 +1311,21 @@ export async function renameWorkspaceEntry(userId: string, fileId: string, name:
     "You do not have access to this item.",
   );
 
+  if (record.externalFileId) {
+    const googleResult = await renameGoogleWorkspaceFile({
+      fileId: record.externalFileId,
+      title: trimmedName,
+    });
+
+    if (!googleResult.ok) {
+      throw new Error(
+        "error" in googleResult && googleResult.error
+          ? googleResult.error
+          : "Google file could not be renamed.",
+      );
+    }
+  }
+
   const updated = await prisma.fileRecord.update({
     where: {
       id: fileId,
@@ -994,6 +1337,9 @@ export async function renameWorkspaceEntry(userId: string, fileId: string, name:
       accessConfigJson: true,
       createdAt: true,
       filename: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
       id: true,
       isFolder: true,
       mimeType: true,
@@ -1111,21 +1457,47 @@ async function collectFolderIds(folderId: string): Promise<string[]> {
   return [folderId, ...nestedIds.flat()];
 }
 
-export async function deleteWorkspaceFolder(userId: string, folderId: string) {
+export async function deleteWorkspaceEntry(userId: string, fileId: string) {
   const context = await getFileWorkspaceContext(userId);
-  const folder = await getFolderOrThrow(folderId);
+  const record = await prisma.fileRecord.findUnique({
+    where: { id: fileId },
+  });
 
-  if (folder.systemKey) {
-    throw new Error("This folder cannot be deleted.");
+  if (!record) {
+    throw new Error("Item not found.");
+  }
+
+  if (record.systemKey) {
+    throw new Error("This item cannot be deleted.");
   }
 
   await requireParticipantAccess(
-    folder.id,
+    record.id,
     context.currentUserKey,
-    "You do not have access to this folder.",
+    "You do not have access to this item.",
   );
 
-  const folderIds = await collectFolderIds(folderId);
+  if (!record.isFolder) {
+    if (record.externalProvider === "GOOGLE" && record.externalFileId) {
+      const googleResult = await trashGoogleWorkspaceFile(record.externalFileId);
+
+      if (!googleResult.ok) {
+        throw new Error(
+          "error" in googleResult && googleResult.error
+            ? googleResult.error
+            : "Google file could not be moved to trash.",
+        );
+      }
+    } else {
+      const root = await ensureStorageRoot();
+      await rm(path.join(root, record.storageKey), { force: true });
+    }
+
+    await prisma.fileRecord.delete({ where: { id: record.id } });
+    return;
+  }
+
+  const folderIds = await collectFolderIds(fileId);
   const files = await prisma.fileRecord.findMany({
     where: {
       parentId: {
@@ -1134,6 +1506,8 @@ export async function deleteWorkspaceFolder(userId: string, folderId: string) {
       isFolder: false,
     },
     select: {
+      externalFileId: true,
+      externalProvider: true,
       storageKey: true,
     },
   });
@@ -1141,7 +1515,18 @@ export async function deleteWorkspaceFolder(userId: string, folderId: string) {
   const root = await ensureStorageRoot();
 
   await Promise.all(
-    files.map((file) => rm(path.join(root, file.storageKey), { force: true })),
+    files.map(async (file) => {
+      if (file.externalProvider === "GOOGLE" && file.externalFileId) {
+        const result = await trashGoogleWorkspaceFile(file.externalFileId);
+
+        if (!result.ok) {
+          throw new Error("A Google file inside this folder could not be moved to trash.");
+        }
+        return;
+      }
+
+      await rm(path.join(root, file.storageKey), { force: true });
+    }),
   );
 
   await prisma.fileRecord.deleteMany({
@@ -1171,6 +1556,8 @@ export async function getDownloadableFile(userId: string, fileId: string) {
     select: {
       accessConfigJson: true,
       filename: true,
+      externalProvider: true,
+      externalUrl: true,
       isFolder: true,
       mimeType: true,
       parentId: true,
@@ -1188,11 +1575,19 @@ export async function getDownloadableFile(userId: string, fileId: string) {
     "You do not have access to this file.",
   );
 
+  if (record.externalProvider === "GOOGLE" && record.externalUrl) {
+    return {
+      kind: "external" as const,
+      url: record.externalUrl,
+    };
+  }
+
   const root = await ensureStorageRoot();
   const absolutePath = path.join(root, record.storageKey);
   const buffer = await readFile(absolutePath);
 
   return {
+    kind: "local" as const,
     buffer,
     filename: record.filename,
     mimeType: record.mimeType || "application/octet-stream",

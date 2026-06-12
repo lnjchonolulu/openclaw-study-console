@@ -390,6 +390,10 @@ function extractGoogleDriveFileId(value: string) {
   return /^[a-zA-Z0-9_-]{10,}$/.test(cleaned) ? cleaned : null;
 }
 
+export function extractGoogleWorkspaceFileId(value: string) {
+  return extractGoogleDriveFileId(value);
+}
+
 function googleWorkspaceFileConfig(fileType: GoogleWorkspaceFileType) {
   if (fileType === "slides") {
     return {
@@ -1246,9 +1250,11 @@ async function getGoogleDriveFileMetadata({
 }
 
 export async function createGoogleWorkspaceFile({
+  anyoneWithLinkCanEdit = false,
   fileType,
   title,
 }: {
+  anyoneWithLinkCanEdit?: boolean;
   fileType: GoogleWorkspaceFileType;
   title: string;
 }) {
@@ -1274,6 +1280,7 @@ export async function createGoogleWorkspaceFile({
   }
 
   const config = googleWorkspaceFileConfig(fileType);
+  let createdFileId: string | null = null;
 
   try {
     const url = new URL("https://www.googleapis.com/drive/v3/files");
@@ -1301,6 +1308,28 @@ export async function createGoogleWorkspaceFile({
         reason: "google_workspace_file_created_without_id",
       };
     }
+    createdFileId = fileId;
+
+    if (anyoneWithLinkCanEdit) {
+      const permissionsUrl = new URL(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          fileId,
+        )}/permissions`,
+      );
+      permissionsUrl.searchParams.set("fields", "id,type,role");
+      await googleJson(permissionsUrl.toString(), {
+        body: JSON.stringify({
+          allowFileDiscovery: false,
+          role: "writer",
+          type: "anyone",
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    }
 
     return {
       accountEmail: access.accountEmail,
@@ -1318,6 +1347,27 @@ export async function createGoogleWorkspaceFile({
       ok: true as const,
     };
   } catch (error) {
+    if (createdFileId) {
+      try {
+        const rollbackUrl = new URL(
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+            createdFileId,
+          )}`,
+        );
+        rollbackUrl.searchParams.set("fields", "id,trashed");
+        await googleJson(rollbackUrl.toString(), {
+          body: JSON.stringify({ trashed: true }),
+          headers: {
+            Authorization: `Bearer ${access.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          method: "PATCH",
+        });
+      } catch {
+        // Preserve the original creation/sharing failure.
+      }
+    }
+
     return {
       accountEmail: access.accountEmail,
       error:
@@ -1326,6 +1376,99 @@ export async function createGoogleWorkspaceFile({
           : "Unknown Google Drive creation error.",
       ok: false as const,
       reason: "google_workspace_file_creation_failed",
+    };
+  }
+}
+
+export async function renameGoogleWorkspaceFile({
+  fileId,
+  title,
+}: {
+  fileId: string;
+  title: string;
+}) {
+  const cleanedTitle = title.trim();
+
+  if (!fileId.trim() || !cleanedTitle) {
+    return {
+      ok: false as const,
+      reason: "missing_google_workspace_file_id_or_title",
+    };
+  }
+
+  const access = await googleDriveFileAccessStatus();
+
+  if (!access.ok) {
+    return access;
+  }
+
+  try {
+    const url = new URL(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
+    );
+    url.searchParams.set("fields", "id,name,mimeType,webViewLink,modifiedTime");
+    const file = await googleJson<GoogleDriveFile>(url.toString(), {
+      body: JSON.stringify({ name: cleanedTitle }),
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    });
+
+    return {
+      accountEmail: access.accountEmail,
+      file,
+      ok: true as const,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Drive rename error.",
+      ok: false as const,
+      reason: "google_workspace_file_rename_failed",
+    };
+  }
+}
+
+export async function trashGoogleWorkspaceFile(fileId: string) {
+  if (!fileId.trim()) {
+    return {
+      ok: false as const,
+      reason: "missing_google_workspace_file_id",
+    };
+  }
+
+  const access = await googleDriveFileAccessStatus();
+
+  if (!access.ok) {
+    return access;
+  }
+
+  try {
+    const url = new URL(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
+    );
+    url.searchParams.set("fields", "id,trashed");
+    await googleJson(url.toString(), {
+      body: JSON.stringify({ trashed: true }),
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    });
+
+    return {
+      accountEmail: access.accountEmail,
+      ok: true as const,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      error: error instanceof Error ? error.message : "Unknown Google Drive trash error.",
+      ok: false as const,
+      reason: "google_workspace_file_trash_failed",
     };
   }
 }

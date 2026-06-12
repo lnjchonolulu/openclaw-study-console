@@ -17,11 +17,11 @@ import {
 } from "@/lib/conversation-memory";
 import type { CyWorldExecutionContext } from "@/lib/cyworld-execution-context";
 import {
-  createGoogleWorkspaceFile,
   inspectGoogleFileReview,
   inspectSharedGoogleDocs,
   inspectSharedGoogleSheets,
   inspectSharedGoogleSlides,
+  extractGoogleWorkspaceFileId,
   requestGoogleFileReview,
   sendSharedGmail,
   updateGoogleFileReview,
@@ -29,6 +29,10 @@ import {
   updateSharedGoogleSheets,
   updateSharedGoogleSlides,
 } from "@/lib/google-integration";
+import {
+  authorizeGoogleWorkspaceFileForAgent,
+  createGoogleWorkspaceEntryForAgent,
+} from "@/lib/files";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { listPendingAgentTasks } from "@/lib/pending-agent-tasks";
@@ -379,7 +383,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_create_google_workspace_file",
     description:
-      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account. Use this when the user asks for a new Google presentation, document, or spreadsheet. After creation, use the matching Google update tool to add content. Files created this way are covered by CyWorld's drive.file permission.",
+      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account and register it in CyWorld Drive. Use this when the user asks for a new Google presentation, document, or spreadsheet. Set cyworldFolderPath when the user names a visible CyWorld Drive folder; otherwise the file is placed in the owner's personal folder. CyWorld validates folder access. After creation, use the matching Google update tool to add content.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -392,6 +396,11 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         title: {
           type: "string",
           description: "The new file title.",
+        },
+        cyworldFolderPath: {
+          type: "string",
+          description:
+            "Optional CyWorld Drive folder path such as /Personals/hyungjun or /Research. If omitted, the file is created in the owner's personal CyWorld Drive folder.",
         },
       },
       required: ["fileType", "title"],
@@ -1844,6 +1853,22 @@ async function executeCyWorldAgentToolCall({
   const senderAgentOpenclawId = context.actingAgentOpenclawId;
   const sourceRoomId = context.originRoomId ?? undefined;
   const taskId = context.taskId;
+  const authorizeGoogleFile = async (value: string) => {
+    const fileId = extractGoogleWorkspaceFileId(value);
+
+    if (!fileId) {
+      return {
+        allowed: false as const,
+        reason: "invalid_google_workspace_file_url_or_id",
+      };
+    }
+
+    return authorizeGoogleWorkspaceFileForAgent({
+      agentOpenclawId: senderAgentOpenclawId,
+      fileId,
+      sourceRoomId,
+    });
+  };
 
   if (call.name === "study_list_pending_tasks") {
     const limit =
@@ -1991,6 +2016,7 @@ async function executeCyWorldAgentToolCall({
   if (call.name === "study_create_google_workspace_file") {
     const fileType = cleanMessage(args.fileType);
     const title = cleanMessage(args.title);
+    const cyworldFolderPath = cleanMessage(args.cyworldFolderPath);
 
     if (
       !title ||
@@ -2003,8 +2029,10 @@ async function executeCyWorldAgentToolCall({
     }
 
     return JSON.stringify(
-      await createGoogleWorkspaceFile({
+      await createGoogleWorkspaceEntryForAgent({
+        agentOpenclawId: senderAgentOpenclawId,
         fileType: fileType as "slides" | "docs" | "sheets",
+        folderPath: cyworldFolderPath || null,
         title,
       }),
     );
@@ -2020,6 +2048,11 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const authorization = await authorizeGoogleFile(presentation);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
     return JSON.stringify(await inspectSharedGoogleSlides(presentation));
   }
 
@@ -2033,6 +2066,11 @@ async function executeCyWorldAgentToolCall({
         ok: false,
         reason: "missing_google_slides_url_or_id_or_requests",
       });
+    }
+
+    const authorization = await authorizeGoogleFile(presentation);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
     }
 
     return JSON.stringify(
@@ -2054,6 +2092,11 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const authorization = await authorizeGoogleFile(document);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
     return JSON.stringify(await inspectSharedGoogleDocs(document));
   }
 
@@ -2067,6 +2110,11 @@ async function executeCyWorldAgentToolCall({
         ok: false,
         reason: "missing_google_docs_url_or_id_or_requests",
       });
+    }
+
+    const authorization = await authorizeGoogleFile(document);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
     }
 
     return JSON.stringify(
@@ -2089,6 +2137,11 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const authorization = await authorizeGoogleFile(spreadsheet);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
     return JSON.stringify(
       await inspectSharedGoogleSheets({
         rangesJson: rangesJson || null,
@@ -2108,6 +2161,11 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const authorization = await authorizeGoogleFile(spreadsheet);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
     return JSON.stringify(
       await updateSharedGoogleSheets({
         requestsJson,
@@ -2124,6 +2182,11 @@ async function executeCyWorldAgentToolCall({
         ok: false,
         reason: "missing_google_drive_file_url_or_id",
       });
+    }
+
+    const authorization = await authorizeGoogleFile(file);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
     }
 
     return JSON.stringify(
@@ -2150,6 +2213,11 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const authorization = await authorizeGoogleFile(file);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
     return JSON.stringify(
       await updateGoogleFileReview({
         action: action as "add_comment" | "reply" | "resolve",
@@ -2169,6 +2237,11 @@ async function executeCyWorldAgentToolCall({
         ok: false,
         reason: "missing_review_file_or_message",
       });
+    }
+
+    const authorization = await authorizeGoogleFile(file);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
     }
 
     return JSON.stringify(

@@ -191,6 +191,9 @@ model FileRecord {
   sizeBytes        Int?
   visibility       FileVisibility @default(PRIVATE)
   sourceType       String
+  externalProvider String?
+  externalFileId   String?        @unique
+  externalUrl      String?
   accessConfigJson Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

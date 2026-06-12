@@ -1293,7 +1293,15 @@ async function mirrorTree({
     );
 
     manifestLines.push(`### ${uiPath}`);
-    manifestLines.push(`- Type: ${record.isFolder ? "folder" : "file"}`);
+    manifestLines.push(
+      `- Type: ${
+        record.isFolder
+          ? "folder"
+          : record.externalProvider === "GOOGLE"
+            ? "Google Workspace file"
+            : "file"
+      }`,
+    );
     manifestLines.push(`- Access: ${accessState}`);
     manifestLines.push(`- Workspace path: ${accessState === "view/edit" ? workspacePath : "(not mirrored)"}`);
     manifestLines.push(`- Created: ${record.owner?.displayName ?? "Unknown"}, ${formatDate(record.createdAt)}`);
@@ -1301,6 +1309,13 @@ async function mirrorTree({
 
     if (accessConfig.systemManaged) {
       manifestLines.push("- System-managed: yes");
+    }
+
+    if (record.externalProvider === "GOOGLE" && record.externalUrl) {
+      manifestLines.push(`- Google URL: ${record.externalUrl}`);
+      manifestLines.push(
+        "- Editing: use the matching CyWorld Google Docs, Sheets, or Slides tool; this mirrored file is a managed reference, not a local document copy.",
+      );
     }
 
     manifestLines.push("- Participants with access:");
@@ -1349,6 +1364,33 @@ async function mirrorTree({
     }
 
     await mkdir(path.dirname(destination), { recursive: true });
+
+    if (record.externalProvider === "GOOGLE" && record.externalUrl) {
+      await writeFile(
+        destination,
+        [
+          `CyWorld Google file: ${record.filename}`,
+          `URL: ${record.externalUrl}`,
+          `MIME type: ${record.mimeType ?? "unknown"}`,
+          "",
+          "This is a managed reference. Use the matching CyWorld Google Workspace tool to inspect or edit the live file.",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const fileStat = await stat(destination);
+      nextManagedEntries.push({
+        externalProvider: "GOOGLE",
+        fileRecordId: record.id,
+        kind: "external",
+        mirroredMtimeMs: fileStat.mtimeMs,
+        relativePath,
+        storageKey: record.storageKey,
+        updatedAt: record.updatedAt.toISOString(),
+      });
+      continue;
+    }
+
     await copyFile(path.join(storageRootPath, record.storageKey), destination);
     const fileStat = await stat(destination);
     nextManagedEntries.push({

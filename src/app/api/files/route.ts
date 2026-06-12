@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { triggerCyWorldDriveSyncAll } from "@/lib/cyworld-drive-sync";
 import {
+  createGoogleWorkspaceEntry,
   createWorkspaceFolder,
   listWorkspaceFolder,
   uploadWorkspaceFiles,
@@ -46,14 +47,31 @@ export async function POST(request: Request) {
       name?: string;
       parentId?: string | null;
       participantKeys?: string[];
+      fileType?: "docs" | "sheets" | "slides";
       type?: string;
     };
 
-    if (body.type !== "folder") {
-      return NextResponse.json({ error: "Unsupported request." }, { status: 400 });
-    }
-
     try {
+      if (
+        body.type === "google-file" &&
+        body.fileType &&
+        ["docs", "sheets", "slides"].includes(body.fileType)
+      ) {
+        const entry = await createGoogleWorkspaceEntry({
+          createdByUserId: user.id,
+          fileType: body.fileType,
+          parentId: body.parentId?.trim() || null,
+          title: body.name ?? "",
+        });
+
+        after(triggerCyWorldDriveSyncAll);
+        return NextResponse.json({ entry });
+      }
+
+      if (body.type !== "folder") {
+        return NextResponse.json({ error: "Unsupported request." }, { status: 400 });
+      }
+
       const folder = await createWorkspaceFolder({
         createdByUserId: user.id,
         name: body.name ?? "",
@@ -69,7 +87,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            error instanceof Error ? error.message : "Folder could not be created.",
+            error instanceof Error ? error.message : "Item could not be created.",
         },
         { status: 400 },
       );

@@ -62,6 +62,24 @@ function getExtensionLabel(filename: string) {
   return ext.slice(0, 6);
 }
 
+function getEntryTypeLabel(entry: WorkspaceEntry) {
+  if (entry.externalProvider === "GOOGLE") {
+    if (entry.mimeType === "application/vnd.google-apps.document") {
+      return "GOOGLE DOCS";
+    }
+
+    if (entry.mimeType === "application/vnd.google-apps.spreadsheet") {
+      return "GOOGLE SHEETS";
+    }
+
+    if (entry.mimeType === "application/vnd.google-apps.presentation") {
+      return "GOOGLE SLIDES";
+    }
+  }
+
+  return `.${getExtensionLabel(entry.filename)}`;
+}
+
 function TeamMembersIcon() {
   return (
     <svg
@@ -241,6 +259,69 @@ type InfoModalProps = {
   onClose: () => void;
 };
 
+function GoogleFileModal({
+  fileType,
+  onCancel,
+  onSubmit,
+}: {
+  fileType: "docs" | "sheets" | "slides";
+  onCancel: () => void;
+  onSubmit: (title: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const label =
+    fileType === "docs" ? "Google Docs" : fileType === "sheets" ? "Google Sheets" : "Google Slides";
+
+  return (
+    <div className="team-modal-backdrop" onClick={onCancel} role="presentation">
+      <div
+        aria-label={`Create ${label}`}
+        aria-modal="true"
+        className="content-card team-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="team-modal-header">
+          <h2>Create {label}</h2>
+        </div>
+        <div className="team-modal-section">
+          <label className="split-label">
+            File Name
+            <span className="team-modal-input-wrap">
+              <input
+                autoFocus
+                className="team-modal-input settings-input"
+                onChange={(event) => setTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && title.trim()) {
+                    onSubmit(title);
+                  }
+                }}
+                placeholder="Untitled file"
+                type="text"
+                value={title}
+              />
+            </span>
+          </label>
+        </div>
+        <div className="team-modal-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={!title.trim()}
+            onClick={() => onSubmit(title)}
+            type="button"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FolderModal({
   allParticipants,
   currentUserKey,
@@ -378,11 +459,13 @@ function InfoModal({ entry, onClose }: InfoModalProps) {
           </div>
           <div className="files-info-row">
             <span className="context-label">Type</span>
-            <strong>{getExtensionLabel(entry.filename)}</strong>
+            <strong>{getEntryTypeLabel(entry)}</strong>
           </div>
           <div className="files-info-row">
             <span className="context-label">Size</span>
-            <strong>{formatSize(entry.sizeBytes)}</strong>
+            <strong>
+              {entry.externalProvider === "GOOGLE" ? "Stored in Google Drive" : formatSize(entry.sizeBytes)}
+            </strong>
           </div>
           <div className="files-info-row">
             <span className="context-label">Uploaded</span>
@@ -432,6 +515,9 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
   const [dropBreadcrumbId, setDropBreadcrumbId] = useState<string | null>(null);
   const [dropFolderId, setDropFolderId] = useState<string | null>(null);
   const [infoEntry, setInfoEntry] = useState<WorkspaceEntry | null>(null);
+  const [googleFileType, setGoogleFileType] = useState<
+    "docs" | "sheets" | "slides" | null
+  >(null);
   const [modalState, setModalState] = useState<{
     entry?: WorkspaceEntry;
     kind: "create" | "rename";
@@ -581,6 +667,37 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     await refreshFolder(view.currentFolder.id);
   }
 
+  async function createGoogleFile(title: string) {
+    if (!googleFileType) {
+      return;
+    }
+
+    setNotice(null);
+    setIsUploading(true);
+    const response = await fetch("/api/files", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fileType: googleFileType,
+        name: title,
+        parentId: view.currentFolder.id,
+        type: "google-file",
+      }),
+    });
+    const payload = (await response.json()) as { error?: string };
+    setIsUploading(false);
+
+    if (!response.ok) {
+      setNotice(payload.error ?? "Google file could not be created.");
+      return;
+    }
+
+    setGoogleFileType(null);
+    await refreshFolder(view.currentFolder.id);
+  }
+
   async function updateEntryAccess(entry: WorkspaceEntry, participantKeys: string[]) {
     const response = await fetch(`/api/files/${encodeURIComponent(entry.id)}`, {
       method: "PATCH",
@@ -624,9 +741,13 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     await refreshFolder(view.currentFolder.id);
   }
 
-  async function deleteFolder(entry: WorkspaceEntry) {
+  async function deleteEntry(entry: WorkspaceEntry) {
     const shouldDelete = window.confirm(
-      `Delete "${entry.filename}"? This will remove the folder and everything inside it.`,
+      entry.isFolder
+        ? `Delete "${entry.filename}"? This will remove the folder and everything inside it.`
+        : entry.externalProvider === "GOOGLE"
+          ? `Delete "${entry.filename}"? The Google file will be moved to the shared account's trash.`
+          : `Delete "${entry.filename}"?`,
     );
 
     if (!shouldDelete) {
@@ -639,7 +760,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
     const payload = (await response.json()) as { error?: string };
 
     if (!response.ok) {
-      setNotice(payload.error ?? "Folder could not be deleted.");
+      setNotice(payload.error ?? "Item could not be deleted.");
       return;
     }
 
@@ -713,6 +834,15 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
           entry={infoEntry}
           onClose={() => {
             setInfoEntry(null);
+          }}
+        />
+      ) : null}
+      {googleFileType ? (
+        <GoogleFileModal
+          fileType={googleFileType}
+          onCancel={() => setGoogleFileType(null)}
+          onSubmit={(title) => {
+            void createGoogleFile(title);
           }}
         />
       ) : null}
@@ -840,6 +970,8 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                                 canAccess: view.currentFolder.canAccess,
                                 createdAt: "",
                                 createdByName: "",
+                                externalProvider: null,
+                                externalUrl: null,
                                 filename: view.currentFolder.label,
                                 id: view.currentFolder.id,
                                 isFolder: true,
@@ -888,6 +1020,8 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                                     canAccess: view.currentFolder.canAccess,
                                     createdAt: "",
                                     createdByName: "",
+                                    externalProvider: null,
+                                    externalUrl: null,
                                     filename: view.currentFolder.label,
                                     id: view.currentFolder.id,
                                     isFolder: true,
@@ -1027,6 +1161,15 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                       className={`files-item files-item-file${draggingEntryId === entry.id ? " files-item-drag-source" : ""}`}
                       key={entry.id}
                       onClick={() => {
+                        if (entry.externalProvider === "GOOGLE") {
+                          window.open(
+                            `/api/files/${encodeURIComponent(entry.id)}`,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
+                          return;
+                        }
+
                         window.location.assign(`/api/files/${encodeURIComponent(entry.id)}`);
                       }}
                       onContextMenu={(event) => {
@@ -1052,7 +1195,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                       }}
                       type="button"
                     >
-                      <div className="files-file-badge">.{getExtensionLabel(entry.filename)}</div>
+                      <div className="files-file-badge">{getEntryTypeLabel(entry)}</div>
                       <div className="files-file-copy">
                         <strong>{entry.filename}</strong>
                       </div>
@@ -1092,6 +1235,33 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                 >
                   New Folder
                 </button>
+                <div className="files-context-submenu">
+                  <button className="files-context-item files-context-submenu-trigger" type="button">
+                    <span>Create Google File</span>
+                    <span aria-hidden="true">›</span>
+                  </button>
+                  <div className="files-context-submenu-panel">
+                    {(
+                      [
+                        ["docs", "Google Docs"],
+                        ["sheets", "Google Sheets"],
+                        ["slides", "Google Slides"],
+                      ] as const
+                    ).map(([fileType, label]) => (
+                      <button
+                        className="files-context-item"
+                        key={fileType}
+                        onClick={() => {
+                          setGoogleFileType(fileType);
+                          setContextMenu(null);
+                        }}
+                        type="button"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button
                   className="files-context-item"
                   onClick={() => {
@@ -1124,7 +1294,7 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     className="files-context-item"
                     disabled={contextMenu.entry.isSystemManaged}
                     onClick={() => {
-                      void deleteFolder(contextMenu.entry);
+                      void deleteEntry(contextMenu.entry);
                       setContextMenu(null);
                     }}
                     type="button"
@@ -1132,16 +1302,28 @@ export function FilesClient({ initialView }: { initialView: WorkspaceFolderView 
                     Delete Folder
                   </button>
                 ) : (
-                  <button
-                    className="files-context-item"
-                    onClick={() => {
-                      setInfoEntry(contextMenu.entry);
-                      setContextMenu(null);
-                    }}
-                    type="button"
-                  >
-                    Information
-                  </button>
+                  <>
+                    <button
+                      className="files-context-item"
+                      onClick={() => {
+                        setInfoEntry(contextMenu.entry);
+                        setContextMenu(null);
+                      }}
+                      type="button"
+                    >
+                      Information
+                    </button>
+                    <button
+                      className="files-context-item"
+                      onClick={() => {
+                        void deleteEntry(contextMenu.entry);
+                        setContextMenu(null);
+                      }}
+                      type="button"
+                    >
+                      Delete File
+                    </button>
+                  </>
                 )}
               </>
             )}
