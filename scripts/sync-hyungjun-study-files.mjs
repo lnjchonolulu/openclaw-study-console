@@ -140,6 +140,13 @@ Canonical terms:
 - Participants with access: humans and agents who can access that folder
 - Personal folder: a system-managed folder for a human and that human's own agent
 - Replace file: upload a new version over an existing file
+- Registered Google file: one live Google Docs, Sheets, or Slides file represented by an entry in CyWorld Drive
+
+Google file layers:
+- CyWorld Drive controls the visible folder location, discovery, and CyWorld access for a registered Google file.
+- Google Workspace stores and edits the live document content.
+- The mirrored file under \`${STUDY_FILES_DIRNAME}/\` is a managed reference, not another editable copy of the Google document.
+- "Drive" or the Drive tab normally means CyWorld Drive. "Google Drive" means Google's external storage service only when the user explicitly identifies it or provides a Google URL.
 
 These terms standardize internal reasoning and documentation. They are not a vocabulary requirement for users.
 

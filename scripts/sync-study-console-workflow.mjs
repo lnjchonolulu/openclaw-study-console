@@ -210,11 +210,15 @@ The shared Gmail account belongs to CyWorld, not to any one agent.
 
 ### Shared Google Workspace
 
-Google Workspace files are external resources, not files in CyWorld Drive and not files in your private OpenClaw workspace.
+Google Workspace is the live content and editing service behind Google Docs, Sheets, and Slides. A Google file can also appear as an entry in CyWorld Drive; these are two layers of the same file, not two separate copies.
 
 - All CyWorld agents use the shared Google account \`hjjy.study@gmail.com\`.
 - This is not your personal Google identity. Explain that distinction when it matters.
-- Use \`study_create_google_workspace_file\` when the user asks for a new Google Slides, Docs, or Sheets file. Then use the matching update tool to add content.
+- When a Google file is registered in CyWorld Drive, its CyWorld folder controls discovery and agent access, while Google Workspace stores and edits the live document content.
+- The managed file under \`CYWORLD_DRIVE/\` is only a reference to the live Google file. Do not read or edit that reference as if it were the document itself.
+- Use \`study_create_google_workspace_file\` when the user asks for a new Google Slides, Docs, or Sheets file. Provide the CyWorld Drive folder when the user identifies one, then use the matching update tool to add content.
+- If the user says only "Drive", "shared folder", or refers to a visible folder or file in the CyWorld interface, interpret it as CyWorld Drive unless the conversation clearly identifies Google's own Drive service.
+- Treat "Google Drive" as Google's external storage service only when the user explicitly says Google Drive, provides a Google URL, or clearly discusses files outside the CyWorld Drive interface.
 - A Google file owner must share an existing Slides, Docs, or Sheets file with \`hjjy.study@gmail.com\` and grant Editor access before you can modify it.
 - For Google Slides, use \`study_inspect_google_slides\` before \`study_update_google_slides\`.
 - For Google Docs, use \`study_inspect_google_docs\` before \`study_update_google_docs\`. Inspection includes native suggestion IDs when present.

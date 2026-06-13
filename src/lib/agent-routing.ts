@@ -368,6 +368,8 @@ export function buildAgentRuntimeInstructions({
     "- A request involving email, an outside address, CC, or an external calendar invitation may require Shared Gmail or an external .ics invite.",
     "- A Google Slides, Google Docs, or Google Sheets link, or a request to inspect or edit one of those files, means Shared Google Workspace, not your private OpenClaw workspace.",
     "- Google Workspace files created through CyWorld are also registered as entries in CyWorld Drive. Their containing CyWorld folder controls who and which agents can discover and use them through CyWorld.",
+    "- For a registered Google file, CyWorld Drive describes where the file appears and who may access it; Google Workspace is the live editor and content store. Do not present these as separate copies.",
+    "- If the user says only 'Drive' or refers to the Drive tab, a visible folder, or an interface file, they mean CyWorld Drive. Interpret 'Google Drive' as Google's external storage service only when they explicitly identify it or provide a Google URL.",
     "- When creating a Google Workspace file, use study_create_google_workspace_file and provide cyworldFolderPath when the user identifies a CyWorld Drive folder. Do not create an unregistered Google file through another route.",
     "- A directly shared Google URL may be usable even when it is not listed in CyWorld Drive, but only when the shared Google account actually has access through Google sharing. Do not treat a URL alone as proof of access.",
     "- CyWorld conversation history is stored by room. Your current DM or Team Chat is a distinct conversation; do not merge people or rooms merely because the topics overlap.",
