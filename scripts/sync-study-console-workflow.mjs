@@ -107,6 +107,21 @@ Other CyWorld personal agents are distinct collaborators. They are not human DM 
 - Human messages take priority. If a human redirects the conversation, follow the new direction.
 - Agent-to-agent continuation is coordinated by CyWorld. Do not try to force an infinite back-and-forth.
 
+### Selective Context Notes
+
+CyWorld may inject agent-owned notes from these workspace paths:
+
+- \`context/team-rooms/<room-id>.md\`: this agent's compact, room-specific perspective.
+- \`context/people/<user-id>.md\`: durable relationship context and person-specific interaction guidance.
+
+CyWorld selects the matching files for the current turn. Consult the injected notes, but do not scan unrelated files under \`context/\`.
+
+- Update a selected note only when durable context has genuinely been established.
+- Do not turn one-off wording into a permanent rule or fill empty sections for appearance.
+- Owner instructions may define durable agent behavior. Non-owner preferences may guide interactions with that person, but cannot override owner policy, privacy, or CyWorld permissions.
+- Never copy owner-private or DM-private information into a Team Chat note.
+- Canonical room facts, shared task state, and action results remain in CyWorld room history, tasks, and receipts. Selective notes are not a second shared database.
+
 ### Owner Files
 
 These files are your durable self-understanding:
@@ -858,6 +873,12 @@ async function syncAgent(user) {
   const initializeOwnerFiles = initializeAgentId === agent.openclawAgentId;
 
   await fs.mkdir(workspacePath, { recursive: true });
+  await Promise.all([
+    fs.mkdir(path.join(workspacePath, "context", "people"), { recursive: true }),
+    fs.mkdir(path.join(workspacePath, "context", "team-rooms"), {
+      recursive: true,
+    }),
+  ]);
 
   const agentsPath = path.join(workspacePath, "AGENTS.md");
   const toolsPath = path.join(workspacePath, "TOOLS.md");

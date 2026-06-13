@@ -1,6 +1,11 @@
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
+import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
+import {
+  configuredDefaultReviewMinutes,
+  markTaskWaitingForReview,
+} from "@/lib/agent-task-review-schedule";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -18,6 +23,7 @@ type DispatchSettings = {
   maxChainTurns: number;
   maxContinuationCandidates: number;
   maxHumanFanout: number;
+  maxTaskClaimCandidates: number;
 };
 
 type TeamAgentProposal =
@@ -37,6 +43,35 @@ type ArbiterDecision = {
   reason?: string;
   updatedOpenItems: string[];
   verdict: "accept" | "reject";
+};
+
+type HumanTurnIntent =
+  | {
+      mode: "conversation";
+      reason?: string;
+    }
+  | {
+      mode: "uncertain";
+      reason?: string;
+    }
+  | {
+      confidence: "high";
+      mode: "clear_task";
+      objective: string;
+      reason?: string;
+    };
+
+type TeamTaskClaimProposal = {
+  action: "claim" | "decline";
+  approach?: string;
+  confidence?: "high" | "medium" | "low";
+  reason?: string;
+};
+
+type TeamTaskSelection = {
+  assignment: "clarify" | "execute" | null;
+  reason?: string;
+  selectedAgentId: string | null;
 };
 
 type DispatchCandidate = {
@@ -215,7 +250,146 @@ async function getDispatchSettings(): Promise<DispatchSettings> {
     maxChainTurns: safeNumber(value.maxChainTurns, 8, 1, 24),
     maxContinuationCandidates: safeNumber(value.maxContinuationCandidates, 4, 1, 12),
     maxHumanFanout: safeNumber(value.maxHumanFanout, 4, 1, 12),
+    maxTaskClaimCandidates: safeNumber(value.maxTaskClaimCandidates, 16, 1, 24),
   };
+}
+
+function parseHumanTurnIntent(value: string, fallbackObjective: string): HumanTurnIntent {
+  const jsonObject = extractJsonObject(value);
+
+  if (!jsonObject) {
+    return {
+      mode: "conversation",
+      reason: "No structured task-intent decision returned.",
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonObject) as {
+      confidence?: unknown;
+      mode?: unknown;
+      objective?: unknown;
+      reason?: unknown;
+    };
+
+    if (parsed.mode === "clear_task" && parsed.confidence === "high") {
+      return {
+        confidence: "high",
+        mode: "clear_task",
+        objective:
+          typeof parsed.objective === "string" && parsed.objective.trim()
+            ? parsed.objective.trim()
+            : fallbackObjective,
+        reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+      };
+    }
+
+    if (parsed.mode === "uncertain" || parsed.mode === "clear_task") {
+      return {
+        mode: "uncertain",
+        reason:
+          typeof parsed.reason === "string"
+            ? parsed.reason
+            : "The turn did not include a high-confidence clear task.",
+      };
+    }
+
+    return {
+      mode: "conversation",
+      reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    };
+  } catch {
+    return {
+      mode: "conversation",
+      reason: "Malformed task-intent decision JSON.",
+    };
+  }
+}
+
+function parseTaskClaimProposal(value: string): TeamTaskClaimProposal {
+  const jsonObject = extractJsonObject(value);
+
+  if (!jsonObject) {
+    return {
+      action: "decline",
+      reason: "No structured claim decision returned.",
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonObject) as {
+      action?: unknown;
+      approach?: unknown;
+      confidence?: unknown;
+      reason?: unknown;
+    };
+    const confidence =
+      parsed.confidence === "high" ||
+      parsed.confidence === "medium" ||
+      parsed.confidence === "low"
+        ? parsed.confidence
+        : undefined;
+
+    if (parsed.action === "claim") {
+      return {
+        action: "claim",
+        approach: typeof parsed.approach === "string" ? parsed.approach.trim() : undefined,
+        confidence,
+        reason: typeof parsed.reason === "string" ? parsed.reason.trim() : undefined,
+      };
+    }
+
+    return {
+      action: "decline",
+      confidence,
+      reason: typeof parsed.reason === "string" ? parsed.reason.trim() : undefined,
+    };
+  } catch {
+    return {
+      action: "decline",
+      reason: "Malformed claim decision JSON.",
+    };
+  }
+}
+
+function parseTaskSelection(
+  value: string,
+  allowedAgentIds: Set<string>,
+  assignment: Exclude<TeamTaskSelection["assignment"], null>,
+): TeamTaskSelection {
+  const jsonObject = extractJsonObject(value);
+
+  if (!jsonObject) {
+    return {
+      assignment: null,
+      reason: "No structured task-owner selection returned.",
+      selectedAgentId: null,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonObject) as {
+      reason?: unknown;
+      selectedAgentId?: unknown;
+    };
+    const selectedAgentId =
+      typeof parsed.selectedAgentId === "string" &&
+      allowedAgentIds.has(parsed.selectedAgentId)
+        ? parsed.selectedAgentId
+        : null;
+
+    return {
+      assignment: selectedAgentId ? assignment : null,
+      reason: typeof parsed.reason === "string" ? parsed.reason.trim() : undefined,
+      selectedAgentId,
+    };
+  } catch {
+    return {
+      assignment: null,
+      reason: "Malformed task-owner selection JSON.",
+      selectedAgentId: null,
+    };
+  }
 }
 
 function parseTeamAgentProposal(value: string): TeamAgentProposal {
@@ -604,6 +778,822 @@ async function selectDispatchCandidates({
   });
 }
 
+function buildTaskClaimCandidates({
+  room,
+  triggeringMessage,
+}: {
+  room: DispatchRoom;
+  triggeringMessage: DispatchMessage;
+}) {
+  return room.agents
+    .filter((roomAgent) => !isAgentMuted(roomAgent))
+    .map((roomAgent): DispatchCandidate => {
+      if (
+        textMentionsAnyAlias(
+          triggeringMessage.content,
+          aliasesForAgent(roomAgent.agent),
+        )
+      ) {
+        return {
+          roomAgent,
+          reason: "The human explicitly named this agent for the requested work.",
+          strength: "explicit",
+        };
+      }
+
+      if (
+        textMentionsAnyAlias(
+          triggeringMessage.content,
+          aliasesForOwner(roomAgent.agent),
+        )
+      ) {
+        return {
+          roomAgent,
+          reason:
+            "The requested work mentions this agent's owner, so the agent may have relevant owner context.",
+          strength: "relevant",
+        };
+      }
+
+      return {
+        roomAgent,
+        reason:
+          "This agent is a member of the room and may privately assess whether it can responsibly own the work.",
+        strength: "ambient",
+      };
+    })
+    .sort((left, right) => {
+      const weightDelta = candidateWeight(left.strength) - candidateWeight(right.strength);
+
+      if (weightDelta !== 0) {
+        return weightDelta;
+      }
+
+      return (
+        minutesSince(right.roomAgent.lastSpokeAt) -
+        minutesSince(left.roomAgent.lastSpokeAt)
+      );
+    });
+}
+
+async function classifyHumanTurn({
+  chainId,
+  recentLog,
+  room,
+  triggeringMessage,
+}: {
+  chainId: string;
+  recentLog: string;
+  room: DispatchRoom;
+  triggeringMessage: DispatchMessage;
+}) {
+  const arbiterAgent = room.agents.find((roomAgent) => !isAgentMuted(roomAgent))?.agent;
+
+  if (!arbiterAgent) {
+    return {
+      mode: "conversation",
+      reason: "No available agent could classify the turn.",
+    } satisfies HumanTurnIntent;
+  }
+
+  try {
+    const result = await runAgentTurn({
+      agentId: arbiterAgent.openclawAgentId,
+      conversationKey: `team:${room.id}:task-intent:${chainId}`,
+      instructions: `You are conservatively classifying a human turn in a CyWorld Team Chat.
+This is a private routing decision. Do not answer the user and do not use tools.
+
+Use "clear_task" only when the human clearly requests accountable follow-through that requires actual action after this message: creating or modifying an artifact, contacting someone, carrying out research or investigation, coordinating work, or producing and returning a deliverable.
+A clear task must have a sufficiently identifiable requested outcome. Tone, imperative grammar, or merely asking a question is not enough.
+
+Use "conversation" for ordinary questions, immediate explanations or opinions, social remarks, corrections, brainstorming, and discussion that can be answered naturally in the channel without durable ownership.
+
+Use "uncertain" when the message might imply future action but the requested outcome, intended actor, commitment, or need for durable follow-through is ambiguous. Uncertain turns stay in ordinary conversation so agents can respond naturally, ask a contextual question, or volunteer without CyWorld assigning a task owner.
+
+Only return high confidence for clear_task when the evidence is explicit in the message and recent conversation. Otherwise return uncertain.
+Do not classify every imperative sentence as a task. Use the recent conversation and channel purpose.
+Return JSON only.
+
+Valid JSON:
+{"mode":"clear_task","confidence":"high","objective":"concise description of the requested outcome","reason":"why actual follow-through and durable ownership are clearly required"}
+{"mode":"uncertain","confidence":"medium|low","reason":"what remains ambiguous"}
+{"mode":"conversation","reason":"why this is ordinary conversation"}`,
+      message: `Channel: ${room.name}
+Purpose: ${room.purpose?.trim() || "(none set)"}
+
+Recent conversation:
+${recentLog || "(no previous messages)"}
+
+Latest human message:
+${triggeringMessage.content}`,
+    });
+
+    return parseHumanTurnIntent(result.assistantText, triggeringMessage.content);
+  } catch (error) {
+    console.warn("[team-dispatch] task intent classification failed", {
+      chainId,
+      error,
+      roomId: room.id,
+    });
+
+    return {
+      mode: "conversation",
+      reason: "Task classification failed; preserving the ordinary conversation path.",
+    } satisfies HumanTurnIntent;
+  }
+}
+
+async function askAgentForTaskClaim({
+  candidate,
+  chainId,
+  objective,
+  recentLog,
+  room,
+  triggeringUser,
+}: {
+  candidate: DispatchCandidate;
+  chainId: string;
+  objective: string;
+  recentLog: string;
+  room: DispatchRoom;
+  triggeringUser: NonNullable<DispatchMessage["user"]>;
+}) {
+  const agent = candidate.roomAgent.agent;
+  const activeHumans = await prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    orderBy: {
+      username: "asc",
+    },
+    select: {
+      agent: {
+        select: {
+          displayName: true,
+          openclawAgentId: true,
+        },
+      },
+      username: true,
+    },
+  });
+  const relationshipContext = await getAgentRelationshipContext({
+    agentDatabaseId: agent.id,
+    targetUsername: triggeringUser.username,
+  });
+  const runtimeInstructions = buildAgentRuntimeInstructions({
+    agentDisplayName: agent.displayName,
+    agentHandoffsEnabled: false,
+    audience: "shared_spaces",
+    availableAgents: activeHumans.flatMap((human) =>
+      human.agent
+        ? [
+            {
+              displayName: human.agent.displayName,
+              openclawAgentId: human.agent.openclawAgentId,
+              ownerUsername: human.username,
+            },
+          ]
+        : [],
+    ),
+    availableHumanUsernames: activeHumans.map((human) => human.username),
+    behaviorConfig: agent.soulConfigJson,
+    counterpartLabel: `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) requesting work`,
+    counterpartTimezone: triggeringUser.timezone ?? agent.user.timezone,
+    currentHumanDisplayName: triggeringUser.displayName,
+    currentHumanUsername: triggeringUser.username,
+    ownerDisplayName: agent.user.displayName,
+    ownerTimezone: agent.user.timezone,
+    ownerUsername: agent.user.username,
+    personaSummary: agent.personaSummary,
+    relationshipContext,
+  });
+  const activeTaskCount = await prisma.agentTask.count({
+    where: {
+      agentId: agent.openclawAgentId,
+      status: {
+        in: ["OPEN", "RUNNING", "WAITING"],
+      },
+    },
+  });
+
+  try {
+    const result = await runAgentTurn({
+      agentId: agent.openclawAgentId,
+      conversationKey: `team:${room.id}:task-claim:${chainId}:${agent.openclawAgentId}`,
+      instructions: `${runtimeInstructions}
+
+You are privately evaluating whether to become the single accountable agent for a CyWorld Team Chat task.
+Do not perform the task yet. Do not call tools. Do not write a public channel reply.
+Claim only if your actual context, capabilities, permissions, relationship perspective, or ability to coordinate makes you a sensible owner.
+You may claim work that requires later clarification or a handoff if you can responsibly coordinate it.
+Decline when another room agent is clearly better suited or when you cannot responsibly own the outcome.
+Return JSON only.
+
+Valid JSON:
+{"action":"claim","confidence":"high|medium|low","approach":"brief concrete approach","reason":"why this agent is a good owner"}
+{"action":"decline","reason":"why this agent should not own it"}`,
+      message: `Channel: ${room.name}
+Purpose: ${room.purpose?.trim() || "(none set)"}
+Why this agent is being considered: ${candidate.reason}
+Current unfinished tasks owned by this agent: ${activeTaskCount}
+
+Recent conversation:
+${recentLog || "(no previous messages)"}
+
+Requested outcome:
+${objective}
+
+Should ${agent.displayName} own this task?`,
+    });
+
+    return parseTaskClaimProposal(result.assistantText);
+  } catch (error) {
+    console.warn("[team-dispatch] task claim evaluation failed", {
+      agentId: agent.openclawAgentId,
+      chainId,
+      error,
+      roomId: room.id,
+    });
+
+    return {
+      action: "decline",
+      reason: "The private claim evaluation failed.",
+    } satisfies TeamTaskClaimProposal;
+  }
+}
+
+async function selectTaskOwner({
+  candidates,
+  chainId,
+  claims,
+  explicitCandidateIds,
+  objective,
+  room,
+}: {
+  candidates: DispatchCandidate[];
+  chainId: string;
+  claims: Array<{
+    candidate: DispatchCandidate;
+    proposal: TeamTaskClaimProposal;
+  }>;
+  explicitCandidateIds: Set<string>;
+  objective: string;
+  room: DispatchRoom;
+}) {
+  if (explicitCandidateIds.size === 1) {
+    return {
+      assignment: "execute",
+      reason: "The human explicitly assigned this task to one agent.",
+      selectedAgentId: [...explicitCandidateIds][0] ?? null,
+    } satisfies TeamTaskSelection;
+  }
+
+  const claimants = claims.filter(({ proposal }) => proposal.action === "claim");
+  const eligibleClaimants =
+    explicitCandidateIds.size > 1
+      ? claimants.filter(({ candidate }) =>
+          explicitCandidateIds.has(candidate.roomAgent.agent.openclawAgentId),
+        )
+      : claimants;
+
+  if (eligibleClaimants.length === 0) {
+    const clarificationCandidates =
+      explicitCandidateIds.size > 1
+        ? candidates.filter((candidate) =>
+            explicitCandidateIds.has(candidate.roomAgent.agent.openclawAgentId),
+          )
+        : candidates;
+    const fallbackCandidate = clarificationCandidates[0];
+
+    if (!fallbackCandidate) {
+      return {
+        assignment: null,
+        reason: "No agent was available to clarify the requested work.",
+        selectedAgentId: null,
+      } satisfies TeamTaskSelection;
+    }
+
+    const allowedAgentIds = new Set(
+      clarificationCandidates.map(
+        (candidate) => candidate.roomAgent.agent.openclawAgentId,
+      ),
+    );
+    const arbiterAgent =
+      candidates.find(
+        (candidate) =>
+          candidate.roomAgent.agent.openclawAgentId !==
+          fallbackCandidate.roomAgent.agent.openclawAgentId,
+      )?.roomAgent.agent ?? fallbackCandidate.roomAgent.agent;
+
+    try {
+      const result = await runAgentTurn({
+        agentId: arbiterAgent.openclawAgentId,
+        conversationKey: `team:${room.id}:task-clarifier-arbiter:${chainId}`,
+        instructions: `You are the private CyWorld clarification-coordinator arbiter.
+No room agent responsibly claimed the requested work as currently stated.
+Choose exactly one available room agent to ask the human the smallest useful clarification needed to make the task actionable.
+Do not perform the task, use tools, or write a public channel message.
+Do not choose an agent outside the supplied list.
+Return JSON only.
+
+Valid JSON:
+{"selectedAgentId":"exact openclaw agent ID from the candidate list","reason":"brief reason this agent should coordinate clarification"}`,
+        message: `Channel: ${room.name}
+Purpose: ${room.purpose?.trim() || "(none set)"}
+Requested outcome:
+${objective}
+
+Available clarification coordinators:
+${clarificationCandidates
+  .map(
+    (candidate) =>
+      `- ${candidate.roomAgent.agent.displayName} (${candidate.roomAgent.agent.openclawAgentId}), owner @${candidate.roomAgent.agent.user.username}\n  consideration: ${candidate.reason}`,
+  )
+  .join("\n")}`,
+      });
+      const selection = parseTaskSelection(
+        result.assistantText,
+        allowedAgentIds,
+        "clarify",
+      );
+
+      if (selection.selectedAgentId) {
+        return selection;
+      }
+    } catch (error) {
+      console.warn("[team-dispatch] clarification coordinator arbitration failed", {
+        chainId,
+        error,
+        roomId: room.id,
+      });
+    }
+
+    return {
+      assignment: "clarify",
+      reason:
+        "The clarification arbiter did not return a valid selection; the highest-priority available agent will ask for clarification.",
+      selectedAgentId: fallbackCandidate.roomAgent.agent.openclawAgentId,
+    } satisfies TeamTaskSelection;
+  }
+
+  if (eligibleClaimants.length === 1) {
+    return {
+      assignment: "execute",
+      reason: "Only one eligible agent claimed the task.",
+      selectedAgentId:
+        eligibleClaimants[0]?.candidate.roomAgent.agent.openclawAgentId ?? null,
+    } satisfies TeamTaskSelection;
+  }
+
+  const arbiterAgent =
+    candidates.find(
+      (candidate) =>
+        !eligibleClaimants.some(
+          ({ candidate: claimant }) =>
+            claimant.roomAgent.agent.openclawAgentId ===
+            candidate.roomAgent.agent.openclawAgentId,
+        ),
+    )?.roomAgent.agent ?? eligibleClaimants[0]?.candidate.roomAgent.agent;
+
+  if (!arbiterAgent) {
+    return {
+      assignment: "execute",
+      reason:
+        "No separate arbiter was available; the highest-priority valid claimant was selected.",
+      selectedAgentId:
+        eligibleClaimants[0]?.candidate.roomAgent.agent.openclawAgentId ?? null,
+    } satisfies TeamTaskSelection;
+  }
+
+  const allowedAgentIds = new Set(
+    eligibleClaimants.map(({ candidate }) => candidate.roomAgent.agent.openclawAgentId),
+  );
+
+  try {
+    const result = await runAgentTurn({
+      agentId: arbiterAgent.openclawAgentId,
+      conversationKey: `team:${room.id}:task-owner-arbiter:${chainId}`,
+      instructions: `You are the private CyWorld task-owner arbiter.
+Choose exactly one accountable agent from the supplied valid claimants.
+Do not perform the task, use tools, or write a public channel message.
+Use the requested outcome, each agent's concrete approach, confidence, owner perspective, and current workload.
+Do not choose an agent that is not in the claimant list.
+Prefer the agent most likely to carry the work through, not the most enthusiastic wording.
+Return JSON only.
+
+Valid JSON:
+{"selectedAgentId":"exact openclaw agent ID from the claimant list","reason":"brief selection reason"}`,
+      message: `Channel: ${room.name}
+Purpose: ${room.purpose?.trim() || "(none set)"}
+Requested outcome:
+${objective}
+
+Valid claimants:
+${eligibleClaimants
+  .map(
+    ({ candidate, proposal }) =>
+      `- ${candidate.roomAgent.agent.displayName} (${candidate.roomAgent.agent.openclawAgentId}), owner @${candidate.roomAgent.agent.user.username}, confidence ${proposal.confidence ?? "unspecified"}\n  approach: ${proposal.approach || "(none supplied)"}\n  reason: ${proposal.reason || "(none supplied)"}`,
+  )
+  .join("\n")}`,
+    });
+
+    const selection = parseTaskSelection(
+      result.assistantText,
+      allowedAgentIds,
+      "execute",
+    );
+
+    if (selection.selectedAgentId) {
+      return selection;
+    }
+  } catch (error) {
+    console.warn("[team-dispatch] task owner arbitration failed", {
+      chainId,
+      error,
+      roomId: room.id,
+    });
+  }
+
+  return {
+    assignment: "execute",
+    reason:
+      "The arbiter did not return a valid selection; the highest-priority valid claimant was selected.",
+    selectedAgentId:
+      eligibleClaimants[0]?.candidate.roomAgent.agent.openclawAgentId ?? null,
+  } satisfies TeamTaskSelection;
+}
+
+async function createAssignedTeamTask({
+  chainId,
+  claims,
+  objective,
+  room,
+  selectedCandidate,
+  assignment,
+  selectionReason,
+  triggeringMessage,
+}: {
+  assignment: Exclude<TeamTaskSelection["assignment"], null>;
+  chainId: string;
+  claims: Array<{
+    candidate: DispatchCandidate;
+    proposal: TeamTaskClaimProposal;
+  }>;
+  objective: string;
+  room: DispatchRoom;
+  selectedCandidate: DispatchCandidate;
+  selectionReason?: string;
+  triggeringMessage: DispatchMessage;
+}) {
+  if (!triggeringMessage.userId) {
+    throw new Error("A human requester is required for a team task.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const task = await tx.agentTask.create({
+      data: {
+        agentId: selectedCandidate.roomAgent.agent.openclawAgentId,
+        kind: "team_task",
+        objective,
+        requesterUserId: triggeringMessage.userId!,
+        sourceRoomId: room.id,
+        status: assignment === "clarify" ? "WAITING" : "RUNNING",
+        targetUserId: assignment === "clarify" ? triggeringMessage.userId! : null,
+        title: objective.slice(0, 120),
+        events: {
+          create: [
+            {
+              type: "USER_REQUEST",
+              summary: triggeringMessage.content,
+              payload: {
+                chainId,
+                roomName: room.name,
+              },
+            },
+            {
+              type: "AGENT_DECISION",
+              summary:
+                assignment === "clarify"
+                  ? `${selectedCandidate.roomAgent.agent.displayName} was selected to coordinate clarification.`
+                  : `${selectedCandidate.roomAgent.agent.displayName} was selected as the single accountable agent.`,
+              payload: {
+                assignment,
+                chainId,
+                claims: claims.map(({ candidate, proposal }) => ({
+                  agentId: candidate.roomAgent.agent.openclawAgentId,
+                  approach: proposal.approach ?? null,
+                  confidence: proposal.confidence ?? null,
+                  decision: proposal.action,
+                  reason: proposal.reason ?? null,
+                })),
+                selectionReason: selectionReason ?? null,
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    await tx.message.update({
+      where: {
+        id: triggeringMessage.id,
+      },
+      data: {
+        taskId: task.id,
+      },
+    });
+
+    return task;
+  });
+}
+
+async function runAssignedTeamTask({
+  candidate,
+  chain,
+  assignment,
+  objective,
+  recentLog,
+  room,
+  taskId,
+  triggeringMessage,
+  triggeringUser,
+}: {
+  assignment: Exclude<TeamTaskSelection["assignment"], null>;
+  candidate: DispatchCandidate;
+  chain: {
+    id: string;
+    openItemsJson?: unknown;
+    turnCount: number;
+  };
+  objective: string;
+  recentLog: string;
+  room: DispatchRoom;
+  taskId: string;
+  triggeringMessage: DispatchMessage;
+  triggeringUser: NonNullable<DispatchMessage["user"]>;
+}) {
+  const agent = candidate.roomAgent.agent;
+  const activeHumans = await prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+    },
+    orderBy: {
+      username: "asc",
+    },
+    select: {
+      agent: {
+        select: {
+          displayName: true,
+          openclawAgentId: true,
+        },
+      },
+      username: true,
+    },
+  });
+  const relationshipContext = await getAgentRelationshipContext({
+    agentDatabaseId: agent.id,
+    targetUsername: triggeringUser.username,
+  });
+  const runtimeInstructions = buildAgentRuntimeInstructions({
+    agentDisplayName: agent.displayName,
+    audience: "shared_spaces",
+    availableAgents: activeHumans.flatMap((human) =>
+      human.agent
+        ? [
+            {
+              displayName: human.agent.displayName,
+              openclawAgentId: human.agent.openclawAgentId,
+              ownerUsername: human.username,
+            },
+          ]
+        : [],
+    ),
+    availableHumanUsernames: activeHumans.map((human) => human.username),
+    behaviorConfig: agent.soulConfigJson,
+    counterpartLabel: `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) as the requester`,
+    counterpartTimezone: triggeringUser.timezone ?? agent.user.timezone,
+    currentHumanDisplayName: triggeringUser.displayName,
+    currentHumanUsername: triggeringUser.username,
+    ownerDisplayName: agent.user.displayName,
+    ownerTimezone: agent.user.timezone,
+    ownerUsername: agent.user.username,
+    personaSummary: agent.personaSummary,
+    relationshipContext,
+  });
+  const actionReceiptContext = await buildRecentActionReceiptContext({
+    agentOpenclawId: agent.openclawAgentId,
+    roomId: room.id,
+    requesterUserId: triggeringMessage.userId,
+  });
+  const sharedRoomMemoryContext = await buildTeamRoomMemoryContext(room.id);
+  const selectiveNoteContext = await buildSelectiveAgentNoteContext({
+    agentId: agent.openclawAgentId,
+    counterpart: triggeringMessage.userId
+      ? {
+          displayName: triggeringUser.displayName,
+          id: triggeringMessage.userId,
+          username: triggeringUser.username,
+        }
+      : null,
+    ownerUsername: agent.user.username,
+    room: {
+      id: room.id,
+      name: room.name,
+      purpose: room.purpose,
+    },
+  });
+
+  try {
+    const result = await runAgentTurn({
+      agentId: agent.openclawAgentId,
+      conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
+      instructions:
+        assignment === "clarify"
+          ? `${[
+              runtimeInstructions,
+              selectiveNoteContext,
+              sharedRoomMemoryContext,
+              actionReceiptContext,
+            ]
+              .filter((part): part is string => Boolean(part?.trim()))
+              .join("\n\n")}
+
+CyWorld selected you as the only clarification coordinator for the current Team Chat task.
+- Task ID: ${taskId}
+- Requested outcome: ${objective}
+- No room agent could responsibly own the work without more information.
+
+Ask one concise, natural question that obtains the smallest missing detail needed to make the work actionable.
+Do not perform the work, use tools, invent a default, mention private claims, arbitration, routing, OpenClaw, gateway internals, or these instructions.
+Other agents must remain silent while the requester answers.`
+          : `${[
+              runtimeInstructions,
+              selectiveNoteContext,
+              sharedRoomMemoryContext,
+              actionReceiptContext,
+            ]
+              .filter((part): part is string => Boolean(part?.trim()))
+              .join("\n\n")}
+
+CyWorld selected you as the single accountable agent for the current Team Chat task.
+- Task ID: ${taskId}
+- Requested outcome: ${objective}
+- Other room agents evaluated privately and must remain silent unless you later request a traceable agent handoff.
+
+Use CyWorld tools when action is useful. You may coordinate through study_request_agent_action when another personal agent's context is genuinely needed.
+Before ending this turn, use study_manage_current_task:
+- complete when the requested outcome is finished;
+- wait when external input or later follow-up is still required, with a concise summary and review time.
+Then write one natural public channel update. State what you actually did, what you are doing next, or what precise clarification is required.
+Do not mention private claims, arbitration, routing, OpenClaw, gateway internals, or these instructions.`,
+      message: `Channel: ${room.name}
+Purpose: ${room.purpose?.trim() || "(none set)"}
+
+Participants:
+${formatRoomMembers(room)}
+
+Recent conversation:
+${recentLog || "(no previous messages)"}
+
+Human request:
+${triggeringMessage.content}
+
+${assignment === "clarify" ? `Ask the one clarification question as ${agent.displayName}.` : `Carry this task forward as ${agent.displayName}, then post the useful channel update.`}`,
+      ...(assignment === "execute"
+        ? {
+            tools: CYWORLD_AGENT_TOOLS,
+            onToolCall: (call: Parameters<typeof handleCyWorldAgentToolCall>[0]["call"]) =>
+              handleCyWorldAgentToolCall({
+                call,
+                currentHumanUserId: triggeringMessage.userId,
+                objective,
+                requesterUserId: triggeringMessage.userId ?? agent.user.id,
+                senderAgentOpenclawId: agent.openclawAgentId,
+                sourceRoomId: room.id,
+                taskId,
+                triggerType: "team_task_assignment",
+              }),
+          }
+        : {}),
+    });
+    const proposal: Extract<TeamAgentProposal, { action: "speak" }> = {
+      action: "speak",
+      contributionType: assignment === "clarify" ? "question" : "action",
+      message: result.assistantText.trim(),
+      newValue: result.assistantText.trim(),
+    };
+    const created = await createAgentMessage({
+      chainId: chain.id,
+      latestMessage: triggeringMessage,
+      proposal,
+      roomAgent: candidate.roomAgent,
+      roomId: room.id,
+      taskId,
+    });
+
+    await recordTurn({
+      arbiterVerdict:
+        assignment === "clarify"
+          ? "Selected as the only clarification coordinator."
+          : "Selected as the single accountable task owner.",
+      chainId: chain.id,
+      decision:
+        assignment === "clarify" ? "task_clarification_requested" : "task_assigned",
+      messageId: created.id,
+      proposal,
+      roomAgent: candidate.roomAgent,
+    });
+
+    if (assignment === "clarify") {
+      const summary = "Waiting for the requester to clarify the Team Chat task.";
+
+      await prisma.$transaction([
+        prisma.agentTask.update({
+          where: {
+            id: taskId,
+          },
+          data: {
+            nextReviewAt: null,
+            resultSummary: summary,
+            reviewLeaseUntil: null,
+            status: "WAITING",
+          },
+        }),
+        prisma.agentTaskEvent.create({
+          data: {
+            taskId,
+            type: "SYSTEM_NOTE",
+            summary,
+            payload: {
+              clarificationMessageId: created.id,
+              reason: "waiting_for_requester_clarification",
+            },
+          },
+        }),
+      ]);
+
+      return created;
+    }
+
+    const task = await prisma.agentTask.findUnique({
+      where: {
+        id: taskId,
+      },
+      select: {
+        status: true,
+      },
+    });
+
+    if (task?.status === "RUNNING") {
+      const summary =
+        "The assigned agent posted an initial update but did not explicitly close the task.";
+      const nextReviewAt = await markTaskWaitingForReview({
+        afterMinutes: configuredDefaultReviewMinutes(),
+        resultSummary: summary,
+        taskId,
+      });
+
+      await prisma.agentTaskEvent.create({
+        data: {
+          taskId,
+          type: "SYSTEM_NOTE",
+          summary,
+          payload: {
+            nextReviewAt: nextReviewAt.toISOString(),
+            reason: "implicit_wait_after_assignment_turn",
+          },
+        },
+      });
+    }
+
+    return created;
+  } catch (error) {
+    const summary =
+      error instanceof Error ? error.message : "Unknown assigned task execution error.";
+
+    await prisma.$transaction([
+      prisma.agentTask.update({
+        where: {
+          id: taskId,
+        },
+        data: {
+          resultSummary: summary,
+          status: "FAILED",
+        },
+      }),
+      prisma.agentTaskEvent.create({
+        data: {
+          taskId,
+          type: "SYSTEM_NOTE",
+          summary: `Assigned task execution failed: ${summary}`,
+        },
+      }),
+    ]);
+
+    throw error;
+  }
+}
+
 async function askAgentForTeamProposal({
   candidate,
   chain,
@@ -683,6 +1673,23 @@ async function askAgentForTeamProposal({
     roomId: room.id,
   });
   const sharedRoomMemoryContext = await buildTeamRoomMemoryContext(room.id);
+  const selectiveNoteContext = await buildSelectiveAgentNoteContext({
+    agentId: agent.openclawAgentId,
+    counterpart:
+      triggeringUser && latestMessage.userId
+        ? {
+            displayName: triggeringUser.displayName,
+            id: latestMessage.userId,
+            username: triggeringUser.username,
+          }
+        : null,
+    ownerUsername: agent.user.username,
+    room: {
+      id: room.id,
+      name: room.name,
+      purpose: room.purpose,
+    },
+  });
   const chainRecord = await prisma.teamAgentChain.findUnique({
     where: {
       id: chain.id,
@@ -707,7 +1714,12 @@ async function askAgentForTeamProposal({
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
     conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
-    instructions: `${[instructions, sharedRoomMemoryContext, actionReceiptContext]
+    instructions: `${[
+      instructions,
+      selectiveNoteContext,
+      sharedRoomMemoryContext,
+      actionReceiptContext,
+    ]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n")}
 
@@ -875,12 +1887,14 @@ async function createAgentMessage({
   proposal,
   roomAgent,
   roomId,
+  taskId,
 }: {
   chainId: string;
   latestMessage: DispatchMessage;
   proposal: Extract<TeamAgentProposal, { action: "speak" }>;
   roomAgent: DispatchCandidate["roomAgent"];
   roomId: string;
+  taskId?: string | null;
 }) {
   const agent = roomAgent.agent;
   const created = await prisma.message.create({
@@ -890,6 +1904,7 @@ async function createAgentMessage({
       replyToMessageId: latestMessage.id,
       role: "AGENT",
       roomId,
+      taskId: taskId ?? null,
     },
     include: {
       agent: true,
@@ -1251,7 +2266,7 @@ export async function runTeamAgentDispatch({
 
   if (triggeringMessage.user) {
     const chain = await createHumanRootChain(roomId, triggeringMessage.id);
-    const candidates = (
+    const conversationCandidates = (
       await selectDispatchCandidates({
         chainId: chain.id,
         mode: "human",
@@ -1260,14 +2275,147 @@ export async function runTeamAgentDispatch({
         triggeringMessage,
       })
     ).slice(0, settings.maxHumanFanout);
+    const intent = await classifyHumanTurn({
+      chainId: chain.id,
+      recentLog,
+      room,
+      triggeringMessage,
+    });
 
-    for (const candidate of candidates) {
+    if (intent.mode === "clear_task") {
+      const taskCandidates = buildTaskClaimCandidates({
+        room,
+        triggeringMessage,
+      }).slice(0, settings.maxTaskClaimCandidates);
+      const explicitCandidateIds = new Set(
+        taskCandidates
+          .filter((candidate) => candidate.strength === "explicit")
+          .map((candidate) => candidate.roomAgent.agent.openclawAgentId),
+      );
+      const claimCandidates =
+        explicitCandidateIds.size === 1
+          ? taskCandidates.filter((candidate) =>
+              explicitCandidateIds.has(candidate.roomAgent.agent.openclawAgentId),
+            )
+          : taskCandidates;
+      const claims: Array<{
+        candidate: DispatchCandidate;
+        proposal: TeamTaskClaimProposal;
+      }> =
+        explicitCandidateIds.size === 1
+          ? claimCandidates.map((candidate) => ({
+              candidate,
+              proposal: {
+                action: "claim",
+                confidence: "high",
+                reason: "The human explicitly assigned this agent.",
+              } satisfies TeamTaskClaimProposal,
+            }))
+          : await Promise.all(
+              claimCandidates.map(async (candidate) => ({
+                candidate,
+                proposal: await askAgentForTaskClaim({
+                  candidate,
+                  chainId: chain.id,
+                  objective: intent.objective,
+                  recentLog,
+                  room,
+                  triggeringUser: triggeringMessage.user!,
+                }),
+              })),
+            );
+
+      await Promise.all(
+        claims.map(({ candidate, proposal }) =>
+          prisma.teamAgentChainTurn.create({
+            data: {
+              agentId: candidate.roomAgent.agent.openclawAgentId,
+              chainId: chain.id,
+              decision: proposal.action === "claim" ? "task_claim" : "task_decline",
+              newValue: proposal.approach,
+              reason: proposal.reason,
+            },
+          }),
+        ),
+      );
+
+      const selection = await selectTaskOwner({
+        candidates: taskCandidates,
+        chainId: chain.id,
+        claims,
+        explicitCandidateIds,
+        objective: intent.objective,
+        room,
+      });
+      const selectedCandidate = selection.selectedAgentId
+        ? taskCandidates.find(
+            (candidate) =>
+              candidate.roomAgent.agent.openclawAgentId === selection.selectedAgentId,
+          )
+        : null;
+
+      if (selectedCandidate) {
+        const assignment = selection.assignment ?? "execute";
+        const task = await createAssignedTeamTask({
+          assignment,
+          chainId: chain.id,
+          claims,
+          objective: intent.objective,
+          room,
+          selectedCandidate,
+          selectionReason: selection.reason,
+          triggeringMessage,
+        });
+        const created = await runAssignedTeamTask({
+          assignment,
+          candidate: selectedCandidate,
+          chain,
+          objective: intent.objective,
+          recentLog,
+          room,
+          taskId: task.id,
+          triggeringMessage,
+          triggeringUser: triggeringMessage.user,
+        });
+
+        await prisma.teamAgentChain.update({
+          where: {
+            id: chain.id,
+          },
+          data: {
+            status: "STOPPED",
+            stopReason:
+              assignment === "clarify"
+                ? `Clarification assigned to ${selectedCandidate.roomAgent.agent.openclawAgentId}; other agents remained silent.`
+                : `Task ownership assigned to ${selectedCandidate.roomAgent.agent.openclawAgentId}; other agents remained silent.`,
+          },
+        });
+
+        return [created];
+      }
+
+      await prisma.teamAgentChain.update({
+        where: {
+          id: chain.id,
+        },
+        data: {
+          status: "STOPPED",
+          stopReason: selection.reason ?? "No agent claimed the requested work.",
+        },
+      });
+
+      return [];
+    }
+
+    let currentRecentLog = recentLog;
+
+    for (const candidate of conversationCandidates) {
       const created = await runCandidate({
         candidate,
         chain,
         latestMessage: triggeringMessage,
         mode: "human",
-        recentLog,
+        recentLog: currentRecentLog,
         room,
         settings,
         triggeringUser: triggeringMessage.user,
@@ -1275,6 +2423,9 @@ export async function runTeamAgentDispatch({
 
       if (created) {
         createdMessages.push(created);
+        currentRecentLog = formatRecentMessages(
+          await loadRecentMessages(roomId),
+        );
       }
     }
 
