@@ -4,7 +4,10 @@ import {
 } from "@prisma/client";
 import {
   createCalendarEvent,
+  deleteCalendarEventForUser,
   listCalendarMonth,
+  respondToCalendarInvitation,
+  updateCalendarEvent,
   type CalendarEventView,
 } from "@/lib/calendar";
 import { runAgentHandoff } from "@/lib/agent-handoff";
@@ -267,6 +270,100 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: "study_update_calendar_event",
+    description:
+      "Update an existing event visible in the current human participant's CyWorld Calendar. First use study_list_calendar and use the exact eventId it returns; never guess an event from its title alone. Omitted fields are preserved. If invitedUsernames is provided, it replaces the current internal CyWorld invitee list. Time changes send fresh pending invitations to internal invitees.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        description: {
+          type: "string",
+          description:
+            "Optional replacement notes or agenda. Pass an empty string to clear it.",
+        },
+        endAt: {
+          type: "string",
+          description:
+            "Optional replacement end as an ISO 8601 datetime with the correct timezone offset.",
+        },
+        eventId: {
+          type: "string",
+          description:
+            "Exact CyWorld event ID returned by study_list_calendar.",
+        },
+        invitedUsernames: {
+          type: "array",
+          description:
+            "Optional complete replacement list of internal CyWorld invitees. Omit to preserve invitees; pass an empty array to remove all invitees.",
+          items: {
+            type: "string",
+          },
+        },
+        location: {
+          type: "string",
+          description:
+            "Optional replacement location or meeting link. Pass an empty string to clear it.",
+        },
+        startAt: {
+          type: "string",
+          description:
+            "Optional replacement start as an ISO 8601 datetime with the correct timezone offset.",
+        },
+        title: {
+          type: "string",
+          description:
+            "Optional title shown to the current human participant. CyWorld titles can be personalized per participant.",
+        },
+      },
+      required: ["eventId"],
+    },
+  },
+  {
+    name: "study_delete_calendar_event",
+    description:
+      "Remove an existing event from the current human participant's CyWorld Calendar. First use study_list_calendar and use the exact eventId it returns. mode=hide removes only this participant's calendar view without changing RSVP. mode=decline changes this participant's internal CyWorld RSVP to declined and removes their access; for an event they created or were not invited to, CyWorld safely falls back to hiding it.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        eventId: {
+          type: "string",
+          description:
+            "Exact CyWorld event ID returned by study_list_calendar.",
+        },
+        mode: {
+          type: "string",
+          enum: ["hide", "decline"],
+          description:
+            "Use hide to remove only from this calendar, or decline to decline an internal invitation and remove access.",
+        },
+      },
+      required: ["eventId", "mode"],
+    },
+  },
+  {
+    name: "study_update_calendar_rsvp",
+    description:
+      "Accept or decline an internal CyWorld Calendar invitation for the current human participant. First use study_list_calendar and use the exact invitationId returned for the event or pending invitation. This can change an already accepted invitation to declined, or a previously declined invitation back to accepted when its invitation ID is known. CyWorld updates calendar access together with the RSVP.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        invitationId: {
+          type: "string",
+          description:
+            "Exact internal invitation ID returned by study_list_calendar.",
+        },
+        status: {
+          type: "string",
+          enum: ["accepted", "declined"],
+        },
+      },
+      required: ["invitationId", "status"],
     },
   },
   {
@@ -1126,11 +1223,16 @@ function summarizeCalendarEvent(event: CalendarEventView, timeZone: string) {
       dateStyle: "medium",
       timeStyle: "short",
     }),
+    id: event.id,
     invitees: event.invitees.map((invitee) => ({
+      invitationId: invitee.id,
+      invitedUserId: invitee.invitedUserId,
       status: invitee.status,
       username: invitee.username,
     })),
     location: event.location,
+    originalTitle: event.originalTitle,
+    ownerUserId: event.ownerUserId,
     startAt: event.startAt,
     startLocal: formatDateTimeInTimeZone(event.startAt, timeZone, {
       dateStyle: "medium",
@@ -1252,6 +1354,7 @@ async function handleCalendarListTool({
       events: ownerView.events.slice(0, 40).map((event) => summarizeCalendarEvent(event, ownerView.timeZone)),
       pendingInvitations: ownerView.invitations.slice(0, 20).map((invitation) => ({
         event: summarizeCalendarEvent(invitation.event, ownerView.timeZone),
+        invitationId: invitation.id,
         invitedBy: invitation.invitedBy,
         status: invitation.status,
       })),
@@ -1296,6 +1399,7 @@ async function handleCalendarListTool({
     events: view.events.slice(0, 40).map((event) => summarizeCalendarEvent(event, view.timeZone)),
     pendingInvitations: view.invitations.slice(0, 20).map((invitation) => ({
       event: summarizeCalendarEvent(invitation.event, view.timeZone),
+      invitationId: invitation.id,
       invitedBy: invitation.invitedBy,
       status: invitation.status,
     })),
@@ -1422,6 +1526,311 @@ async function handleCalendarCreateTool({
       title: created.title,
     },
     timeZone: requesterTimezone,
+  });
+}
+
+async function requireCurrentHumanCalendarMutation(
+  currentHumanUserId: string | undefined,
+) {
+  if (!currentHumanUserId) {
+    return {
+      error: JSON.stringify({
+        ok: false,
+        reason: "calendar_mutation_requires_current_human",
+        guidance:
+          "Do not modify a person's calendar from an internal agent handoff. Ask the relevant human for approval in their own conversation.",
+      }),
+      user: null,
+    };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: currentHumanUserId,
+    },
+    select: {
+      id: true,
+      teamId: true,
+      timezone: true,
+      username: true,
+    },
+  });
+
+  if (!user) {
+    return {
+      error: JSON.stringify({
+        ok: false,
+        reason: "current_human_not_found",
+      }),
+      user: null,
+    };
+  }
+
+  return {
+    error: null,
+    user,
+  };
+}
+
+async function handleCalendarUpdateTool({
+  args,
+  currentHumanUserId,
+  objective,
+}: {
+  args: Record<string, unknown>;
+  currentHumanUserId?: string;
+  objective?: string;
+}) {
+  const mutationContext =
+    await requireCurrentHumanCalendarMutation(currentHumanUserId);
+
+  if (!mutationContext.user) {
+    return mutationContext.error;
+  }
+
+  const eventId = cleanMessage(args.eventId);
+  const hasTitle = Object.hasOwn(args, "title");
+  const hasDescription = Object.hasOwn(args, "description");
+  const hasLocation = Object.hasOwn(args, "location");
+  const hasStartAt = Object.hasOwn(args, "startAt");
+  const hasEndAt = Object.hasOwn(args, "endAt");
+  const hasInvitees = Object.hasOwn(args, "invitedUsernames");
+
+  if (
+    !eventId ||
+    !(
+      hasTitle ||
+      hasDescription ||
+      hasLocation ||
+      hasStartAt ||
+      hasEndAt ||
+      hasInvitees
+    )
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "eventId_and_at_least_one_update_are_required",
+    });
+  }
+
+  const parsedStartAt = hasStartAt ? parseDate(args.startAt) : undefined;
+  const parsedEndAt = hasEndAt ? parseDate(args.endAt) : undefined;
+
+  if ((hasStartAt && !parsedStartAt) || (hasEndAt && !parsedEndAt)) {
+    return JSON.stringify({
+      ok: false,
+      reason: "invalid_startAt_or_endAt",
+    });
+  }
+
+  const startAt = parsedStartAt ?? undefined;
+  const endAt = parsedEndAt ?? undefined;
+  const requesterTimezone = normalizeTimeZone(mutationContext.user.timezone);
+
+  if (
+    startAt &&
+    objective &&
+    mentionsTodayLikeDate(objective) &&
+    dateKeyInTimeZone(startAt, requesterTimezone) !==
+      dateKeyInTimeZone(new Date(), requesterTimezone)
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "relative_date_does_not_match_today_in_requester_timezone",
+      currentDate: dateKeyInTimeZone(new Date(), requesterTimezone),
+      requestedStartDate: dateKeyInTimeZone(startAt, requesterTimezone),
+      requesterTimezone,
+      guidance:
+        "The user used today-like language. Recalculate the event date from the current human participant's timezone or ask a clarification before updating it.",
+    });
+  }
+
+  const requestedUsernames = hasInvitees
+    ? cleanStringArray(args.invitedUsernames).map((username) =>
+        username.replace(/^@/, "").toLowerCase(),
+      )
+    : undefined;
+  const invitees =
+    requestedUsernames === undefined
+      ? undefined
+      : await prisma.user.findMany({
+          where: {
+            teamId: mutationContext.user.teamId,
+            username: {
+              in:
+                requestedUsernames.length > 0
+                  ? requestedUsernames
+                  : ["__none__"],
+            },
+            status: "ACTIVE",
+          },
+          select: {
+            id: true,
+            username: true,
+          },
+        });
+  let updateError: string | null = null;
+
+  await updateCalendarEvent({
+    description:
+      hasDescription && typeof args.description === "string"
+        ? args.description
+        : undefined,
+    endAt,
+    eventId,
+    invitedUserIds: invitees?.map((invitee) => invitee.id),
+    location:
+      hasLocation && typeof args.location === "string"
+        ? args.location
+        : undefined,
+    startAt,
+    title:
+      hasTitle && typeof args.title === "string" ? args.title : undefined,
+    userId: mutationContext.user.id,
+  }).catch((error: unknown) => {
+    updateError = error instanceof Error ? error.message : "Unknown error";
+  });
+
+  if (updateError) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_event_update_failed",
+      error: updateError,
+    });
+  }
+
+  const unresolvedInvitedUsernames =
+    requestedUsernames?.filter(
+      (username) => !invitees?.some((invitee) => invitee.username === username),
+    ) ?? [];
+
+  return JSON.stringify({
+    ok: true,
+    calendar: "CyWorld Calendar",
+    event: {
+      description:
+        hasDescription && typeof args.description === "string"
+          ? args.description
+          : undefined,
+      endAt: endAt?.toISOString(),
+      eventId,
+      invitedUsernames: invitees?.map((invitee) => invitee.username),
+      location:
+        hasLocation && typeof args.location === "string"
+          ? args.location
+          : undefined,
+      startAt: startAt?.toISOString(),
+      title:
+        hasTitle && typeof args.title === "string" ? args.title : undefined,
+    },
+    preservedOmittedFields: true,
+    timeZone: requesterTimezone,
+    unresolvedInvitedUsernames,
+  });
+}
+
+async function handleCalendarDeleteTool({
+  args,
+  currentHumanUserId,
+}: {
+  args: Record<string, unknown>;
+  currentHumanUserId?: string;
+}) {
+  const mutationContext =
+    await requireCurrentHumanCalendarMutation(currentHumanUserId);
+
+  if (!mutationContext.user) {
+    return mutationContext.error;
+  }
+
+  const eventId = cleanMessage(args.eventId);
+  const requestedMode = cleanMessage(args.mode);
+
+  if (!eventId || !["hide", "decline"].includes(requestedMode)) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_or_invalid_eventId_or_mode",
+    });
+  }
+
+  let deleteError: string | null = null;
+  const result = await deleteCalendarEventForUser({
+    eventId,
+    mode: requestedMode === "decline" ? "DECLINE" : "HIDE",
+    userId: mutationContext.user.id,
+  }).catch((error: unknown) => {
+    deleteError = error instanceof Error ? error.message : "Unknown error";
+    return null;
+  });
+
+  if (!result) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_event_delete_failed",
+      error: deleteError,
+    });
+  }
+
+  return JSON.stringify({
+    ok: true,
+    calendar: "CyWorld Calendar",
+    eventId,
+    requestedMode,
+    result: result.action === "DECLINED" ? "rsvp_declined" : "hidden_for_current_human",
+  });
+}
+
+async function handleCalendarRsvpTool({
+  args,
+  currentHumanUserId,
+}: {
+  args: Record<string, unknown>;
+  currentHumanUserId?: string;
+}) {
+  const mutationContext =
+    await requireCurrentHumanCalendarMutation(currentHumanUserId);
+
+  if (!mutationContext.user) {
+    return mutationContext.error;
+  }
+
+  const invitationId = cleanMessage(args.invitationId);
+  const requestedStatus = cleanMessage(args.status);
+
+  if (
+    !invitationId ||
+    !["accepted", "declined"].includes(requestedStatus)
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_or_invalid_invitationId_or_status",
+    });
+  }
+
+  let rsvpError: string | null = null;
+  const result = await respondToCalendarInvitation({
+    invitationId,
+    status: requestedStatus === "accepted" ? "ACCEPTED" : "DECLINED",
+    userId: mutationContext.user.id,
+  }).catch((error: unknown) => {
+    rsvpError = error instanceof Error ? error.message : "Unknown error";
+    return null;
+  });
+
+  if (!result) {
+    return JSON.stringify({
+      ok: false,
+      reason: "calendar_rsvp_update_failed",
+      error: rsvpError,
+    });
+  }
+
+  return JSON.stringify({
+    ok: true,
+    calendar: "CyWorld Calendar",
+    eventId: result.eventId,
+    invitationId: result.invitationId,
+    status: result.status,
   });
 }
 
@@ -1957,6 +2366,28 @@ async function executeCyWorldAgentToolCall({
       args,
       currentHumanUserId: context.currentHumanUserId ?? undefined,
       objective,
+    });
+  }
+
+  if (call.name === "study_update_calendar_event") {
+    return handleCalendarUpdateTool({
+      args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
+      objective,
+    });
+  }
+
+  if (call.name === "study_delete_calendar_event") {
+    return handleCalendarDeleteTool({
+      args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
+    });
+  }
+
+  if (call.name === "study_update_calendar_rsvp") {
+    return handleCalendarRsvpTool({
+      args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
     });
   }
 

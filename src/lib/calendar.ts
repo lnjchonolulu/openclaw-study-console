@@ -122,16 +122,6 @@ function getUserAccessKeys(user: { agent?: { id: string } | null; id: string }) 
   ]);
 }
 
-async function getUserAndAgentAccessKeys(userId: string) {
-  const user = await getCalendarUser(userId);
-
-  if (!user) {
-    return [];
-  }
-
-  return getUserAccessKeys(user);
-}
-
 function hasAccess(event: { accessConfigJson: unknown }, keys: string[]) {
   const access = parseCalendarAccessConfig(event.accessConfigJson);
 
@@ -500,7 +490,6 @@ export async function updateCalendarEvent(args: {
       });
     }
   });
-
 }
 
 export async function deleteCalendarEventForUser(args: {
@@ -528,7 +517,7 @@ export async function deleteCalendarEventForUser(args: {
   }
 
   if (args.mode === "HIDE") {
-    return prisma.calendarEventHidden.upsert({
+    await prisma.calendarEventHidden.upsert({
       where: {
         eventId_userId: {
           eventId: event.id,
@@ -541,6 +530,11 @@ export async function deleteCalendarEventForUser(args: {
         userId: user.id,
       },
     });
+
+    return {
+      action: "HIDDEN" as const,
+      eventId: event.id,
+    };
   }
 
   const invitation = event.invitations.find(
@@ -551,7 +545,7 @@ export async function deleteCalendarEventForUser(args: {
   );
 
   if (!invitation) {
-    return prisma.calendarEventHidden.upsert({
+    await prisma.calendarEventHidden.upsert({
       where: {
         eventId_userId: {
           eventId: event.id,
@@ -564,6 +558,11 @@ export async function deleteCalendarEventForUser(args: {
         userId: user.id,
       },
     });
+
+    return {
+      action: "HIDDEN" as const,
+      eventId: event.id,
+    };
   }
 
   const currentAccess = parseCalendarAccessConfig(event.accessConfigJson);
@@ -572,7 +571,7 @@ export async function deleteCalendarEventForUser(args: {
     (key) => !declinedKeys.includes(key),
   );
 
-  return prisma.$transaction([
+  await prisma.$transaction([
     prisma.calendarEvent.update({
       where: {
         id: event.id,
@@ -605,6 +604,12 @@ export async function deleteCalendarEventForUser(args: {
       },
     }),
   ]);
+
+  return {
+    action: "DECLINED" as const,
+    eventId: event.id,
+    invitationId: invitation.id,
+  };
 }
 
 export async function respondToCalendarInvitation(args: {
@@ -616,7 +621,9 @@ export async function respondToCalendarInvitation(args: {
     where: {
       id: args.invitationId,
       invitedUserId: args.userId,
-      status: "PENDING",
+      status: {
+        not: "CANCELED",
+      },
     },
     include: {
       event: true,
@@ -627,28 +634,72 @@ export async function respondToCalendarInvitation(args: {
     throw new Error("Invitation not found.");
   }
 
-  if (args.status === "DECLINED") {
-    return prisma.calendarInvitation.update({
-      where: {
-        id: invitation.id,
-      },
-      data: {
-        status: "DECLINED",
-      },
-    });
+  const user = await getCalendarUser(args.userId);
+
+  if (!user) {
+    throw new Error("User not found.");
   }
 
   const currentAccess = parseCalendarAccessConfig(invitation.event.accessConfigJson);
-  const acceptedKeys = await getUserAndAgentAccessKeys(args.userId);
+  const userAccessKeys = getUserAccessKeys(user);
 
-  const result = await prisma.$transaction([
+  if (args.status === "DECLINED") {
+    const nextAccessKeys = currentAccess.participantKeys.filter(
+      (key) => !userAccessKeys.includes(key),
+    );
+
+    await prisma.$transaction([
+      prisma.calendarEvent.update({
+        where: {
+          id: invitation.eventId,
+        },
+        data: {
+          accessConfigJson: {
+            participantKeys: uniq(nextAccessKeys),
+          },
+        },
+      }),
+      prisma.calendarInvitation.update({
+        where: {
+          id: invitation.id,
+        },
+        data: {
+          status: "DECLINED",
+        },
+      }),
+      prisma.calendarEventHidden.upsert({
+        where: {
+          eventId_userId: {
+            eventId: invitation.eventId,
+            userId: args.userId,
+          },
+        },
+        update: {},
+        create: {
+          eventId: invitation.eventId,
+          userId: args.userId,
+        },
+      }),
+    ]);
+
+    return {
+      eventId: invitation.eventId,
+      invitationId: invitation.id,
+      status: "DECLINED" as const,
+    };
+  }
+
+  await prisma.$transaction([
     prisma.calendarEvent.update({
       where: {
         id: invitation.eventId,
       },
       data: {
         accessConfigJson: {
-          participantKeys: uniq([...currentAccess.participantKeys, ...acceptedKeys]),
+          participantKeys: uniq([
+            ...currentAccess.participantKeys,
+            ...userAccessKeys,
+          ]),
         },
       },
     }),
@@ -660,7 +711,17 @@ export async function respondToCalendarInvitation(args: {
         status: "ACCEPTED",
       },
     }),
+    prisma.calendarEventHidden.deleteMany({
+      where: {
+        eventId: invitation.eventId,
+        userId: args.userId,
+      },
+    }),
   ]);
 
-  return result;
+  return {
+    eventId: invitation.eventId,
+    invitationId: invitation.id,
+    status: "ACCEPTED" as const,
+  };
 }

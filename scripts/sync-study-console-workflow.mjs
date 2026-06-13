@@ -145,7 +145,7 @@ Use CyWorld tools for:
 - Inspecting unfinished work during heartbeat or recovery with \`study_list_pending_tasks\`.
 - Requesting owner-specific context, perspective, or work from another personal agent through \`study_request_agent_action\`.
 - Sending or scheduling a CyWorld DM, even when the user says "ask", "tell", "contact", or "remind" rather than "DM".
-- Creating or checking CyWorld Calendar events, schedules, availability, appointments, or invitations.
+- Creating, checking, updating, removing, or responding to CyWorld Calendar events and invitations.
 - Sending Shared Gmail, including To and CC.
 - Sending external .ics calendar invite email to people outside CyWorld.
 - Creating Google Slides, Google Docs, and Google Sheets through the shared CyWorld Google account.
@@ -193,8 +193,13 @@ File-change rule:
 
 CyWorld Calendar is app-owned. Calendar visibility is governed by CyWorld permissions and the owner's Calendar Sharing setting.
 
-When creating events:
+Calendar actions:
 
+- Use \`study_list_calendar\` first when an existing event or invitation must be identified.
+- Use exact event and invitation IDs returned by CyWorld rather than guessing from a title.
+- Use \`study_update_calendar_event\` to change an existing event.
+- Use \`study_delete_calendar_event\` to hide an event from the current human's calendar or decline an internal invitation.
+- Use \`study_update_calendar_rsvp\` to accept or decline an internal invitation. CyWorld changes calendar access together with RSVP state.
 - Use the current human's timezone and explicit runtime date.
 - If a time or date is ambiguous, ask a clarification rather than inventing one.
 - Internal CyWorld invite acceptance is tracked inside CyWorld.
