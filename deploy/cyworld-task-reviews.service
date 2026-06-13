@@ -7,5 +7,5 @@ Type=oneshot
 WorkingDirectory=/opt/openclaw-study
 Environment=NODE_ENV=production
 EnvironmentFile=/opt/openclaw-study/.env
-ExecStart=/bin/sh -lc 'curl -fsS -X POST -H "Authorization: Bearer $INTERNAL_AGENT_ACTION_TOKEN" http://127.0.0.1:3000/api/internal/agent-actions/review-due'
+ExecStart=/bin/sh -lc 'curl -fsS --retry 12 --retry-all-errors --retry-delay 5 --max-time 120 -X POST -H "Authorization: Bearer $INTERNAL_AGENT_ACTION_TOKEN" http://127.0.0.1:3000/api/internal/agent-actions/review-due'
 User=root
