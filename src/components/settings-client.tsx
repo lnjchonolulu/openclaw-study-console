@@ -518,11 +518,8 @@ export function SettingsClient({
   );
   const [conversationMemorySharingPolicy, setConversationMemorySharingPolicy] =
     useState(initialConversationMemorySharingPolicy);
-  const [relationshipGuidanceMode, setRelationshipGuidanceMode] =
-    useState<RelationshipGuidanceMode>(initialRelationshipGuidanceMode);
-  const [relationshipGuidance, setRelationshipGuidance] = useState(
-    initialRelationshipGuidance,
-  );
+  const relationshipGuidanceMode = initialRelationshipGuidanceMode;
+  const relationshipGuidance = initialRelationshipGuidance;
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(initialHeartbeatEnabled);
   const [userProfile, setUserProfile] = useState(initialUserProfile);
   const [agentProfile, setAgentProfile] = useState(initialAgentProfile);
@@ -973,104 +970,6 @@ export function SettingsClient({
               </div>
             </section>
 
-            <section className="settings-section-block">
-              <div className="settings-section-header">
-                <span className="context-label">Relationships</span>
-                <p>
-                  Use one general approach for everyone, or tell your agent how
-                  you want it to relate to particular people.
-                </p>
-              </div>
-              <div className="settings-field-span-2 settings-select-control">
-                <span className="settings-select-wrap">
-                  <select
-                    className="settings-select"
-                    onChange={(event) => {
-                      setRelationshipGuidanceMode(
-                        event.target.value as RelationshipGuidanceMode,
-                      );
-                    }}
-                    value={relationshipGuidanceMode}
-                  >
-                    <option value="general">One approach for everyone</option>
-                    <option value="person_specific">
-                      Different guidance by person
-                    </option>
-                  </select>
-                  <span className="settings-select-icon">⌄</span>
-                </span>
-              </div>
-
-              {relationshipGuidanceMode === "person_specific" ? (
-                <div className="settings-relationship-list">
-                  {relationshipGuidance.map((relationship, index) => (
-                    <article
-                      className="settings-relationship-card"
-                      key={relationship.targetUserId}
-                    >
-                      <div className="settings-relationship-person">
-                        <ProfileAvatar
-                          avatar={{
-                            kind: "user",
-                            config: relationship.profile,
-                          }}
-                          className="settings-relationship-avatar"
-                        />
-                        <div>
-                          <strong>{relationship.displayName}</strong>
-                          <span>@{relationship.username}</span>
-                        </div>
-                      </div>
-                      <label className="split-label">
-                        Relationship
-                        <span className="settings-input-wrap">
-                          <input
-                            className="settings-input"
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setRelationshipGuidance((current) =>
-                                current.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? {
-                                        ...item,
-                                        relationshipLabel: value,
-                                      }
-                                    : item,
-                                ),
-                              );
-                            }}
-                            placeholder="e.g. senior colleague, close friend"
-                            type="text"
-                            value={relationship.relationshipLabel}
-                          />
-                        </span>
-                      </label>
-                      <label className="split-label">
-                        How should your agent interact with this person?
-                        <textarea
-                          className="settings-textarea-field settings-relationship-textarea"
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setRelationshipGuidance((current) =>
-                              current.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? {
-                                      ...item,
-                                      interactionGuidance: value,
-                                    }
-                                  : item,
-                              ),
-                            );
-                          }}
-                          placeholder="Describe the tone, distance, candor, or social stance you want. This does not change permissions."
-                          value={relationship.interactionGuidance}
-                        />
-                      </label>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </section>
           </div>
         </article>
       </div>
