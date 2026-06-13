@@ -12,6 +12,11 @@ import {
 } from "@/lib/calendar";
 import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
+import {
+  markTaskWaitingForReview,
+  nextTaskReviewAt,
+  normalizeReviewMinutes,
+} from "@/lib/agent-task-review-schedule";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { updateOwnerRelationshipGuidance } from "@/lib/agent-relationships";
 import {
@@ -159,6 +164,32 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
+    name: "study_manage_current_task",
+    description:
+      "Update the lifecycle of the current CyWorld task after reviewing its durable history. Use wait when external input or a later re-check is still needed, and provide reviewAfterMinutes. Use complete only when the objective is actually finished or no further action is useful. This tool only operates on the active task supplied by CyWorld.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: {
+          type: "string",
+          enum: ["wait", "complete"],
+        },
+        reviewAfterMinutes: {
+          type: "number",
+          description:
+            "Required for wait. Choose when this agent should wake and reconsider the task if no new input arrives.",
+        },
+        summary: {
+          type: "string",
+          description:
+            "A concise durable note explaining the current task state and next expected step.",
+        },
+      },
+      required: ["action", "summary"],
+    },
+  },
+  {
     name: "study_request_agent_action",
     description:
       "Ask another CyWorld personal agent to contribute owner-specific context, perspective, or work to the current task. This creates a traceable Agent Handoff and returns that agent's response in this turn. If a necessary follow-up remains, call it again with the returned handoffTaskId as continueTaskId so the same agents can continue the exchange. Stop when the result is sufficient; do not continue for agreement, repetition, or social filler. Use it only when another agent is genuinely relevant; do not use it to contact a human participant or for work this agent can complete itself.",
@@ -201,6 +232,11 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
           type: "boolean",
           description:
             "Set true when this message asks the recipient for information and the agent should wait for a reply.",
+        },
+        reviewAfterMinutes: {
+          type: "number",
+          description:
+            "When expectReply is true, choose how many minutes to wait before this agent automatically re-checks the task if no reply arrives. Omit for the configurable CyWorld default.",
         },
         toUsername: {
           type: "string",
@@ -388,6 +424,11 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
           type: "boolean",
           description:
             "Set true when this scheduled message asks the recipient for information and the agent should wait for a reply.",
+        },
+        reviewAfterMinutes: {
+          type: "number",
+          description:
+            "When a reply is expected, choose how many minutes after delivery to wait before this agent automatically re-checks the task. Omit for the configurable CyWorld default.",
         },
         toUsername: {
           type: "string",
@@ -802,6 +843,7 @@ function shouldRecordToolReceipt(toolName: string) {
   return ![
     "study_list_email_threads",
     "study_list_pending_tasks",
+    "study_manage_current_task",
     "study_recall_conversation",
   ].includes(toolName);
 }
@@ -2521,6 +2563,106 @@ async function executeCyWorldAgentToolCall({
     );
   }
 
+  if (call.name === "study_manage_current_task") {
+    if (!taskId) {
+      return JSON.stringify({
+        ok: false,
+        reason: "no_active_task",
+      });
+    }
+
+    const task = await prisma.agentTask.findFirst({
+      where: {
+        id: taskId,
+        agentId: senderAgentOpenclawId,
+        status: {
+          in: ["OPEN", "RUNNING", "WAITING"],
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!task) {
+      return JSON.stringify({
+        ok: false,
+        reason: "active_task_not_found",
+      });
+    }
+
+    const action = args.action === "complete" ? "complete" : "wait";
+    const summary = cleanMessage(args.summary);
+
+    if (!summary) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_summary",
+      });
+    }
+
+    if (action === "complete") {
+      await prisma.$transaction([
+        prisma.agentTask.update({
+          where: {
+            id: task.id,
+          },
+          data: {
+            lastReviewedAt: new Date(),
+            nextReviewAt: null,
+            resultSummary: summary,
+            reviewLeaseUntil: null,
+            status: "COMPLETED",
+          },
+        }),
+        prisma.agentTaskEvent.create({
+          data: {
+            taskId: task.id,
+            type: "AGENT_DECISION",
+            summary,
+            payload: {
+              action,
+            },
+          },
+        }),
+      ]);
+
+      return JSON.stringify({
+        action,
+        ok: true,
+        taskId: task.id,
+      });
+    }
+
+    const reviewAfterMinutes = normalizeReviewMinutes(args.reviewAfterMinutes);
+    const nextReviewAt = await markTaskWaitingForReview({
+      afterMinutes: reviewAfterMinutes,
+      resultSummary: summary,
+      taskId: task.id,
+    });
+
+    await prisma.agentTaskEvent.create({
+      data: {
+        taskId: task.id,
+        type: "AGENT_DECISION",
+        summary,
+        payload: {
+          action,
+          nextReviewAt: nextReviewAt.toISOString(),
+          reviewAfterMinutes,
+        },
+      },
+    });
+
+    return JSON.stringify({
+      action,
+      nextReviewAt: nextReviewAt.toISOString(),
+      ok: true,
+      reviewAfterMinutes,
+      taskId: task.id,
+    });
+  }
+
   if (call.name === "study_recall_conversation") {
     return JSON.stringify(
       await recallConversationHistory({
@@ -3042,6 +3184,7 @@ async function executeCyWorldAgentToolCall({
     recipientResolution.status === "accepted" ? recipientResolution.toUsername : "";
   const message = cleanMessage(args.message);
   const expectReply = args.expectReply === true;
+  const reviewAfterMinutes = normalizeReviewMinutes(args.reviewAfterMinutes);
 
   if (!requestedToUsername || !toUsername || !message) {
     if (recipientResolution.status === "conflict") {
@@ -3096,12 +3239,20 @@ async function executeCyWorldAgentToolCall({
     });
 
     if (createdTask) {
+      const nextReview =
+        result.ok && expectReply
+          ? nextTaskReviewAt({
+              afterMinutes: reviewAfterMinutes,
+            })
+          : null;
+
       await prisma.agentTask.update({
         where: {
           id: createdTask.id,
         },
         data: {
           resultSummary: message,
+          nextReviewAt: nextReview,
           status: result.ok ? (expectReply ? "WAITING" : "COMPLETED") : "FAILED",
         },
       });
@@ -3136,12 +3287,19 @@ async function executeCyWorldAgentToolCall({
     });
 
     if (createdTask) {
+      const deliverAt = new Date(Date.now() + delayMinutes * 60 * 1000);
       await prisma.agentTask.update({
         where: {
           id: createdTask.id,
         },
         data: {
           resultSummary: message,
+          nextReviewAt: result.ok
+            ? nextTaskReviewAt({
+                afterMinutes: reviewAfterMinutes,
+                from: deliverAt,
+              })
+            : null,
           status: result.ok ? "WAITING" : "FAILED",
         },
       });

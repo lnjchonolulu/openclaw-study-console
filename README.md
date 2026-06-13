@@ -88,8 +88,9 @@ Use the Hetzner host as a persistent staging environment:
 4. `npx prisma db push`
 5. `npm run build`
 6. `sudo cp deploy/openclaw-study.service /etc/systemd/system/openclaw-study.service`
-7. `sudo systemctl daemon-reload`
-8. `sudo systemctl enable --now openclaw-study`
+7. `sudo cp deploy/cyworld-task-reviews.service deploy/cyworld-task-reviews.timer /etc/systemd/system/`
+8. `sudo systemctl daemon-reload`
+9. `sudo systemctl enable --now openclaw-study cyworld-task-reviews.timer`
 
 The service runs `next start` on port `3000`. For quick staging, you can open:
 
@@ -108,9 +109,19 @@ Enable the endpoint in your Gateway config and expose:
 APP_BASE_URL="http://SERVER_IP:3000"
 OPENCLAW_RESPONSES_URL="http://127.0.0.1:18789/v1/responses"
 OPENCLAW_GATEWAY_TOKEN="..."
+INTERNAL_AGENT_ACTION_TOKEN="..."
+
+# Optional task-continuation tuning
+CYWORLD_TASK_REVIEW_DEFAULT_MINUTES="180"
+CYWORLD_TASK_REVIEW_LEASE_MINUTES="15"
+CYWORLD_OPENCLAW_TOOL_ROUND_CHECKPOINT="10"
+CYWORLD_OPENCLAW_EMERGENCY_TOOL_ROUND_LIMIT="100"
 ```
 
 This keeps local web development fast while still using the real Hetzner-hosted agent state.
+Waiting tasks are reconsidered by `cyworld-task-reviews.timer`. Ten tool rounds are a
+durable checkpoint, not a normal stopping point; the emergency limit is only a final
+runaway-process fuse.
 
 ## Shared Google integration
 

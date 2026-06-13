@@ -1,0 +1,11 @@
+[Unit]
+Description=Review waiting CyWorld agent tasks every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=20s
+Unit=cyworld-task-reviews.service
+
+[Install]
+WantedBy=timers.target

@@ -9,6 +9,7 @@ const STALE_RUNNING_MS = 15 * 60 * 1000;
 type PendingTaskAttention =
   | "recover_stalled_execution"
   | "review_new_input"
+  | "scheduled_review_due"
   | "start_or_review"
   | "waiting_for_external_input";
 
@@ -30,12 +31,14 @@ function resolveAttention({
   latestEventType,
   latestInboundAt,
   latestOutboundAt,
+  nextReviewAt,
   status,
   updatedAt,
 }: {
   latestEventType?: AgentTaskEventType;
   latestInboundAt: Date | null;
   latestOutboundAt: Date | null;
+  nextReviewAt: Date | null;
   status: AgentTaskStatus;
   updatedAt: Date;
 }): PendingTaskAttention {
@@ -55,6 +58,10 @@ function resolveAttention({
 
   if (status === AgentTaskStatus.OPEN) {
     return "start_or_review";
+  }
+
+  if (nextReviewAt && nextReviewAt.getTime() <= Date.now()) {
+    return "scheduled_review_due";
   }
 
   return "waiting_for_external_input";
@@ -190,6 +197,7 @@ export async function listPendingAgentTasks({
       latestEventType: task.events[0]?.type,
       latestInboundAt,
       latestOutboundAt,
+      nextReviewAt: task.nextReviewAt,
       status: task.status,
       updatedAt: task.updatedAt,
     });
@@ -207,6 +215,8 @@ export async function listPendingAgentTasks({
       id: task.id,
       kind: task.kind,
       objective: compact(task.objective),
+      nextReviewAt: task.nextReviewAt?.toISOString() ?? null,
+      reviewCount: task.reviewCount,
       requester: {
         displayName: task.requester.displayName,
         username: task.requester.username,
@@ -260,6 +270,8 @@ export async function listPendingAgentTasks({
         "Inspect the task history and continue only the unfinished step. Do not repeat a side effect that already has a successful receipt.",
       review_new_input:
         "Review the new reply or event and decide the next useful action or report.",
+      scheduled_review_due:
+        "The task's review time has arrived. Re-check its receipts and state, then continue, defer with a new review time, or complete it.",
       start_or_review:
         "Review whether this task still needs action. Act only when the objective and authority are clear.",
       waiting_for_external_input:

@@ -64,6 +64,11 @@ export type OpenClawFunctionCall = {
   name: string;
 };
 
+function readPositiveInteger(name: string, fallback: number) {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function getResponsesEndpoint() {
   const configuredUrl = process.env.OPENCLAW_RESPONSES_URL?.trim();
 
@@ -221,6 +226,7 @@ export async function runAgentTurn({
   conversationKey,
   tools,
   onToolCall,
+  onToolRoundCheckpoint,
 }: {
   agentId: string;
   instructions?: string;
@@ -228,7 +234,21 @@ export async function runAgentTurn({
   conversationKey: string;
   tools?: OpenClawFunctionTool[];
   onToolCall?: (call: OpenClawFunctionCall) => Promise<string>;
+  onToolRoundCheckpoint?: (input: {
+    pendingCalls: OpenClawFunctionCall[];
+    responseId?: string;
+    toolRounds: number;
+  }) => Promise<void>;
 }) {
+  const checkpointInterval = readPositiveInteger(
+    "CYWORLD_OPENCLAW_TOOL_ROUND_CHECKPOINT",
+    10,
+  );
+  const emergencyRoundLimit = Math.max(
+    checkpointInterval,
+    readPositiveInteger("CYWORLD_OPENCLAW_EMERGENCY_TOOL_ROUND_LIMIT", 100),
+  );
+  let toolRounds = 0;
   let payload = await invokeOpenClawResponse({
     agentId,
     input: message,
@@ -238,7 +258,7 @@ export async function runAgentTurn({
   });
 
   if (tools?.length && onToolCall) {
-    for (let iteration = 0; iteration < 3; iteration += 1) {
+    while (toolRounds < emergencyRoundLimit) {
       const functionCalls = extractFunctionCalls(payload);
 
       if (functionCalls.length === 0) {
@@ -261,6 +281,37 @@ export async function runAgentTurn({
         tools,
         conversationKey,
       });
+      toolRounds += 1;
+
+      const pendingCalls = extractFunctionCalls(payload);
+
+      if (
+        pendingCalls.length > 0 &&
+        toolRounds % checkpointInterval === 0
+      ) {
+        const checkpoint = {
+          pendingCalls,
+          responseId: typeof payload.id === "string" ? payload.id : undefined,
+          toolRounds,
+        };
+
+        if (onToolRoundCheckpoint) {
+          await onToolRoundCheckpoint(checkpoint);
+        } else {
+          console.info("[openclaw] continuing after tool-round checkpoint", {
+            agentId,
+            conversationKey,
+            pendingToolNames: pendingCalls.map((call) => call.name),
+            toolRounds,
+          });
+        }
+      }
+    }
+
+    if (extractFunctionCalls(payload).length > 0) {
+      throw new Error(
+        `OpenClaw exceeded the emergency tool execution limit (${emergencyRoundLimit} rounds).`,
+      );
     }
   }
 
@@ -283,5 +334,6 @@ export async function runAgentTurn({
   return {
     assistantText,
     payload,
+    toolRounds,
   };
 }

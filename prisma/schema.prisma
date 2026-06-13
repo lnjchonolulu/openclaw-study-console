@@ -289,6 +289,10 @@ model AgentTask {
   title             String
   objective         String
   resultSummary     String?
+  nextReviewAt      DateTime?
+  reviewLeaseUntil  DateTime?
+  lastReviewedAt    DateTime?
+  reviewCount       Int                @default(0)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   agent             Agent              @relation("AgentTaskOwner", fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
@@ -309,6 +313,7 @@ model AgentTask {
   @@index([parentTaskId])
   @@index([requesterUserId, status])
   @@index([targetUserId, status])
+  @@index([status, nextReviewAt])
 }
 
 model AgentToolExecution {
