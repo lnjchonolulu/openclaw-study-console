@@ -1329,18 +1329,19 @@ button.primary-button {
   white-space: nowrap;
 }
 
-.calendar-modal-backdrop {
+.team-modal-backdrop.calendar-modal-backdrop {
   align-items: center;
   overflow-y: auto;
-  padding: 24px 18px;
+  padding: 36px 18px;
 }
 
-.calendar-modal {
+.team-modal.calendar-modal {
   display: flex;
   flex-direction: column;
   width: min(720px, calc(100vw - 36px));
-  max-height: calc(100dvh - 48px);
+  max-height: calc(100dvh - 72px);
   padding: 0;
+  gap: 0;
   overflow: hidden;
 }
 
