@@ -1593,3 +1593,156 @@ export async function getDownloadableFile(userId: string, fileId: string) {
     mimeType: record.mimeType || "application/octet-stream",
   };
 }
+
+export async function getAgentEmailAttachments({
+  agentOpenclawId,
+  drivePaths,
+}: {
+  agentOpenclawId: string;
+  drivePaths: string[];
+}) {
+  const agent = await prisma.agent.findUnique({
+    where: {
+      openclawAgentId: agentOpenclawId,
+    },
+    include: {
+      user: {
+        select: {
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!agent) {
+    return {
+      attachments: [],
+      ok: false as const,
+      reason: "agent_not_found",
+    };
+  }
+
+  const normalizedPaths = [...new Set(
+    drivePaths
+      .map((value) => `/${value.trim().replace(/^\/+/, "").replace(/\/+$/, "")}`)
+      .filter((value) => value !== "/"),
+  )];
+
+  if (normalizedPaths.length === 0) {
+    return {
+      attachments: [],
+      ok: true as const,
+    };
+  }
+
+  const records = await prisma.fileRecord.findMany({
+    where: {
+      OR: [{ teamId: agent.user.teamId }, { teamId: null }],
+    },
+    select: {
+      accessConfigJson: true,
+      createdAt: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
+      filename: true,
+      id: true,
+      isFolder: true,
+      mimeType: true,
+      owner: {
+        select: {
+          displayName: true,
+        },
+      },
+      ownerUserId: true,
+      parentId: true,
+      sizeBytes: true,
+      sourceType: true,
+      storageKey: true,
+      systemKey: true,
+      teamId: true,
+      updatedAt: true,
+    },
+  });
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  const recordsByPath = new Map(
+    records.map((record) => [buildStudyFilePath(record, recordsById), record]),
+  );
+  const participantKey = `agent:${agent.id}`;
+  const root = await ensureStorageRoot();
+  const attachments: Array<{
+    content: Buffer;
+    contentType: string;
+    filename: string;
+    path: string;
+  }> = [];
+
+  for (const drivePath of normalizedPaths) {
+    const record = recordsByPath.get(drivePath);
+
+    if (!record) {
+      return {
+        attachments: [],
+        failedPath: drivePath,
+        ok: false as const,
+        reason: "drive_file_not_found",
+      };
+    }
+
+    if (record.isFolder) {
+      return {
+        attachments: [],
+        failedPath: drivePath,
+        ok: false as const,
+        reason: "drive_folder_cannot_be_attached",
+      };
+    }
+
+    if (!canAccessRecordWithKey(record, participantKey, recordsById)) {
+      return {
+        attachments: [],
+        failedPath: drivePath,
+        ok: false as const,
+        reason: "drive_file_access_denied",
+      };
+    }
+
+    if (record.externalProvider) {
+      return {
+        attachments: [],
+        externalUrl: record.externalUrl,
+        failedPath: drivePath,
+        ok: false as const,
+        reason: "external_drive_file_cannot_be_attached_as_binary",
+      };
+    }
+
+    const content = await readFile(path.join(root, record.storageKey));
+    attachments.push({
+      content,
+      contentType: record.mimeType || "application/octet-stream",
+      filename: record.filename,
+      path: drivePath,
+    });
+  }
+
+  const totalBytes = attachments.reduce(
+    (total, attachment) => total + attachment.content.byteLength,
+    0,
+  );
+
+  if (totalBytes > 18 * 1024 * 1024) {
+    return {
+      attachments: [],
+      ok: false as const,
+      reason: "attachments_too_large",
+      totalBytes,
+    };
+  }
+
+  return {
+    attachments,
+    ok: true as const,
+    totalBytes,
+  };
+}

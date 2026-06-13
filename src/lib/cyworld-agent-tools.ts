@@ -26,6 +26,7 @@ import {
   inspectSharedGoogleSlides,
   extractGoogleWorkspaceFileId,
   requestGoogleFileReview,
+  replySharedGmail,
   sendSharedGmail,
   updateGoogleFileReview,
   updateSharedGoogleDocs,
@@ -35,6 +36,7 @@ import {
 import {
   authorizeGoogleWorkspaceFileForAgent,
   createGoogleWorkspaceEntryForAgent,
+  getAgentEmailAttachments,
 } from "@/lib/files";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
@@ -396,13 +398,42 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
-    name: "study_send_email",
+    name: "study_list_email_threads",
     description:
-      "Send email through Shared Gmail, the one Gmail account shared by CyWorld agents. Use only when a user explicitly asks or approves sending mail, including ordinary wording such as 'email them', 'send this to that address', or 'CC'. It is not this agent's personal address.",
+      "List Shared Gmail threads that belong to this personal agent. Use this to find the exact CyWorld emailThreadId before replying to an earlier email conversation. This never exposes unrelated messages from the shared inbox.",
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
+        limit: {
+          type: "number",
+          description: "Optional maximum number of threads to return, from 1 to 20.",
+        },
+        query: {
+          type: "string",
+          description:
+            "Optional text to search in this agent's tracked email subject, To, or CC fields.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "study_send_email",
+    description:
+      "Send a new email through Shared Gmail, the one Gmail account shared by CyWorld agents. Use only when a user explicitly asks or approves sending mail, including ordinary wording such as 'email them', 'send this to that address', or 'CC'. It is not this agent's personal address. Optional attachments must be exact accessible CyWorld Drive file paths.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        attachmentPaths: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description:
+            "Optional exact CyWorld Drive file paths to attach, such as /Personals/hyungjun/report.pdf. CyWorld validates this agent's access before reading them.",
+        },
         body: {
           type: "string",
           description: "The email body to send.",
@@ -422,6 +453,40 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["to", "subject", "body"],
+    },
+  },
+  {
+    name: "study_reply_email_thread",
+    description:
+      "Reply in an existing Shared Gmail thread that belongs to this personal agent. First obtain the exact emailThreadId from study_list_email_threads, the current routed email-reply context, or a pending task. CyWorld derives the real recipients and Gmail threading headers from the tracked thread; do not invent a recipient. Optional attachments must be exact accessible CyWorld Drive file paths.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        attachmentPaths: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+          description:
+            "Optional exact CyWorld Drive file paths to attach. CyWorld validates this agent's access before reading them.",
+        },
+        body: {
+          type: "string",
+          description: "The reply body.",
+        },
+        emailThreadId: {
+          type: "string",
+          description:
+            "The exact internal CyWorld email thread ID returned by study_list_email_threads or supplied in routed email context.",
+        },
+        replyAll: {
+          type: "boolean",
+          description:
+            "Set true only when the user asks to include the other To and CC participants from the tracked thread.",
+        },
+      },
+      required: ["emailThreadId", "body"],
     },
   },
   {
@@ -735,6 +800,7 @@ function toolReceiptEventType(toolName: string, ok: boolean) {
 
 function shouldRecordToolReceipt(toolName: string) {
   return ![
+    "study_list_email_threads",
     "study_list_pending_tasks",
     "study_recall_conversation",
   ].includes(toolName);
@@ -842,7 +908,11 @@ async function recordToolCallReceipt({
   if (
     receipt?.taskId &&
     result &&
-    (call.name === "study_send_email" || call.name === "study_send_calendar_invite_email") &&
+    (
+      call.name === "study_send_email" ||
+      call.name === "study_reply_email_thread" ||
+      call.name === "study_send_calendar_invite_email"
+    ) &&
     typeof result.threadId === "string"
   ) {
     await prisma.emailThread.updateMany({
@@ -1053,8 +1123,114 @@ function cleanEmailListString(value: unknown) {
   return Array.from(new Set(value.split(",").map(cleanEmail).filter(Boolean))).join(", ");
 }
 
+function cleanDrivePaths(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 10);
+}
+
+async function loadEmailAttachments(
+  agentOpenclawId: string,
+  value: unknown,
+) {
+  const drivePaths = cleanDrivePaths(value);
+  const result = await getAgentEmailAttachments({
+    agentOpenclawId,
+    drivePaths,
+  });
+
+  if (!result.ok) {
+    return result;
+  }
+
+  return {
+    attachedPaths: result.attachments.map((attachment) => attachment.path),
+    attachments: result.attachments.map((attachment) => ({
+      content: attachment.content,
+      contentType: attachment.contentType,
+      filename: attachment.filename,
+    })),
+    ok: true as const,
+    totalBytes: result.totalBytes,
+  };
+}
+
+async function listAgentEmailThreads({
+  agentOpenclawId,
+  limit,
+  query,
+}: {
+  agentOpenclawId: string;
+  limit?: number;
+  query?: string;
+}) {
+  const normalizedLimit = Math.max(1, Math.min(20, Math.floor(limit ?? 10)));
+  const cleanedQuery = query?.trim() ?? "";
+  const threads = await prisma.emailThread.findMany({
+    where: {
+      agentId: agentOpenclawId,
+      status: "OPEN",
+      ...(cleanedQuery
+        ? {
+            OR: [
+              { cc: { contains: cleanedQuery, mode: "insensitive" } },
+              { subject: { contains: cleanedQuery, mode: "insensitive" } },
+              { to: { contains: cleanedQuery, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: normalizedLimit,
+    include: {
+      messages: {
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 4,
+        select: {
+          body: true,
+          cc: true,
+          createdAt: true,
+          direction: true,
+          from: true,
+          subject: true,
+          to: true,
+        },
+      },
+    },
+  });
+
+  return {
+    ok: true,
+    threads: threads.map((thread) => ({
+      cc: thread.cc,
+      emailThreadId: thread.id,
+      latestMessages: thread.messages.reverse(),
+      status: thread.status,
+      subject: thread.subject,
+      taskId: thread.taskId,
+      to: thread.to,
+      updatedAt: thread.updatedAt.toISOString(),
+    })),
+  };
+}
+
 async function registerOutboundEmailThread({
   agentId,
+  attachmentPaths = [],
+  body,
   cc,
   gmailMessageId,
   gmailThreadId,
@@ -1065,6 +1241,8 @@ async function registerOutboundEmailThread({
   to,
 }: {
   agentId: string;
+  attachmentPaths?: string[];
+  body?: string;
   cc?: string | null;
   gmailMessageId?: string | null;
   gmailThreadId?: string | null;
@@ -1078,7 +1256,7 @@ async function registerOutboundEmailThread({
     return null;
   }
 
-  return prisma.emailThread.upsert({
+  const thread = await prisma.emailThread.upsert({
     where: {
       gmailThreadId,
     },
@@ -1102,6 +1280,41 @@ async function registerOutboundEmailThread({
       to,
     },
   });
+
+  if (gmailMessageId) {
+    await prisma.emailMessage.upsert({
+      where: {
+        gmailMessageId,
+      },
+      update: {
+        body: body ?? undefined,
+        cc: cc || null,
+        direction: "OUTBOUND",
+        emailThreadId: thread.id,
+        payloadJson: {
+          attachmentPaths,
+          gmailThreadId,
+        },
+        subject,
+        to,
+      },
+      create: {
+        body: body ?? null,
+        cc: cc || null,
+        direction: "OUTBOUND",
+        emailThreadId: thread.id,
+        gmailMessageId,
+        payloadJson: {
+          attachmentPaths,
+          gmailThreadId,
+        },
+        subject,
+        to,
+      },
+    });
+  }
+
+  return thread;
 }
 
 function cleanMonth(value: unknown) {
@@ -1995,6 +2208,8 @@ async function handleExternalCalendarInviteTool({
 
   await registerOutboundEmailThread({
     agentId: senderAgentOpenclawId,
+    attachmentPaths: [safeIcsFilename(title)],
+    body,
     cc: ccEmails.join(", ") || null,
     gmailMessageId: result.messageId,
     gmailThreadId: result.threadId,
@@ -2279,6 +2494,19 @@ async function executeCyWorldAgentToolCall({
     });
   };
 
+  if (call.name === "study_list_email_threads") {
+    return JSON.stringify(
+      await listAgentEmailThreads({
+        agentOpenclawId: senderAgentOpenclawId,
+        limit:
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? args.limit
+            : undefined,
+        query: cleanMessage(args.query) || undefined,
+      }),
+    );
+  }
+
   if (call.name === "study_list_pending_tasks") {
     const limit =
       typeof args.limit === "number" && Number.isFinite(args.limit)
@@ -2415,7 +2643,17 @@ async function executeCyWorldAgentToolCall({
       });
     }
 
+    const attachmentResult = await loadEmailAttachments(
+      senderAgentOpenclawId,
+      args.attachmentPaths,
+    );
+
+    if (!attachmentResult.ok) {
+      return JSON.stringify(attachmentResult);
+    }
+
     const result = await sendSharedGmail({
+      attachments: attachmentResult.attachments,
       body,
       cc: cc || null,
       subject,
@@ -2425,6 +2663,8 @@ async function executeCyWorldAgentToolCall({
     if (result.ok) {
       await registerOutboundEmailThread({
         agentId: senderAgentOpenclawId,
+        attachmentPaths: attachmentResult.attachedPaths,
+        body,
         cc: cc || null,
         gmailMessageId: result.messageId,
         gmailThreadId: result.threadId,
@@ -2438,9 +2678,119 @@ async function executeCyWorldAgentToolCall({
 
     return JSON.stringify({
       ...result,
+      attachedPaths: attachmentResult.attachedPaths,
       ccRecipients: cc ? cc.split(", ") : [],
       senderPolicy:
         "Email is sent through the shared CyWorld Gmail account, not a personal agent address.",
+    });
+  }
+
+  if (call.name === "study_reply_email_thread") {
+    const emailThreadId = cleanMessage(args.emailThreadId);
+    const body = cleanMessage(args.body);
+
+    if (!emailThreadId || !body) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_email_thread_id_or_body",
+      });
+    }
+
+    const thread = await prisma.emailThread.findFirst({
+      where: {
+        agentId: senderAgentOpenclawId,
+        id: emailThreadId,
+        status: "OPEN",
+      },
+    });
+
+    if (!thread) {
+      return JSON.stringify({
+        ok: false,
+        reason: "email_thread_not_found_or_not_owned_by_agent",
+      });
+    }
+
+    if (!thread.lastGmailMessageId) {
+      return JSON.stringify({
+        ok: false,
+        reason: "email_thread_has_no_message_to_reply_to",
+      });
+    }
+
+    const attachmentResult = await loadEmailAttachments(
+      senderAgentOpenclawId,
+      args.attachmentPaths,
+    );
+
+    if (!attachmentResult.ok) {
+      return JSON.stringify(attachmentResult);
+    }
+
+    const result = await replySharedGmail({
+      attachments: attachmentResult.attachments,
+      body,
+      fallbackCc: thread.cc,
+      fallbackSubject: thread.subject,
+      fallbackTo: thread.to,
+      gmailThreadId: thread.gmailThreadId,
+      lastGmailMessageId: thread.lastGmailMessageId,
+      replyAll: args.replyAll === true,
+    });
+
+    if (result.ok && result.messageId) {
+      await prisma.emailThread.update({
+        where: {
+          id: thread.id,
+        },
+        data: {
+          cc: result.cc || null,
+          lastGmailMessageId: result.messageId,
+          subject: result.subject,
+          to: result.to,
+        },
+      });
+      await prisma.emailMessage.upsert({
+        where: {
+          gmailMessageId: result.messageId,
+        },
+        update: {
+          body,
+          cc: result.cc || null,
+          direction: "OUTBOUND",
+          emailThreadId: thread.id,
+          payloadJson: {
+            attachmentPaths: attachmentResult.attachedPaths,
+            gmailThreadId: thread.gmailThreadId,
+            replyAll: args.replyAll === true,
+          },
+          subject: result.subject,
+          to: result.to,
+        },
+        create: {
+          body,
+          cc: result.cc || null,
+          direction: "OUTBOUND",
+          emailThreadId: thread.id,
+          gmailMessageId: result.messageId,
+          payloadJson: {
+            attachmentPaths: attachmentResult.attachedPaths,
+            gmailThreadId: thread.gmailThreadId,
+            replyAll: args.replyAll === true,
+          },
+          subject: result.subject,
+          to: result.to,
+        },
+      });
+    }
+
+    return JSON.stringify({
+      ...result,
+      attachedPaths: attachmentResult.attachedPaths,
+      emailThreadId: thread.id,
+      taskId: thread.taskId,
+      senderPolicy:
+        "This reply is sent through the shared CyWorld Gmail account in the agent's tracked thread.",
     });
   }
 

@@ -42,7 +42,10 @@ export type GmailMessageView = {
   date: Date | null;
   from: string | null;
   id: string;
+  messageIdHeader: string | null;
   internalDate: Date | null;
+  references: string | null;
+  replyTo: string | null;
   snippet: string;
   subject: string | null;
   threadId: string;
@@ -2344,7 +2347,7 @@ function parseInternalDate(value: string | undefined) {
   return Number.isFinite(timestamp) ? new Date(timestamp) : null;
 }
 
-function base64UrlEncode(value: string) {
+function base64UrlEncode(value: string | Buffer) {
   return Buffer.from(value)
     .toString("base64")
     .replace(/\+/g, "-")
@@ -2364,12 +2367,16 @@ function buildPlainTextMessage({
   body,
   cc,
   from,
+  inReplyTo,
+  references,
   subject,
   to,
 }: {
   body: string;
   cc?: string | null;
   from: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
   subject: string;
   to: string;
 }) {
@@ -2377,6 +2384,8 @@ function buildPlainTextMessage({
     `To: ${sanitizeHeader(to)}`,
     cc ? `Cc: ${sanitizeHeader(cc)}` : null,
     from ? `From: ${sanitizeHeader(from)}` : null,
+    inReplyTo ? `In-Reply-To: ${sanitizeHeader(inReplyTo)}` : null,
+    references ? `References: ${sanitizeHeader(references)}` : null,
     `Subject: ${sanitizeHeader(subject)}`,
     "Content-Type: text/plain; charset=utf-8",
     "",
@@ -2391,17 +2400,21 @@ function buildMultipartMessage({
   body,
   cc,
   from,
+  inReplyTo,
+  references,
   subject,
   to,
 }: {
   attachments: {
-    content: string;
+    content: string | Buffer;
     contentType: string;
     filename: string;
   }[];
   body: string;
   cc?: string | null;
   from: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
   subject: string;
   to: string;
 }) {
@@ -2411,6 +2424,8 @@ function buildMultipartMessage({
       `To: ${sanitizeHeader(to)}`,
       cc ? `Cc: ${sanitizeHeader(cc)}` : null,
       from ? `From: ${sanitizeHeader(from)}` : null,
+      inReplyTo ? `In-Reply-To: ${sanitizeHeader(inReplyTo)}` : null,
+      references ? `References: ${sanitizeHeader(references)}` : null,
       `Subject: ${sanitizeHeader(subject)}`,
       "MIME-Version: 1.0",
       `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -2429,7 +2444,7 @@ function buildMultipartMessage({
         `Content-Disposition: attachment; filename="${sanitizeHeader(attachment.filename)}"`,
         "Content-Transfer-Encoding: base64",
         "",
-        wrapBase64(Buffer.from(attachment.content, "utf8").toString("base64")),
+        wrapBase64(Buffer.from(attachment.content).toString("base64")),
       ].join("\r\n"),
     ),
     `--${boundary}--`,
@@ -2442,17 +2457,23 @@ export async function sendSharedGmail({
   attachments = [],
   body,
   cc,
+  inReplyTo,
+  references,
   subject,
+  threadId,
   to,
 }: {
   attachments?: {
-    content: string;
+    content: string | Buffer;
     contentType: string;
     filename: string;
   }[];
   body: string;
   cc?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
   subject: string;
+  threadId?: string | null;
   to: string;
 }) {
   const access = await getGoogleAccess();
@@ -2471,6 +2492,8 @@ export async function sendSharedGmail({
           body,
           cc,
           from: access.accountEmail,
+          inReplyTo,
+          references,
           subject,
           to,
         })
@@ -2478,6 +2501,8 @@ export async function sendSharedGmail({
           body,
           cc,
           from: access.accountEmail,
+          inReplyTo,
+          references,
           subject,
           to,
         });
@@ -2486,6 +2511,7 @@ export async function sendSharedGmail({
     {
       body: JSON.stringify({
         raw: base64UrlEncode(message),
+        ...(threadId ? { threadId } : {}),
       }),
       headers: {
         Authorization: `Bearer ${access.accessToken}`,
@@ -2500,6 +2526,169 @@ export async function sendSharedGmail({
     messageId: result.id ?? null,
     threadId: (result as { threadId?: string }).threadId ?? null,
     ok: true,
+  };
+}
+
+function extractEmailAddresses(value: string | null) {
+  if (!value) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .split(",")
+      .map((part) => {
+        const bracketed = part.match(/<([^<>]+)>/)?.[1];
+        const candidate = (bracketed ?? part).trim().toLowerCase();
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : "";
+      })
+      .filter(Boolean),
+  )];
+}
+
+async function getSharedGmailMessageHeaders(messageId: string) {
+  const access = await getGoogleAccess();
+
+  if (!access) {
+    return {
+      ok: false as const,
+      reason: "google_not_connected",
+    };
+  }
+
+  const url = new URL(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`,
+  );
+  url.searchParams.set("format", "metadata");
+  for (const header of [
+    "Cc",
+    "From",
+    "Message-ID",
+    "References",
+    "Reply-To",
+    "Subject",
+    "To",
+  ]) {
+    url.searchParams.append("metadataHeaders", header);
+  }
+
+  const detail = await googleJson<{
+    payload?: {
+      headers?: Array<{ name?: string; value?: string }>;
+    };
+    threadId?: string;
+  }>(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${access.accessToken}`,
+    },
+    method: "GET",
+  });
+  const headers = detail.payload?.headers;
+
+  return {
+    accountEmail: access.accountEmail,
+    cc: getHeader(headers, "Cc"),
+    from: getHeader(headers, "From"),
+    messageIdHeader: getHeader(headers, "Message-ID"),
+    ok: true as const,
+    references: getHeader(headers, "References"),
+    replyTo: getHeader(headers, "Reply-To"),
+    subject: getHeader(headers, "Subject"),
+    threadId: detail.threadId ?? null,
+    to: getHeader(headers, "To"),
+  };
+}
+
+export async function replySharedGmail({
+  attachments = [],
+  body,
+  fallbackCc,
+  fallbackSubject,
+  fallbackTo,
+  gmailThreadId,
+  lastGmailMessageId,
+  replyAll = false,
+}: {
+  attachments?: {
+    content: string | Buffer;
+    contentType: string;
+    filename: string;
+  }[];
+  body: string;
+  fallbackCc?: string | null;
+  fallbackSubject: string;
+  fallbackTo: string;
+  gmailThreadId: string;
+  lastGmailMessageId: string;
+  replyAll?: boolean;
+}) {
+  const latest = await getSharedGmailMessageHeaders(lastGmailMessageId);
+
+  if (!latest.ok) {
+    return latest;
+  }
+
+  const accountEmail = latest.accountEmail?.toLowerCase() ?? null;
+  const fromAddresses = extractEmailAddresses(latest.replyTo || latest.from);
+  const originalTo = extractEmailAddresses(latest.to);
+  const originalCc = extractEmailAddresses(latest.cc);
+  const fallbackToAddresses = extractEmailAddresses(fallbackTo);
+  const latestWasSentByCyWorld =
+    Boolean(accountEmail) && fromAddresses.includes(accountEmail as string);
+  const primaryRecipients = latestWasSentByCyWorld
+    ? originalTo
+    : fromAddresses;
+  const toRecipients = primaryRecipients.filter((email) => email !== accountEmail);
+
+  if (toRecipients.length === 0) {
+    toRecipients.push(
+      ...fallbackToAddresses.filter((email) => email !== accountEmail),
+    );
+  }
+
+  if (toRecipients.length === 0) {
+    return {
+      ok: false as const,
+      reason: "reply_recipient_not_found",
+    };
+  }
+
+  const ccRecipients = replyAll
+    ? [...new Set(
+        [
+          ...originalTo,
+          ...originalCc,
+          ...extractEmailAddresses(fallbackCc ?? null),
+        ].filter(
+          (email) => email !== accountEmail && !toRecipients.includes(email),
+        ),
+      )]
+    : [];
+  const inReplyTo = latest.messageIdHeader;
+  const references = [
+    latest.references,
+    inReplyTo,
+  ]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(" ");
+  const latestSubject = latest.subject?.trim();
+  const subject = latestSubject || fallbackSubject;
+  const result = await sendSharedGmail({
+    attachments,
+    body,
+    cc: ccRecipients.join(", ") || null,
+    inReplyTo,
+    references: references || null,
+    subject,
+    threadId: gmailThreadId,
+    to: toRecipients.join(", "),
+  });
+
+  return {
+    ...result,
+    cc: ccRecipients.join(", ") || null,
+    subject,
+    to: toRecipients.join(", "),
   };
 }
 
@@ -2567,6 +2756,9 @@ export async function listSharedGmailInboxMessages({
           from: getHeader(headers, "From"),
           id: detail.id ?? message.id,
           internalDate: parseInternalDate(detail.internalDate),
+          messageIdHeader: getHeader(headers, "Message-ID"),
+          references: getHeader(headers, "References"),
+          replyTo: getHeader(headers, "Reply-To"),
           snippet: detail.snippet ?? "",
           subject: getHeader(headers, "Subject"),
           threadId: detail.threadId ?? message.threadId,

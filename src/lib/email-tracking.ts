@@ -17,9 +17,13 @@ import {
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
-function summarizeEmailForAgent(message: GmailMessageView) {
+function summarizeEmailForAgent(
+  message: GmailMessageView,
+  emailThreadId: string,
+) {
   return [
     "A reply arrived in a shared CyWorld Gmail thread that belongs to you.",
+    `CyWorld email thread ID: ${emailThreadId}`,
     "",
     `From: ${message.from ?? "(unknown)"}`,
     `To: ${message.to ?? "(unknown)"}`,
@@ -29,7 +33,7 @@ function summarizeEmailForAgent(message: GmailMessageView) {
     "Reply body:",
     message.body || message.snippet || "(empty)",
     "",
-    "Decide the appropriate follow-up. You may report to your human, send a CyWorld DM, schedule a CyWorld DM, create/check CyWorld Calendar items, or send another email when appropriate. Do not claim you can see the full shared inbox; CyWorld has routed only this thread reply to you.",
+    "Decide the appropriate follow-up. To answer this email, use study_reply_email_thread with the exact CyWorld email thread ID above. You may also report to your human, send a CyWorld DM, schedule a CyWorld DM, or create/check CyWorld Calendar items when appropriate. Do not claim you can see the full shared inbox; CyWorld has routed only this thread reply to you.",
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
@@ -86,6 +90,9 @@ async function processEmailReply(message: GmailMessageView) {
       from: message.from,
       gmailMessageId: message.id,
       payloadJson: {
+        messageIdHeader: message.messageIdHeader,
+        references: message.references,
+        replyTo: message.replyTo,
         snippet: message.snippet,
         threadId: message.threadId,
       },
@@ -176,7 +183,7 @@ async function processEmailReply(message: GmailMessageView) {
     instructions: [instructions, actionReceiptContext]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n"),
-    message: summarizeEmailForAgent(message),
+    message: summarizeEmailForAgent(message, thread.id),
     tools: CYWORLD_AGENT_TOOLS,
     onToolCall: (call) =>
       handleCyWorldAgentToolCall({

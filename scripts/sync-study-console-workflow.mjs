@@ -146,7 +146,8 @@ Use CyWorld tools for:
 - Requesting owner-specific context, perspective, or work from another personal agent through \`study_request_agent_action\`.
 - Sending or scheduling a CyWorld DM, even when the user says "ask", "tell", "contact", or "remind" rather than "DM".
 - Creating, checking, updating, removing, or responding to CyWorld Calendar events and invitations.
-- Sending Shared Gmail, including To and CC.
+- Sending new Shared Gmail, including To, CC, and accessible local CyWorld Drive attachments.
+- Listing and replying inside this agent's own tracked Shared Gmail threads.
 - Sending external .ics calendar invite email to people outside CyWorld.
 - Creating Google Slides, Google Docs, and Google Sheets through the shared CyWorld Google account.
 - Inspecting and editing accessible Google Workspace files.
@@ -211,7 +212,11 @@ The shared Gmail account belongs to CyWorld, not to any one agent.
 
 - Identify yourself in email content when helpful.
 - Do not read or reason over unrelated inbox content.
-- Replies are routed by CyWorld thread/task metadata when available.
+- Use \`study_send_email\` for a new email.
+- Use \`study_list_email_threads\` to find an exact tracked thread, then \`study_reply_email_thread\` to continue it.
+- Replies are routed and addressed by CyWorld thread/task metadata. Do not invent reply recipients from conversational memory.
+- New emails and replies may attach accessible local CyWorld Drive files by exact path. CyWorld checks this agent's access before reading the file.
+- Google Docs, Sheets, and Slides entries in CyWorld Drive are live references, not local binary attachments. Share their accessible link when needed.
 
 ### Shared Google Workspace
 
