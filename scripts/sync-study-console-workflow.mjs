@@ -972,7 +972,9 @@ async function syncAgent(user) {
 async function main() {
   const users = await prisma.user.findMany({
     where: {
-      status: targetAgentId ? { in: ["ACTIVE", "INVITED"] } : "ACTIVE",
+      status: {
+        in: ["ACTIVE", "INVITED"],
+      },
       agent: {
         isNot: null,
       },
@@ -995,7 +997,7 @@ async function main() {
   });
 
   if (targetAgentId && users.length === 0) {
-    throw new Error(`No active CyWorld agent found for ${targetAgentId}.`);
+    throw new Error(`No provisioned CyWorld agent found for ${targetAgentId}.`);
   }
 
   if (
