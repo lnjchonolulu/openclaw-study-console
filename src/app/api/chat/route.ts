@@ -24,10 +24,13 @@ type TrackedToolCall = {
   resultText: string;
 };
 
-const GOOGLE_DOCS_WRITE_TOOLS = new Set([
-  "study_update_google_docs",
-  "study_write_google_docs_text",
-]);
+type GoogleWorkspaceFileType = "docs" | "sheets" | "slides";
+
+const GOOGLE_WORKSPACE_WRITE_TOOLS: Record<GoogleWorkspaceFileType, Set<string>> = {
+  docs: new Set(["study_update_google_docs", "study_write_google_docs_text"]),
+  sheets: new Set(["study_update_google_sheets"]),
+  slides: new Set(["study_update_google_slides"]),
+};
 
 function parseToolResultOk(resultText: string) {
   try {
@@ -39,54 +42,133 @@ function parseToolResultOk(resultText: string) {
   }
 }
 
-function hasSuccessfulGoogleDocsWrite(toolCalls: TrackedToolCall[]) {
+function hasSuccessfulGoogleWorkspaceWrite(
+  toolCalls: TrackedToolCall[],
+  fileTypes: Set<GoogleWorkspaceFileType>,
+) {
   return toolCalls.some(
-    (call) => GOOGLE_DOCS_WRITE_TOOLS.has(call.name) && call.ok,
+    (call) =>
+      Array.from(fileTypes).some((fileType) =>
+        GOOGLE_WORKSPACE_WRITE_TOOLS[fileType].has(call.name),
+      ) && call.ok,
   );
 }
 
-function messageLooksLikeGoogleDocsWriteRequest(message: string, hasVisibleGoogleDocs: boolean) {
+function inferGoogleWorkspaceWriteRequestTypes({
+  filesContext,
+  message,
+}: {
+  filesContext: string;
+  message: string;
+}) {
   const text = message.toLowerCase();
-  const mentionsGoogleDoc =
+  const fileTypes = new Set<GoogleWorkspaceFileType>();
+  const hasVisibleGoogleFile =
+    filesContext.includes("Google Workspace file") && filesContext.includes("Google URL:");
+  const mentionsGoogleDocs =
     /\bgoogle\s+(doc|docs|document)\b/.test(text) ||
     /\bdoc(ument)?\b/.test(text);
+  const mentionsGoogleSheets =
+    /\bgoogle\s+(sheet|sheets|spreadsheet)\b/.test(text) ||
+    /\bspreadsheet\b/.test(text) ||
+    /\bsheet\b/.test(text);
+  const mentionsGoogleSlides =
+    /\bgoogle\s+(slide|slides|presentation)\b/.test(text) ||
+    /\bpresentation\b/.test(text) ||
+    /\bslide deck\b/.test(text);
+  const asksToCreateWithContent =
+    /\b(create|make|build)\b/.test(text) &&
+    /\b(about|content|draft|fill|include|write|with)\b/.test(text);
   const asksForWrite =
     /\b(add|append|draft|edit|fill|insert|put|replace|update|write)\b/.test(text) ||
-    /\b(empty|blank|content|still empty|try again)\b/.test(text);
+    /\b(empty|blank|content|still empty|try again)\b/.test(text) ||
+    asksToCreateWithContent;
   const followUpToRecentDoc =
-    hasVisibleGoogleDocs &&
-    /\b(that|this|the)\s+(file|doc|document)\b/.test(text);
-  const emptyFollowUp = hasVisibleGoogleDocs && /\b(empty|blank|fill it|try again)\b/.test(text);
+    hasVisibleGoogleFile &&
+    /\b(that|this|the)\s+(file|doc|document|sheet|spreadsheet|slide|presentation)\b/.test(text);
+  const emptyFollowUp = hasVisibleGoogleFile && /\b(empty|blank|fill it|try again)\b/.test(text);
 
-  return (mentionsGoogleDoc && asksForWrite) || followUpToRecentDoc || emptyFollowUp;
+  if (!asksForWrite && !followUpToRecentDoc && !emptyFollowUp) {
+    return fileTypes;
+  }
+
+  if (mentionsGoogleDocs) {
+    fileTypes.add("docs");
+  }
+
+  if (mentionsGoogleSheets) {
+    fileTypes.add("sheets");
+  }
+
+  if (mentionsGoogleSlides) {
+    fileTypes.add("slides");
+  }
+
+  if (followUpToRecentDoc || emptyFollowUp) {
+    if (filesContext.includes("application/vnd.google-apps.document")) {
+      fileTypes.add("docs");
+    }
+
+    if (filesContext.includes("application/vnd.google-apps.spreadsheet")) {
+      fileTypes.add("sheets");
+    }
+
+    if (filesContext.includes("application/vnd.google-apps.presentation")) {
+      fileTypes.add("slides");
+    }
+
+    if (/docs\.google\.com\/document\/d\//.test(filesContext)) {
+      fileTypes.add("docs");
+    }
+
+    if (/docs\.google\.com\/spreadsheets\/d\//.test(filesContext)) {
+      fileTypes.add("sheets");
+    }
+
+    if (/docs\.google\.com\/presentation\/d\//.test(filesContext)) {
+      fileTypes.add("slides");
+    }
+  }
+
+  return fileTypes;
 }
 
-function assistantClaimsGoogleDocsWriteSuccess(text: string) {
+function assistantClaimsGoogleWorkspaceWriteSuccess(text: string) {
   const lower = text.toLowerCase();
   const claimsSuccess =
     /\b(done|filled|updated|written|successfully|complete|created)\b/.test(lower);
-  const mentionsDoc = /\bgoogle\s+(doc|docs|document)\b/.test(lower) || /\bdocument\b/.test(lower);
+  const mentionsGoogleWorkspaceFile =
+    /\bgoogle\s+(doc|docs|document|sheet|sheets|spreadsheet|slide|slides|presentation)\b/.test(
+      lower,
+    ) ||
+    /\b(document|spreadsheet|presentation|slide deck)\b/.test(lower);
 
-  return claimsSuccess && mentionsDoc;
+  return claimsSuccess && mentionsGoogleWorkspaceFile;
 }
 
-function buildGoogleDocsWriteVerificationPrompt({
+function buildGoogleWorkspaceWriteVerificationPrompt({
   assistantText,
+  fileTypes,
   message,
 }: {
   assistantText: string;
+  fileTypes: Set<GoogleWorkspaceFileType>;
   message: string;
 }) {
+  const expectedTools = Array.from(fileTypes)
+    .flatMap((fileType) => Array.from(GOOGLE_WORKSPACE_WRITE_TOOLS[fileType]))
+    .join(", ");
+
   return [
-    "CyWorld verification detected a missing Google Docs write receipt.",
+    "CyWorld verification detected a missing Google Workspace write receipt.",
     "",
-    "The user's latest request appears to require filling, writing, or updating a Google Docs document.",
-    "Your previous response did not produce a successful study_write_google_docs_text or study_update_google_docs tool receipt.",
+    "The user's latest request appears to require adding, filling, writing, or updating a Google Docs, Sheets, or Slides file.",
+    `Your previous response did not produce a successful receipt from the expected tool(s): ${expectedTools}.`,
     "",
     "Continue the same user request now:",
-    "- If the target Google Doc is identifiable from the conversation or the visible Google Docs context, call study_write_google_docs_text or study_update_google_docs.",
+    "- If the target Google file is identifiable from the conversation or visible CyWorld Drive context, call the matching Google Workspace update/write tool.",
     "- If the target document is not identifiable, ask one short clarification for the document link or target.",
-    "- Do not claim the document was filled, written, or updated unless the Google Docs write/update tool returns ok:true.",
+    "- Do not claim the Google file was filled, written, or updated unless the matching Google Workspace write/update tool returns ok:true.",
     "",
     `Original user request: ${message}`,
     "",
@@ -347,17 +429,21 @@ export async function POST(request: Request) {
         },
       });
 
-    const needsGoogleDocsWrite = messageLooksLikeGoogleDocsWriteRequest(
+    const googleWorkspaceWriteTypes = inferGoogleWorkspaceWriteRequestTypes({
       message,
-      filesContext.includes("Google file") && filesContext.includes("Google URL:"),
-    );
+      filesContext,
+    });
     let result = await runTurnWithTrackedTools(message);
     let assistantText = result.assistantText;
 
-    if (needsGoogleDocsWrite && !hasSuccessfulGoogleDocsWrite(toolCalls)) {
+    if (
+      googleWorkspaceWriteTypes.size > 0 &&
+      !hasSuccessfulGoogleWorkspaceWrite(toolCalls, googleWorkspaceWriteTypes)
+    ) {
       result = await runTurnWithTrackedTools(
-        buildGoogleDocsWriteVerificationPrompt({
+        buildGoogleWorkspaceWriteVerificationPrompt({
           assistantText,
+          fileTypes: googleWorkspaceWriteTypes,
           message,
         }),
       );
@@ -365,12 +451,12 @@ export async function POST(request: Request) {
     }
 
     if (
-      needsGoogleDocsWrite &&
-      !hasSuccessfulGoogleDocsWrite(toolCalls) &&
-      assistantClaimsGoogleDocsWriteSuccess(assistantText)
+      googleWorkspaceWriteTypes.size > 0 &&
+      !hasSuccessfulGoogleWorkspaceWrite(toolCalls, googleWorkspaceWriteTypes) &&
+      assistantClaimsGoogleWorkspaceWriteSuccess(assistantText)
     ) {
       throw new Error(
-        "Google Docs write was not verified. Please ask again with the document link or target document name.",
+        "Google Workspace write was not verified. Please ask again with the file link or target file name.",
       );
     }
 
