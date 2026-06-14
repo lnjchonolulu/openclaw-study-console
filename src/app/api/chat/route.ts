@@ -301,6 +301,14 @@ export async function POST(request: Request) {
     const errorMessage =
       error instanceof Error ? error.message : "Failed to contact OpenClaw.";
 
+    console.error("[chat] OpenClaw agent turn failed", {
+      agentId: targetAgentId,
+      error,
+      messageId: createdUserMessage.id,
+      roomId: dmRoom.room.id,
+      userId: user.id,
+    });
+
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

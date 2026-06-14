@@ -1116,7 +1116,7 @@ export async function createGoogleWorkspaceEntryForAgent({
         })
       )?.id ?? null;
 
-  return createGoogleWorkspaceEntry({
+  const entry = await createGoogleWorkspaceEntry({
     createdByParticipantKey: participantKey,
     createdByUserId: agent.user.id,
     fileType,
@@ -1124,6 +1124,13 @@ export async function createGoogleWorkspaceEntryForAgent({
     sourceType: "AGENT_CREATED_GOOGLE_FILE",
     title,
   });
+
+  return {
+    entry,
+    nextStep:
+      "The file is blank. If the user asked for content, inspect or update the Google file with the matching Google Docs, Sheets, or Slides tool before reporting completion.",
+    ok: true as const,
+  };
 }
 
 export async function authorizeGoogleWorkspaceFileForAgent({

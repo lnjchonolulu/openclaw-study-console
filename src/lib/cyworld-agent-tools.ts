@@ -937,6 +937,11 @@ function toolReceiptSummary(toolName: string, result: Record<string, unknown> | 
       return `CyWorld tool ${toolName} succeeded${typeof title === "string" ? ` for "${title}"` : ""}.`;
     }
 
+    if (result.entry && typeof result.entry === "object" && !Array.isArray(result.entry)) {
+      const filename = (result.entry as { filename?: unknown }).filename;
+      return `CyWorld tool ${toolName} succeeded${typeof filename === "string" ? ` for "${filename}"` : ""}.`;
+    }
+
     return `CyWorld tool ${toolName} succeeded.`;
   }
 
