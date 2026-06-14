@@ -596,7 +596,7 @@ model VideoCall {
   name                String
   dailyRoomName       String                 @unique
   dailyRoomUrl        String
-  dailyTranscriptId   String?                @unique
+  dailyTranscriptId   String?
   createdByUserId     String?
   status              VideoCallStatus        @default(ACTIVE)
   startedAt           DateTime               @default(now())
