@@ -140,6 +140,41 @@ async function dailyCreateRoom(name: string) {
   };
 }
 
+async function dailyStartRoomTranscription(roomName: string) {
+  const apiKey = process.env.DAILY_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new Error("Daily API key is not configured.");
+  }
+
+  const response = await fetch(
+    `https://api.daily.co/v1/rooms/${encodeURIComponent(roomName)}/transcription/start`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+
+  const payload = (await response.json().catch(() => null)) as {
+    error?: string;
+    info?: string;
+  } | null;
+  const message =
+    payload?.info ??
+    payload?.error ??
+    `Daily transcription could not be started (${response.status}).`;
+
+  if (!response.ok && !/already|started|running/i.test(message)) {
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
 export async function listVideoCallState(userId: string) {
   const [activeCalls, history] = await Promise.all([
     prisma.videoCall.findMany({
@@ -322,6 +357,59 @@ export async function joinVideoCall(callId: string, userId: string) {
       leftAt: null,
     },
   });
+}
+
+export async function startVideoCallTranscription(callId: string, userId: string) {
+  const call = await prisma.videoCall.findFirst({
+    where: {
+      id: callId,
+      status: "ACTIVE",
+      participants: {
+        some: {
+          status: "JOINED",
+          userId,
+        },
+      },
+    },
+    select: {
+      dailyRoomName: true,
+      transcriptStatus: true,
+      transcriptText: true,
+    },
+  });
+
+  if (!call) {
+    return {
+      ok: false,
+      reason: "call_not_joined_or_inactive",
+    };
+  }
+
+  if (call.transcriptText?.trim()) {
+    return {
+      ok: true,
+      reason: "transcript_already_ready",
+    };
+  }
+
+  await dailyStartRoomTranscription(call.dailyRoomName);
+
+  await prisma.videoCall.update({
+    where: {
+      id: callId,
+    },
+    data: {
+      transcriptStatus:
+        call.transcriptStatus === "READY" || call.transcriptStatus === "EMPTY"
+          ? call.transcriptStatus
+          : "STARTED",
+    },
+  });
+
+  return {
+    ok: true,
+    reason: "transcription_started",
+  };
 }
 
 export async function leaveVideoCall(callId: string, userId: string) {

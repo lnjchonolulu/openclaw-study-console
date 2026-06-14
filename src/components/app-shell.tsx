@@ -311,6 +311,36 @@ export function AppShell({
     };
   }, []);
 
+  useEffect(() => {
+    if (!activeVideoCall?.id) {
+      return;
+    }
+
+    let isCancelled = false;
+    const retryDelaysMs = [3000, 10000, 20000];
+    const timers = retryDelaysMs.map((delayMs) =>
+      window.setTimeout(() => {
+        if (isCancelled) {
+          return;
+        }
+
+        void fetch(
+          `/api/video-calls/${encodeURIComponent(activeVideoCall.id)}/transcription/start`,
+          {
+            method: "POST",
+          },
+        ).catch(() => {
+          // Starting transcripts is best-effort and should not interrupt a call.
+        });
+      }, delayMs),
+    );
+
+    return () => {
+      isCancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [activeVideoCall?.id]);
+
   function getDmHref(target: DmItem) {
     const paramName = target.kind === "agent" ? "agent" : "user";
 
