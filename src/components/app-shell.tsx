@@ -8,7 +8,20 @@ import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
 import type { TeamChannelDetail, TeamChannelSummary, TeamParticipant } from "@/lib/team";
 
-type IconName = "calendar" | "dm" | "files" | "setting" | "sign-out" | "team";
+type IconName =
+  | "calendar"
+  | "dm"
+  | "files"
+  | "setting"
+  | "sign-out"
+  | "team"
+  | "video-call";
+
+type ActiveVideoCall = {
+  dailyRoomUrl: string;
+  id: string;
+  name: string;
+};
 
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -21,6 +34,12 @@ function NavIcon({ name }: { name: IconName }) {
         <path d="M15.5 10.75a2.5 2.5 0 1 0 0-5" />
         <path d="M4.75 19.25v-1.1c0-2.4 2-4.35 4.5-4.35s4.5 1.95 4.5 4.35v1.1" />
         <path d="M14.75 14.15c2.25.25 3.75 1.95 3.75 4v1.1" />
+      </>
+    ),
+    "video-call": (
+      <>
+        <rect height="9.5" rx="2" width="11.5" x="4.25" y="7.25" />
+        <path d="m15.75 10 4-2.5v9l-4-2.5" />
       </>
     ),
     files: (
@@ -118,6 +137,7 @@ export function AppShell({
   const [channelMenuId, setChannelMenuId] = useState<string | null>(null);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [teamModalMode, setTeamModalMode] = useState<"create" | "members" | "rename">("create");
+  const [activeVideoCall, setActiveVideoCall] = useState<ActiveVideoCall | null>(null);
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
@@ -265,6 +285,32 @@ export function AppShell({
     };
   }, [pathname]);
 
+  useEffect(() => {
+    const rawCall = window.localStorage.getItem("cyworld-active-video-call");
+
+    if (rawCall) {
+      try {
+        setActiveVideoCall(JSON.parse(rawCall) as ActiveVideoCall);
+      } catch {
+        window.localStorage.removeItem("cyworld-active-video-call");
+      }
+    }
+
+    function handleActiveVideoCall(event: Event) {
+      const detail = (event as CustomEvent<ActiveVideoCall>).detail;
+
+      if (detail?.id && detail.dailyRoomUrl) {
+        setActiveVideoCall(detail);
+      }
+    }
+
+    window.addEventListener("cyworld-video-call-active", handleActiveVideoCall);
+
+    return () => {
+      window.removeEventListener("cyworld-video-call-active", handleActiveVideoCall);
+    };
+  }, []);
+
   function getDmHref(target: DmItem) {
     const paramName = target.kind === "agent" ? "agent" : "user";
 
@@ -405,6 +451,20 @@ export function AppShell({
       router.push(`/team?channel=${encodeURIComponent(generalChannelId)}`);
     }
 
+    router.refresh();
+  }
+
+  async function leaveActiveVideoCall() {
+    const callId = activeVideoCall?.id;
+
+    if (callId) {
+      await fetch(`/api/video-calls/${encodeURIComponent(callId)}/leave`, {
+        method: "POST",
+      }).catch(() => null);
+    }
+
+    window.localStorage.removeItem("cyworld-active-video-call");
+    setActiveVideoCall(null);
     router.refresh();
   }
 
@@ -776,6 +836,33 @@ export function AppShell({
       ) : null}
 
       <main className="app-content">{children}</main>
+
+      {activeVideoCall ? (
+        <section
+          className={`video-call-dock${
+            pathname === "/video-call" ? " video-call-dock-large" : " video-call-dock-floating"
+          }`}
+        >
+          <div className="video-call-dock-header">
+            <span>{activeVideoCall.name}</span>
+            <button
+              className="video-call-dock-leave"
+              onClick={() => {
+                void leaveActiveVideoCall();
+              }}
+              type="button"
+            >
+              Leave
+            </button>
+          </div>
+          <iframe
+            allow="camera; microphone; fullscreen; speaker; display-capture"
+            className="video-call-frame"
+            src={activeVideoCall.dailyRoomUrl}
+            title={activeVideoCall.name}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

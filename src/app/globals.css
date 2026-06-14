@@ -2345,6 +2345,227 @@ button.primary-button {
   gap: 10px;
 }
 
+.video-call-page {
+  height: calc(100vh - 56px);
+  min-height: 560px;
+}
+
+.video-call-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 18px;
+  height: 100%;
+}
+
+.video-call-main,
+.video-call-history {
+  border: 1px solid var(--surface-border);
+  border-radius: 28px;
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+}
+
+.video-call-main {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  min-height: 0;
+  padding: 32px;
+}
+
+.video-call-hero-icon {
+  width: 78px;
+  height: 78px;
+  color: var(--foreground);
+}
+
+.video-call-empty {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+}
+
+.video-call-empty p,
+.video-call-notice,
+.video-call-history-header p,
+.video-call-history-item p,
+.video-call-history-empty,
+.video-call-group-label {
+  color: var(--muted);
+}
+
+.video-call-active-list {
+  display: grid;
+  gap: 14px;
+  width: min(760px, 100%);
+}
+
+.video-call-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.video-call-card-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.video-call-card-copy h2 {
+  font-size: 1.2rem;
+  letter-spacing: -0.03em;
+}
+
+.video-call-participant-groups {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.video-call-participant-groups > div {
+  display: grid;
+  gap: 6px;
+}
+
+.video-call-group-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.video-call-avatar-row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+}
+
+.video-call-avatar-row .profile-avatar + .profile-avatar,
+.video-call-avatar-row span + span .profile-avatar {
+  margin-left: -8px;
+}
+
+.video-call-start-secondary {
+  justify-self: center;
+}
+
+.video-call-history {
+  display: grid;
+  gap: 14px;
+  max-height: 280px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.video-call-history-header {
+  display: grid;
+  gap: 4px;
+}
+
+.video-call-history-header h2 {
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
+}
+
+.video-call-history-list {
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.video-call-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(17, 17, 17, 0.09);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.video-call-history-item h3 {
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.video-call-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.video-call-modal {
+  max-height: calc(100dvh - 48px);
+}
+
+.video-call-invite-list {
+  max-height: min(42dvh, 360px);
+}
+
+.video-call-dock {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24px;
+  background: #050505;
+  color: white;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.26);
+}
+
+.video-call-dock-large {
+  inset: 116px 56px 56px 244px;
+}
+
+.video-call-dock-floating {
+  right: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 48px));
+  height: 240px;
+}
+
+.video-call-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.video-call-dock-leave {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.video-call-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #050505;
+}
+
 .profile-avatar {
   display: inline-flex;
   flex: 0 0 auto;

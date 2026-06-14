@@ -95,6 +95,17 @@ enum IntegrationProvider {
   GOOGLE
 }
 
+enum VideoCallStatus {
+  ACTIVE
+  ENDED
+}
+
+enum VideoCallParticipantStatus {
+  INVITED
+  JOINED
+  LEFT
+}
+
 model User {
   id                     String                       @id @default(cuid())
   username               String                       @unique
@@ -127,6 +138,8 @@ model User {
   connectedIntegrations  ExternalIntegration[]
   requestedEmailThreads  EmailThread[]                @relation("EmailThreadRequester")
   relationshipGuidance   AgentRelationshipGuidance[]  @relation("RelationshipTargetUser")
+  createdVideoCalls      VideoCall[]                   @relation("VideoCallCreator")
+  videoCallParticipants  VideoCallParticipant[]
 }
 
 model Team {
@@ -576,4 +589,39 @@ model ExternalIntegration {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   connectedBy   User?               @relation(fields: [connectedById], references: [id], onDelete: SetNull)
+}
+
+model VideoCall {
+  id              String                 @id @default(cuid())
+  name            String
+  dailyRoomName   String                 @unique
+  dailyRoomUrl    String
+  createdByUserId String?
+  status          VideoCallStatus        @default(ACTIVE)
+  startedAt       DateTime               @default(now())
+  endedAt         DateTime?
+  transcriptText  String?
+  transcriptStatus String                @default("PENDING")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  createdBy       User?                  @relation("VideoCallCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  participants    VideoCallParticipant[]
+
+  @@index([status, startedAt])
+  @@index([createdByUserId, startedAt])
+}
+
+model VideoCallParticipant {
+  callId     String
+  userId     String
+  status     VideoCallParticipantStatus @default(INVITED)
+  invitedAt  DateTime                   @default(now())
+  joinedAt   DateTime?
+  leftAt     DateTime?
+  call       VideoCall                  @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user       User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([callId, userId])
+  @@index([userId, status])
+  @@index([callId, status])
 }

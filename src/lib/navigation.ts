@@ -1,6 +1,6 @@
 export type AppNavItem = {
   href: string;
-  icon: "calendar" | "dm" | "files" | "setting" | "team";
+  icon: "calendar" | "dm" | "files" | "setting" | "team" | "video-call";
   title: string;
   description: string;
 };
@@ -17,6 +17,12 @@ export const primaryNavItems: AppNavItem[] = [
     icon: "team",
     title: "Team Chat",
     description: "Coordinate with teammates without introducing a team agent.",
+  },
+  {
+    href: "/video-call",
+    icon: "video-call",
+    title: "Video Call",
+    description: "Start or join live calls with human participants.",
   },
   {
     href: "/files",

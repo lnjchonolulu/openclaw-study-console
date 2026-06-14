@@ -196,6 +196,45 @@ export function ChatClient({
 
   const renderRows = useMemo(() => buildRenderRows(messages), [messages]);
 
+  useEffect(() => {
+    if (recipientKind !== "agent") {
+      return;
+    }
+
+    const rawDraft = window.localStorage.getItem("cyworld-pending-chat-draft");
+
+    if (!rawDraft) {
+      return;
+    }
+
+    try {
+      const draft = JSON.parse(rawDraft) as {
+        filename?: string;
+        text?: string;
+        type?: string;
+      };
+
+      if (draft.type !== "video-call-transcript" || !draft.text) {
+        return;
+      }
+
+      const nextMessage = [
+        `Sharing a CyWorld Video Call transcript for review: ${draft.filename ?? "transcript.txt"}`,
+        "",
+        "```",
+        draft.text,
+        "```",
+      ].join("\n");
+
+      window.localStorage.removeItem("cyworld-pending-chat-draft");
+      window.setTimeout(() => {
+        setMessage(nextMessage);
+      }, 0);
+    } catch {
+      window.localStorage.removeItem("cyworld-pending-chat-draft");
+    }
+  }, [recipientKind]);
+
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
 
