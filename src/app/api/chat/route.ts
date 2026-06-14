@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { parseChatPayload } from "@/lib/chat-attachments";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
-import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { getAgentRelationshipContext } from "@/lib/agent-relationships";
@@ -225,11 +224,6 @@ export async function POST(request: Request) {
       maxVisibleEntries: 16,
       userId: user.id,
     });
-    const actionReceiptContext = await buildRecentActionReceiptContext({
-      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-      requesterUserId: user.id,
-      roomId: dmRoom.room.id,
-    });
     const selectiveNoteContext = await buildSelectiveAgentNoteContext({
       agentId: dmRoom.targetAgent.openclawAgentId,
       counterpart: {
@@ -243,7 +237,6 @@ export async function POST(request: Request) {
       instructions,
       selectiveNoteContext,
       filesContext,
-      actionReceiptContext,
     ]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n");
