@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { MessageAttachments } from "@/components/message-attachments";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { ChatMessage } from "@/lib/dm";
 import type { AvatarViewModel } from "@/lib/profile";
@@ -74,32 +75,6 @@ function attachmentPreviewText(attachments: ChatMessage["attachments"]) {
 
 function messagePreviewContent(message: Pick<ChatMessage, "attachments" | "content">) {
   return message.content || attachmentPreviewText(message.attachments);
-}
-
-function MessageAttachments({
-  attachments,
-}: {
-  attachments: ChatMessage["attachments"];
-}) {
-  if (attachments.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="message-attachments">
-      {attachments.map((attachment) => (
-        <a
-          className="message-attachment"
-          href={attachment.url}
-          key={attachment.id}
-          rel="noreferrer"
-          target="_blank"
-        >
-          <img alt={attachment.filename} src={attachment.url} />
-        </a>
-      ))}
-    </div>
-  );
 }
 
 function authorLabelForMessage(

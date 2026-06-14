@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { MessageAttachments } from "@/components/message-attachments";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { TeamChannelDetail } from "@/lib/team";
 
@@ -74,32 +75,6 @@ function attachmentPreviewText(attachments: TeamMessage["attachments"]) {
 
 function messagePreviewContent(message: Pick<TeamMessage, "attachments" | "content">) {
   return message.content || attachmentPreviewText(message.attachments);
-}
-
-function MessageAttachments({
-  attachments,
-}: {
-  attachments: TeamMessage["attachments"];
-}) {
-  if (attachments.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="message-attachments">
-      {attachments.map((attachment) => (
-        <a
-          className="message-attachment"
-          href={attachment.url}
-          key={attachment.id}
-          rel="noreferrer"
-          target="_blank"
-        >
-          <img alt={attachment.filename} src={attachment.url} />
-        </a>
-      ))}
-    </div>
-  );
 }
 
 function teamAuthorLabel(

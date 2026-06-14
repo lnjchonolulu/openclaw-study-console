@@ -108,7 +108,7 @@ export async function saveChatImageAttachments(files: FormDataEntryValue[]) {
   const year = String(now.getUTCFullYear());
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   const uploadDir = path.join(process.cwd(), "public", "uploads", "chat", year, month);
-  const publicPrefix = `/uploads/chat/${year}/${month}`;
+  const publicPrefix = `/api/chat-attachments/${year}/${month}`;
   await mkdir(uploadDir, { recursive: true });
 
   const attachments: ChatAttachment[] = [];
@@ -172,7 +172,7 @@ export async function saveGeneratedChatImageAttachment({
   const year = String(now.getUTCFullYear());
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   const uploadDir = path.join(process.cwd(), "public", "uploads", "chat", year, month);
-  const publicPrefix = `/uploads/chat/${year}/${month}`;
+  const publicPrefix = `/api/chat-attachments/${year}/${month}`;
   await mkdir(uploadDir, { recursive: true });
 
   const id = globalThis.crypto.randomUUID();
@@ -196,11 +196,17 @@ export async function openClawImagesFromChatAttachments(
   const images: OpenClawImageAttachment[] = [];
 
   for (const attachment of attachments) {
-    if (attachment.kind !== "image" || !attachment.url.startsWith("/uploads/chat/")) {
+    if (
+      attachment.kind !== "image" ||
+      (!attachment.url.startsWith("/uploads/chat/") &&
+        !attachment.url.startsWith("/api/chat-attachments/"))
+    ) {
       continue;
     }
 
-    const relativePath = attachment.url.replace(/^\/+/, "");
+    const relativePath = attachment.url
+      .replace(/^\/api\/chat-attachments\//, "uploads/chat/")
+      .replace(/^\/+/, "");
     const filePath = path.join(process.cwd(), "public", relativePath);
     const buffer = await readFile(filePath).catch(() => null);
 
