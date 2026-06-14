@@ -1,5 +1,13 @@
 import { storeDailyTranscriptWebhook } from "@/lib/daily-transcripts";
 
+export async function GET() {
+  return Response.json({ ok: true, endpoint: "daily-webhook" });
+}
+
+export async function HEAD() {
+  return new Response(null, { status: 200 });
+}
+
 export async function POST(request: Request) {
   const webhookToken = process.env.DAILY_WEBHOOK_TOKEN?.trim();
 
