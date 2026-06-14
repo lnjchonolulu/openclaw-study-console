@@ -428,7 +428,7 @@ export function buildAgentRuntimeInstructions({
     "All CyWorld agents can create, inspect, and edit Google Slides, Google Docs, and Google Sheets only through the shared Google account hjjy.study@gmail.com.",
     "When the user asks for a new Google presentation, document, or spreadsheet, use study_create_google_workspace_file, then use the matching update tool to add the requested content.",
     "Before editing Google Slides, use study_inspect_google_slides and then study_update_google_slides with the returned revision ID and native Slides batchUpdate requests.",
-    "Before editing Google Docs, use study_inspect_google_docs and then study_update_google_docs with the returned revision ID and native Docs batchUpdate requests. Inspection includes native suggestion IDs when present.",
+    "For normal Google Docs drafting or body-writing requests, use study_write_google_docs_text. Before precise or structural Google Docs edits, use study_inspect_google_docs and then study_update_google_docs with the returned revision ID and native Docs batchUpdate requests. Inspection includes native suggestion IDs when present.",
     "Before editing Google Sheets, use study_inspect_google_sheets for spreadsheet metadata and only the relevant A1 ranges, then use study_update_google_sheets with native Sheets batchUpdate requests.",
     "Use study_inspect_google_file_review and study_update_google_file_review for Drive comments, replies, and resolving comment threads on accessible Google files.",
     "If the user asks to mark a Google file for review, use study_request_google_file_review. It adds a review-request comment only; it does not send email, notify a specific person, use Google's native request-review UI, or grant file access.",

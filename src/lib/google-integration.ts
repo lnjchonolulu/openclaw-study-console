@@ -2077,6 +2077,153 @@ export async function updateSharedGoogleDocs({
   }
 }
 
+export async function writeSharedGoogleDocsText({
+  content,
+  document,
+  mode,
+  requiredRevisionId,
+}: {
+  content: string;
+  document: string;
+  mode?: "append" | "replace" | null;
+  requiredRevisionId?: string | null;
+}) {
+  const documentId = extractGoogleDocsDocumentId(document);
+
+  if (!documentId) {
+    return {
+      ok: false as const,
+      reason: "invalid_google_docs_url_or_id",
+    };
+  }
+
+  const text = content.trimEnd();
+
+  if (!text.trim()) {
+    return {
+      documentId,
+      ok: false as const,
+      reason: "empty_google_docs_content",
+    };
+  }
+
+  const access = await googleWorkspaceAccessStatus({
+    reconnectReason: "google_reconnect_required_for_docs",
+    requiredScope: GOOGLE_DOCS_SCOPE,
+  });
+
+  if (!access.ok) {
+    return {
+      ...access,
+      guidance:
+        access.reason === "google_reconnect_required_for_docs"
+          ? "Reconnect Google from CyWorld Admin Settings once so the shared account grants Google Docs access."
+          : googleWorkspaceSharingGuidance({
+              accountEmail: access.accountEmail,
+              fileType: "Google Docs",
+            }),
+    };
+  }
+
+  try {
+    const documentUrl = new URL(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(
+        documentId,
+      )}`,
+    );
+    documentUrl.searchParams.set("fields", "body/content/endIndex,documentId,revisionId,title");
+
+    const current = await googleJson<GoogleDocument>(documentUrl.toString(), {
+      headers: {
+        Authorization: `Bearer ${access.accessToken}`,
+      },
+      method: "GET",
+    });
+    const endIndex = Math.max(
+      1,
+      ...(current.body?.content ?? []).map((element) => element.endIndex ?? 1),
+    );
+    const writeMode = mode === "append" ? "append" : "replace";
+    const insertText = `${text}\n`;
+    const requests: unknown[] = [];
+
+    if (writeMode === "replace" && endIndex > 2) {
+      requests.push({
+        deleteContentRange: {
+          range: {
+            endIndex: endIndex - 1,
+            startIndex: 1,
+          },
+        },
+      });
+    }
+
+    requests.push({
+      insertText: {
+        location: {
+          index: writeMode === "append" ? Math.max(1, endIndex - 1) : 1,
+        },
+        text: insertText,
+      },
+    });
+
+    const result = await googleJson<{
+      documentId?: string;
+      replies?: unknown[];
+      writeControl?: {
+        requiredRevisionId?: string;
+      };
+    }>(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(
+        documentId,
+      )}:batchUpdate`,
+      {
+        body: JSON.stringify({
+          requests,
+          ...(requiredRevisionId?.trim()
+            ? {
+                writeControl: {
+                  requiredRevisionId: requiredRevisionId.trim(),
+                },
+              }
+            : {}),
+        }),
+        headers: {
+          Authorization: `Bearer ${access.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+
+    return {
+      accountEmail: access.accountEmail,
+      document: {
+        documentId: result.documentId ?? documentId,
+        title: current.title ?? null,
+        url: `https://docs.google.com/document/d/${documentId}/edit`,
+      },
+      insertedChars: insertText.length,
+      mode: writeMode,
+      ok: true as const,
+      replies: result.replies ?? [],
+      writeControl: result.writeControl ?? null,
+    };
+  } catch (error) {
+    return {
+      accountEmail: access.accountEmail,
+      documentId,
+      error: error instanceof Error ? error.message : "Unknown Google Docs error.",
+      guidance: googleWorkspaceSharingGuidance({
+        accountEmail: access.accountEmail,
+        fileType: "Google Docs",
+      }),
+      ok: false as const,
+      reason: "google_docs_text_write_failed",
+    };
+  }
+}
+
 export async function inspectSharedGoogleSheets({
   rangesJson,
   spreadsheet,

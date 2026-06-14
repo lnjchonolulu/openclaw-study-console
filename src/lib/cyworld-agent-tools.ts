@@ -43,6 +43,7 @@ import {
   updateSharedGoogleDocs,
   updateSharedGoogleSheets,
   updateSharedGoogleSlides,
+  writeSharedGoogleDocsText,
 } from "@/lib/google-integration";
 import {
   authorizeGoogleWorkspaceFileForAgent,
@@ -765,6 +766,38 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
+    name: "study_write_google_docs_text",
+    description:
+      "Write plain text content into a Google Docs document through the shared CyWorld Google account. Use this for normal requests like filling a blank document, drafting content into a document, replacing the document body, or appending text. Inspect first when you need the current revision ID. Prefer this over study_update_google_docs unless you need precise native Google Docs formatting or structural edits. Do not claim the document was filled or updated unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        document: {
+          type: "string",
+          description: "A Google Docs URL or document ID.",
+        },
+        content: {
+          type: "string",
+          description:
+            "The complete plain text to write into the Google Docs document.",
+        },
+        mode: {
+          enum: ["replace", "append"],
+          type: "string",
+          description:
+            "Use replace to overwrite the body, or append to add this text to the end. Defaults to replace.",
+        },
+        requiredRevisionId: {
+          type: "string",
+          description:
+            "Optional revision ID returned by study_inspect_google_docs. Include it when editing an existing document.",
+        },
+      },
+      required: ["document", "content"],
+    },
+  },
+  {
     name: "study_inspect_google_sheets",
     description:
       "Inspect a Google Sheets spreadsheet before editing it. Accepts a Google Sheets URL or spreadsheet ID and returns spreadsheet metadata and sheet IDs. Optionally pass rangesJson as a JSON array of up to 20 A1 ranges, such as [\"Sheet1!A1:D20\"], to retrieve only the values needed for the task instead of loading the entire spreadsheet. All CyWorld agents use the one Google account connected by the administrator. If access fails, explain that the file must be shared with the account email returned by this tool and granted Editor access.",
@@ -940,6 +973,18 @@ function toolReceiptSummary(toolName: string, result: Record<string, unknown> | 
     if (result.entry && typeof result.entry === "object" && !Array.isArray(result.entry)) {
       const filename = (result.entry as { filename?: unknown }).filename;
       return `CyWorld tool ${toolName} succeeded${typeof filename === "string" ? ` for "${filename}"` : ""}.`;
+    }
+
+    if (
+      result.document &&
+      typeof result.document === "object" &&
+      !Array.isArray(result.document)
+    ) {
+      const title = (result.document as { title?: unknown }).title;
+      const insertedChars = result.insertedChars;
+      return `CyWorld tool ${toolName} succeeded${
+        typeof title === "string" ? ` for "${title}"` : ""
+      }${typeof insertedChars === "number" ? ` (${insertedChars} chars)` : ""}.`;
     }
 
     return `CyWorld tool ${toolName} succeeded.`;
@@ -3344,6 +3389,34 @@ async function executeCyWorldAgentToolCall({
       await updateSharedGoogleDocs({
         document,
         requestsJson,
+        requiredRevisionId: requiredRevisionId || null,
+      }),
+    );
+  }
+
+  if (call.name === "study_write_google_docs_text") {
+    const document = cleanMessage(args.document);
+    const content = cleanMessage(args.content);
+    const mode = cleanMessage(args.mode);
+    const requiredRevisionId = cleanMessage(args.requiredRevisionId);
+
+    if (!document || !content) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_google_docs_url_or_id_or_content",
+      });
+    }
+
+    const authorization = await authorizeGoogleFile(document);
+    if (!authorization.allowed) {
+      return JSON.stringify(authorization);
+    }
+
+    return JSON.stringify(
+      await writeSharedGoogleDocsText({
+        content,
+        document,
+        mode: mode === "append" ? "append" : "replace",
         requiredRevisionId: requiredRevisionId || null,
       }),
     );

@@ -1128,7 +1128,7 @@ export async function createGoogleWorkspaceEntryForAgent({
   return {
     entry,
     nextStep:
-      "The file is blank. If the user asked for content, inspect or update the Google file with the matching Google Docs, Sheets, or Slides tool before reporting completion.",
+      "The file is blank. If the user asked for content in a Google Docs file, use study_write_google_docs_text before reporting completion. For Sheets or Slides, inspect or update the Google file with the matching tool before reporting completion.",
     ok: true as const,
   };
 }
