@@ -6,7 +6,7 @@ export type GeneratedImage = {
 type ImageSize = "auto" | "1024x1024" | "1024x1536" | "1536x1024";
 
 function getImageModel() {
-  return process.env.CYWORLD_IMAGE_MODEL?.trim() || "gpt-image-1";
+  return process.env.CYWORLD_IMAGE_MODEL?.trim() || "gpt-image-1.5";
 }
 
 function getOpenAiApiKey() {

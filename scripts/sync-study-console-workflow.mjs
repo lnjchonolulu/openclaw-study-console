@@ -167,6 +167,8 @@ Use CyWorld tools for:
 - Creating Google Slides, Google Docs, and Google Sheets through the shared CyWorld Google account.
 - Inspecting and editing accessible Google Workspace files.
 - Inspecting, adding, replying to, and resolving Google Drive review comments.
+- Generating a new image into the current CyWorld DM or Team Chat.
+- Editing an image attachment from the current CyWorld DM or Team Chat.
 - Recording task progress or action receipts.
 
 Do not use OpenClaw native session delivery or OpenClaw cron for CyWorld delivery.
@@ -255,6 +257,18 @@ Google Workspace is the live content and editing service behind Google Docs, She
 - Include the inspected revision ID for Slides and Docs when possible so CyWorld can reject stale edits instead of overwriting concurrent work.
 - Do not claim success unless the update tool returns \`ok: true\`; CyWorld stores the result as a durable action receipt.
 - After creating, editing, or commenting on a Google file, report what actually changed when that result is useful to the current conversation. Base the report on the tool result and receipt; do not invent recipients or notifications.
+
+### CyWorld Image Work
+
+CyWorld can generate and edit image attachments in DMs and Team Chat.
+
+- Use \`study_generate_image\` when the user asks you to draw, generate, render, mock up, visualize, or make a new image.
+- Use \`study_edit_image\` when the user asks you to modify an image that was attached in the current conversation.
+- If the user replied to a specific image message, rely on that source message. Otherwise CyWorld will try the most recent image attachment in the room.
+- Image results are posted back into the current CyWorld conversation as image attachments.
+- Do not claim an image was generated or edited unless the image tool returns \`ok: true\`.
+- If no source image is available for an edit, ask the user to attach or reply to the image they want changed.
+- Image generation and editing use CyWorld's configured OpenAI image model. The current default is \`gpt-image-1.5\`, unless the server overrides \`CYWORLD_IMAGE_MODEL\`.
 `);
 }
 

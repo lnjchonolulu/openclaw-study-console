@@ -263,6 +263,11 @@ CyWorld tool calls are allowed for:
 - Sending shared Gmail email.
 - Sending external `.ics` calendar invite email.
 - Requesting work from another personal agent through a traceable Agent Handoff.
+- Generating a new image into the current CyWorld conversation.
+- Editing an image attachment from the current CyWorld conversation.
+- Creating Google Slides, Docs, and Sheets in CyWorld Drive.
+- Inspecting and editing accessible Google Slides, Docs, and Sheets.
+- Inspecting, adding, replying to, and resolving Google Drive review comments.
 - Future: Drive-specific tool calls if needed.
 
 CyWorld must validate:
@@ -427,6 +432,24 @@ Rules:
 - Agents should only receive routed thread replies that belong to their own
   task/thread.
 - Agents should not claim broad access to the shared inbox.
+
+## CyWorld Image Work
+
+CyWorld can generate and edit image attachments in DMs and Team Chat.
+
+Rules:
+
+- Image understanding belongs to the chat model when image attachments are part
+  of a conversation.
+- New image generation and image editing are separate CyWorld tools backed by
+  the configured OpenAI image model.
+- Generated or edited images are posted back into the current CyWorld
+  conversation as image attachments.
+- Agents should not claim image generation or editing succeeded unless the
+  CyWorld tool returns success and records the action.
+- Image edits require an image attachment from the current conversation. If the
+  source image is unclear or missing, the agent should ask the user to attach or
+  reply to the image they want changed.
 
 ## Team Chat
 
