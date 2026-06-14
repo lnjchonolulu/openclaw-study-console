@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import {
+  attachmentPreviewText,
+  normalizeChatAttachments,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
+import {
   getAgentMeta,
   getUserMeta,
   normalizeProfileConfig,
@@ -9,6 +14,7 @@ import {
 export type ChatMessage = {
   authorAvatar?: AvatarViewModel | null;
   authorName?: string | null;
+  attachments: ChatAttachment[];
   id: string;
   role: "USER" | "AGENT" | "OTHER";
   content: string;
@@ -30,6 +36,7 @@ type SerializableMessage = {
     } | null;
   } | null;
   content: string;
+  attachmentsJson?: unknown;
   createdAt: Date;
   id: string;
   replyToMessage?: {
@@ -40,6 +47,7 @@ type SerializableMessage = {
       } | null;
     } | null;
     content: string;
+    attachmentsJson?: unknown;
     id: string;
     role: "USER" | "AGENT" | "SYSTEM";
     user?: {
@@ -80,7 +88,9 @@ function buildReplyPreview(
       replyToMessage.role === "AGENT"
         ? replyToMessage.agent?.displayName ?? null
         : replyToMessage.user?.displayName ?? null,
-    content: replyToMessage.content,
+    content:
+      replyToMessage.content ||
+      attachmentPreviewText(normalizeChatAttachments(replyToMessage.attachmentsJson)),
     id: replyToMessage.id,
     role: getSerializedMessageRole(replyToMessage, currentUserId),
   };
@@ -336,6 +346,7 @@ export function serializeChatMessages(
           : message.user?.displayName ?? null,
       id: message.id,
       role: getSerializedMessageRole(message, currentUserId),
+      attachments: normalizeChatAttachments(message.attachmentsJson),
       content: message.content,
       createdAt: message.createdAt.toISOString(),
       replyTo: buildReplyPreview(message.replyToMessage, currentUserId),

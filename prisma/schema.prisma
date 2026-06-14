@@ -241,6 +241,7 @@ model Message {
   replyToMessageId String?
   role             MessageRole
   content          String
+  attachmentsJson  Json?
   createdAt        DateTime    @default(now())
   room             Room        @relation(fields: [roomId], references: [id])
   user             User?       @relation(fields: [userId], references: [id])

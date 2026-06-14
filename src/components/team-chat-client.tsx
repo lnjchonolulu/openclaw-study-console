@@ -5,6 +5,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { TeamChannelDetail } from "@/lib/team";
 
+const MAX_PENDING_IMAGES = 8;
+
+type PendingImageAttachment = {
+  file: File;
+  filename: string;
+  id: string;
+  kind: "image";
+  mimeType: string;
+  previewUrl: string;
+  size: number;
+  url: string;
+};
+
 function createClientId() {
   if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
     return `client-${globalThis.crypto.randomUUID()}`;
@@ -49,6 +62,44 @@ function truncateReplyPreview(value: string, maxLength = 120) {
   }
 
   return `${compact.slice(0, maxLength - 1)}…`;
+}
+
+function attachmentPreviewText(attachments: TeamMessage["attachments"]) {
+  if (attachments.length === 0) {
+    return "";
+  }
+
+  return attachments.length === 1 ? "[Image]" : `[${attachments.length} images]`;
+}
+
+function messagePreviewContent(message: Pick<TeamMessage, "attachments" | "content">) {
+  return message.content || attachmentPreviewText(message.attachments);
+}
+
+function MessageAttachments({
+  attachments,
+}: {
+  attachments: TeamMessage["attachments"];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="message-attachments">
+      {attachments.map((attachment) => (
+        <a
+          className="message-attachment"
+          href={attachment.url}
+          key={attachment.id}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <img alt={attachment.filename} src={attachment.url} />
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function teamAuthorLabel(
@@ -176,15 +227,30 @@ export function TeamChatClient({
   const [channel, setChannel] = useState(initialChannel);
   const [isRosterOpen, setIsRosterOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isDraggingImages, setIsDraggingImages] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImageAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const pendingImageUrlsRef = useRef<Set<string>>(new Set());
   const shouldStickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setChannel(initialChannel);
   }, [initialChannel]);
+
+  useEffect(() => {
+    const pendingImageUrls = pendingImageUrlsRef.current;
+
+    return () => {
+      pendingImageUrls.forEach((previewUrl) => {
+        URL.revokeObjectURL(previewUrl);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     setReplyTarget(null);
@@ -246,6 +312,58 @@ export function TeamChatClient({
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [message]);
 
+  function addPendingImageFiles(files: File[]) {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length === 0) {
+      setError("Drop PNG, JPG, GIF, or WebP images.");
+      return;
+    }
+
+    setPendingImages((current) => {
+      const remainingSlots = Math.max(0, MAX_PENDING_IMAGES - current.length);
+      const nextFiles = imageFiles.slice(0, remainingSlots);
+
+      if (nextFiles.length < imageFiles.length) {
+        setError(`Attach up to ${MAX_PENDING_IMAGES} images at a time.`);
+      } else {
+        setError(null);
+      }
+
+      return [
+        ...current,
+        ...nextFiles.map((file) => {
+          const previewUrl = URL.createObjectURL(file);
+          pendingImageUrlsRef.current.add(previewUrl);
+
+          return {
+            file,
+            filename: file.name || "image",
+            id: createClientId(),
+            kind: "image" as const,
+            mimeType: file.type,
+            previewUrl,
+            size: file.size,
+            url: previewUrl,
+          };
+        }),
+      ];
+    });
+  }
+
+  function removePendingImage(id: string) {
+    setPendingImages((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+        pendingImageUrlsRef.current.delete(target.previewUrl);
+      }
+
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  }
+
   const renderRows = useMemo(
     () => buildRenderRows(channel?.messages ?? [], user.id),
     [channel?.messages, user.id],
@@ -274,14 +392,25 @@ export function TeamChatClient({
 
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage) {
+    if (!trimmedMessage && pendingImages.length === 0) {
+      setError("Write a message or attach an image.");
       return;
     }
 
     const clientMessageId = createClientId();
     const previousReplyTarget = replyTarget;
+    const previousPendingImages = pendingImages;
+    const optimisticAttachments = previousPendingImages.map((attachment) => ({
+      filename: attachment.filename,
+      id: attachment.id,
+      kind: attachment.kind,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      url: attachment.url,
+    }));
     const optimisticMessage: TeamMessage = {
       author: user.displayName,
+      attachments: optimisticAttachments,
       content: trimmedMessage,
       createdAt: new Date().toISOString(),
       id: clientMessageId,
@@ -306,19 +435,26 @@ export function TeamChatClient({
         : current,
     );
     shouldStickToBottomRef.current = true;
+    setError(null);
     setMessage("");
+    setPendingImages([]);
     setReplyTarget(null);
+
+    const formData = new FormData();
+    formData.set("roomId", channel.id);
+    formData.set("message", trimmedMessage);
+
+    if (previousReplyTarget?.id) {
+      formData.set("replyToMessageId", previousReplyTarget.id);
+    }
+
+    previousPendingImages.forEach((attachment) => {
+      formData.append("images", attachment.file, attachment.filename);
+    });
 
     const response = await fetch("/api/team/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: trimmedMessage,
-        replyToMessageId: previousReplyTarget?.id ?? null,
-        roomId: channel.id,
-      }),
+      body: formData,
     });
 
     const payload = (await response.json()) as {
@@ -339,7 +475,9 @@ export function TeamChatClient({
           : current,
       );
       setMessage(trimmedMessage);
+      setPendingImages(previousPendingImages);
       setReplyTarget(previousReplyTarget);
+      setError(payload.error ?? "The message could not be sent.");
       return;
     }
 
@@ -361,6 +499,10 @@ export function TeamChatClient({
           }
         : current,
     );
+    previousPendingImages.forEach((attachment) => {
+      URL.revokeObjectURL(attachment.previewUrl);
+      pendingImageUrlsRef.current.delete(attachment.previewUrl);
+    });
     router.refresh();
   }
 
@@ -443,7 +585,7 @@ export function TeamChatClient({
                                 memberMap,
                                 row.isOwnMessage,
                               ),
-                              content: row.message.content,
+                              content: messagePreviewContent(row.message),
                               id: row.message.id,
                             })
                           }
@@ -478,7 +620,8 @@ export function TeamChatClient({
                               </span>
                             </div>
                           ) : null}
-                          <p>{row.message.content}</p>
+                          {row.message.content ? <p>{row.message.content}</p> : null}
+                          <MessageAttachments attachments={row.message.attachments} />
                         </div>
                       </div>
                     ) : (
@@ -499,7 +642,8 @@ export function TeamChatClient({
                               </span>
                             </div>
                           ) : null}
-                          <p>{row.message.content}</p>
+                          {row.message.content ? <p>{row.message.content}</p> : null}
+                          <MessageAttachments attachments={row.message.attachments} />
                         </div>
                       </div>
                     )}
@@ -514,7 +658,7 @@ export function TeamChatClient({
                                 memberMap,
                                 row.isOwnMessage,
                               ),
-                              content: row.message.content,
+                              content: messagePreviewContent(row.message),
                               id: row.message.id,
                             })
                           }
@@ -540,27 +684,87 @@ export function TeamChatClient({
           <div ref={messageEndRef} />
         </div>
 
-      <form className="message-composer" onSubmit={handleSubmit}>
-        {replyTarget ? (
-          <div className="composer-reply-banner">
-            <div className="composer-reply-copy">
-              <span className="composer-reply-label">
-                Replying to {replyTarget.author}
-              </span>
-              <span className="composer-reply-snippet">
-                {truncateReplyPreview(replyTarget.content, 160)}
-              </span>
+        <form
+          className={`message-composer ${isDraggingImages ? "message-composer-dragging" : ""}`}
+          onDragEnter={(event) => {
+            if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
+              event.preventDefault();
+              setIsDraggingImages(true);
+            }
+          }}
+          onDragOver={(event) => {
+            if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
+              event.preventDefault();
+              setIsDraggingImages(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsDraggingImages(false);
+            }
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setIsDraggingImages(false);
+            addPendingImageFiles(Array.from(event.dataTransfer.files));
+          }}
+          onSubmit={handleSubmit}
+        >
+          {error ? <p className="helper-text message-error">{error}</p> : null}
+          {replyTarget ? (
+            <div className="composer-reply-banner">
+              <div className="composer-reply-copy">
+                <span className="composer-reply-label">
+                  Replying to {replyTarget.author}
+                </span>
+                <span className="composer-reply-snippet">
+                  {truncateReplyPreview(replyTarget.content, 160)}
+                </span>
+              </div>
+              <button
+                className="composer-reply-clear"
+                onClick={() => setReplyTarget(null)}
+                type="button"
+              >
+                Cancel
+              </button>
             </div>
+          ) : null}
+          {pendingImages.length > 0 ? (
+            <div className="composer-attachments">
+              {pendingImages.map((attachment) => (
+                <div className="composer-attachment-preview" key={attachment.id}>
+                  <img alt={attachment.filename} src={attachment.previewUrl} />
+                  <button
+                    aria-label={`Remove ${attachment.filename}`}
+                    onClick={() => removePendingImage(attachment.id)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="composer-bar">
+            <input
+              accept="image/gif,image/jpeg,image/png,image/webp"
+              hidden
+              multiple
+              onChange={(event) => {
+                addPendingImageFiles(Array.from(event.target.files ?? []));
+                event.currentTarget.value = "";
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
             <button
-              className="composer-reply-clear"
-              onClick={() => setReplyTarget(null)}
+              className="composer-attach-button"
+              onClick={() => fileInputRef.current?.click()}
               type="button"
             >
-              Cancel
+              +
             </button>
-          </div>
-        ) : null}
-        <div className="composer-bar">
             <textarea
               aria-label="Team message"
               placeholder="Write a message"
@@ -622,6 +826,10 @@ function isSameTeamUserMessage(left: TeamMessage, right: TeamMessage) {
   }
 
   if (left.content !== right.content) {
+    return false;
+  }
+
+  if (JSON.stringify(left.attachments) !== JSON.stringify(right.attachments)) {
     return false;
   }
 

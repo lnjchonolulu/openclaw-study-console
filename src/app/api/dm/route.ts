@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { parseChatPayload } from "@/lib/chat-attachments";
 import { getOrCreatePersonDmRoom } from "@/lib/dm";
 import { prisma } from "@/lib/prisma";
 
@@ -10,19 +11,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    clientMessageId?: string;
-    message?: string;
-    recipientId?: string;
-    replyToMessageId?: string;
-  };
-  const clientMessageId = body.clientMessageId?.trim() || null;
-  const message = body.message?.trim();
-  const recipientId = body.recipientId?.trim();
-  const replyToMessageId = body.replyToMessageId?.trim() || null;
+  const body = await parseChatPayload(request);
+  const clientMessageId = body.clientMessageId || null;
+  const message = body.message;
+  const recipientId = body.recipientId;
+  const replyToMessageId = body.replyToMessageId || null;
 
-  if (!message) {
-    return NextResponse.json({ error: "Message is required." }, { status: 400 });
+  if (!message && body.attachments.length === 0) {
+    return NextResponse.json({ error: "Message or image is required." }, { status: 400 });
   }
 
   if (!recipientId) {
@@ -69,6 +65,7 @@ export async function POST(request: Request) {
       userId: user.id,
       role: "USER",
       content: message,
+      attachmentsJson: body.attachments,
       replyToMessageId,
     },
   });
@@ -85,6 +82,7 @@ export async function POST(request: Request) {
     roomId: room.id,
     userMessage: {
       clientMessageId,
+      attachments: body.attachments,
       id: createdMessage.id,
       content: createdMessage.content,
       createdAt: createdMessage.createdAt.toISOString(),

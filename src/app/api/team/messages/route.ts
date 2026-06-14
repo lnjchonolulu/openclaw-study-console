@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  attachmentPreviewText,
+  normalizeChatAttachments,
+  parseChatPayload,
+} from "@/lib/chat-attachments";
 import { runTeamAgentDispatch } from "@/lib/team-agent-dispatcher";
 import { createTeamMessage, getTeamChannelDetail } from "@/lib/team";
 
@@ -28,20 +33,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    message?: string;
-    replyToMessageId?: string;
-    roomId?: string;
-  };
-  const roomId = body.roomId?.trim();
-  const message = body.message?.trim();
-  const replyToMessageId = body.replyToMessageId?.trim() || null;
+  const body = await parseChatPayload(request);
+  const roomId = body.roomId;
+  const message = body.message;
+  const replyToMessageId = body.replyToMessageId || null;
 
-  if (!roomId || !message) {
-    return NextResponse.json({ error: "Room and message are required." }, { status: 400 });
+  if (!roomId || (!message && body.attachments.length === 0)) {
+    return NextResponse.json(
+      { error: "Room and message or image are required." },
+      { status: 400 },
+    );
   }
 
-  const created = await createTeamMessage(user.id, roomId, message, replyToMessageId);
+  const created = await createTeamMessage(
+    user.id,
+    roomId,
+    message,
+    body.attachments,
+    replyToMessageId,
+  );
 
   if (!created) {
     return NextResponse.json({ error: "Message could not be created." }, { status: 404 });
@@ -56,6 +66,7 @@ export async function POST(request: Request) {
     agentMessages,
     message: {
       author: created.user?.displayName ?? user.displayName,
+      attachments: body.attachments,
       content: created.content,
       createdAt: created.createdAt.toISOString(),
       id: created.id,
@@ -65,7 +76,11 @@ export async function POST(request: Request) {
               created.replyToMessage.user?.displayName ??
               created.replyToMessage.agent?.displayName ??
               "Unknown",
-            content: created.replyToMessage.content,
+            content:
+              created.replyToMessage.content ||
+              attachmentPreviewText(
+                normalizeChatAttachments(created.replyToMessage.attachmentsJson),
+              ),
             id: created.replyToMessage.id,
             userId:
               created.replyToMessage.userId ??

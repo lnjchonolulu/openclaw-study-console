@@ -1729,6 +1729,38 @@ button.primary-button {
   word-break: break-word;
 }
 
+.message-attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  width: min(360px, 68vw);
+  margin-top: 8px;
+}
+
+.message-row p + .message-attachments {
+  margin-top: 10px;
+}
+
+.message-attachment {
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 13px;
+  background: rgba(17, 17, 17, 0.04);
+}
+
+.message-attachment img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+}
+
+.message-row-user .message-attachment {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .message-row-agent {
   color: var(--foreground);
 }
@@ -1834,6 +1866,15 @@ button.primary-button {
   border-top: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.96);
+  transition: box-shadow 160ms ease, background 160ms ease;
+}
+
+.message-composer-dragging {
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    inset 0 0 0 2px rgba(17, 17, 17, 0.16),
+    inset 0 0 0 999px rgba(17, 17, 17, 0.025),
+    0 -14px 34px rgba(0, 0, 0, 0.08);
 }
 
 .composer-reply-banner {
@@ -1883,9 +1924,65 @@ button.primary-button {
 
 .composer-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.composer-attachment-preview {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  overflow: hidden;
+  border: 1px solid rgba(17, 17, 17, 0.1);
+  border-radius: 16px;
+  background: rgba(17, 17, 17, 0.04);
+}
+
+.composer-attachment-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-attachment-preview button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.82);
+  color: white;
+  cursor: pointer;
+  font: 700 1rem/1 inherit;
+}
+
+.composer-attach-button {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  min-height: 54px;
+  border: 1px solid rgba(17, 17, 17, 0.12);
+  border-radius: 16px;
+  background: white;
+  color: var(--foreground);
+  cursor: pointer;
+  font: 500 1.45rem/1 inherit;
+}
+
+.composer-attach-button:hover {
+  background: rgba(17, 17, 17, 0.04);
 }
 
 .message-composer textarea {
@@ -2897,7 +2994,11 @@ button.primary-button {
   }
 
   .composer-bar {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto 1fr;
+  }
+
+  .message-composer .primary-button {
+    grid-column: 1 / -1;
   }
 
   .hero-actions,

@@ -1,4 +1,5 @@
 import { syncAgentMarkdownProjection } from "@/lib/agent-markdown-sync";
+import type { OpenClawImageAttachment } from "@/lib/chat-attachments";
 
 function extractAssistantText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
@@ -160,6 +161,37 @@ async function invokeOpenClawResponse({
   return payload;
 }
 
+function buildOpenClawUserInput(
+  message: string,
+  imageAttachments?: OpenClawImageAttachment[],
+) {
+  const images = imageAttachments ?? [];
+
+  if (images.length === 0) {
+    return message;
+  }
+
+  return [
+    {
+      role: "user",
+      content: [
+        ...(message.trim()
+          ? [
+              {
+                type: "input_text",
+                text: message,
+              },
+            ]
+          : []),
+        ...images.map((image) => ({
+          type: "input_image",
+          image_url: image.dataUrl,
+        })),
+      ],
+    },
+  ];
+}
+
 function extractFunctionCalls(payload: unknown): OpenClawFunctionCall[] {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -221,6 +253,7 @@ function extractFunctionCalls(payload: unknown): OpenClawFunctionCall[] {
 
 export async function runAgentTurn({
   agentId,
+  imageAttachments,
   instructions,
   message,
   conversationKey,
@@ -229,6 +262,7 @@ export async function runAgentTurn({
   onToolRoundCheckpoint,
 }: {
   agentId: string;
+  imageAttachments?: OpenClawImageAttachment[];
   instructions?: string;
   message: string;
   conversationKey: string;
@@ -251,7 +285,7 @@ export async function runAgentTurn({
   let toolRounds = 0;
   let payload = await invokeOpenClawResponse({
     agentId,
-    input: message,
+    input: buildOpenClawUserInput(message, imageAttachments),
     instructions,
     tools,
     conversationKey,

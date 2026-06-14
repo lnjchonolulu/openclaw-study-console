@@ -5,6 +5,19 @@ import { ProfileAvatar } from "@/components/profile-avatar";
 import type { ChatMessage } from "@/lib/dm";
 import type { AvatarViewModel } from "@/lib/profile";
 
+const MAX_PENDING_IMAGES = 8;
+
+type PendingImageAttachment = {
+  file: File;
+  filename: string;
+  id: string;
+  kind: "image";
+  mimeType: string;
+  previewUrl: string;
+  size: number;
+  url: string;
+};
+
 function createClientId() {
   if (globalThis.crypto && "randomUUID" in globalThis.crypto) {
     return `client-${globalThis.crypto.randomUUID()}`;
@@ -51,6 +64,44 @@ function truncateReplyPreview(value: string, maxLength = 120) {
   return `${compact.slice(0, maxLength - 1)}…`;
 }
 
+function attachmentPreviewText(attachments: ChatMessage["attachments"]) {
+  if (attachments.length === 0) {
+    return "";
+  }
+
+  return attachments.length === 1 ? "[Image]" : `[${attachments.length} images]`;
+}
+
+function messagePreviewContent(message: Pick<ChatMessage, "attachments" | "content">) {
+  return message.content || attachmentPreviewText(message.attachments);
+}
+
+function MessageAttachments({
+  attachments,
+}: {
+  attachments: ChatMessage["attachments"];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="message-attachments">
+      {attachments.map((attachment) => (
+        <a
+          className="message-attachment"
+          href={attachment.url}
+          key={attachment.id}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <img alt={attachment.filename} src={attachment.url} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function authorLabelForMessage(
   message: ChatMessage,
   counterpart: { displayName: string } | null,
@@ -69,6 +120,7 @@ type ReplyTarget = {
 };
 
 type PendingUserMessage = {
+  attachments: ChatMessage["attachments"];
   clientMessageId: string;
   content: string;
   createdAt: string;
@@ -151,10 +203,14 @@ export function ChatClient({
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [isDraggingImages, setIsDraggingImages] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImageAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const pendingImageUrlsRef = useRef<Set<string>>(new Set());
   const pendingScrollRestoreRef = useRef<{
     previousScrollHeight: number;
     previousScrollTop: number;
@@ -256,12 +312,70 @@ export function ChatClient({
   }, [recipientKind, roomId]);
 
   useEffect(() => {
+    const pendingImageUrls = pendingImageUrlsRef.current;
+
     return () => {
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
       }
+
+      pendingImageUrls.forEach((previewUrl) => {
+        URL.revokeObjectURL(previewUrl);
+      });
     };
   }, []);
+
+  function addPendingImageFiles(files: File[]) {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length === 0) {
+      setError("Drop PNG, JPG, GIF, or WebP images.");
+      return;
+    }
+
+    setPendingImages((current) => {
+      const remainingSlots = Math.max(0, MAX_PENDING_IMAGES - current.length);
+      const nextFiles = imageFiles.slice(0, remainingSlots);
+
+      if (nextFiles.length < imageFiles.length) {
+        setError(`Attach up to ${MAX_PENDING_IMAGES} images at a time.`);
+      } else {
+        setError(null);
+      }
+
+      return [
+        ...current,
+        ...nextFiles.map((file) => {
+          const previewUrl = URL.createObjectURL(file);
+          pendingImageUrlsRef.current.add(previewUrl);
+
+          return {
+            file,
+            filename: file.name || "image",
+            id: createClientId(),
+            kind: "image" as const,
+            mimeType: file.type,
+            previewUrl,
+            size: file.size,
+            url: previewUrl,
+          };
+        }),
+      ];
+    });
+  }
+
+  function removePendingImage(id: string) {
+    setPendingImages((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+        pendingImageUrlsRef.current.delete(target.previewUrl);
+      }
+
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  }
 
   async function sendTypingState(isTyping: boolean) {
     if (recipientKind !== "person" || !roomId) {
@@ -321,8 +435,8 @@ export function ChatClient({
       return;
     }
 
-    if (!trimmedMessage) {
-      setError("Write a message first.");
+    if (!trimmedMessage && pendingImages.length === 0) {
+      setError("Write a message or attach an image.");
       return;
     }
 
@@ -339,12 +453,22 @@ export function ChatClient({
     const clientMessageId = createClientId();
     const previousMessageDraft = message;
     const previousReplyTarget = replyTarget;
+    const previousPendingImages = pendingImages;
+    const optimisticAttachments = previousPendingImages.map((attachment) => ({
+      filename: attachment.filename,
+      id: attachment.id,
+      kind: attachment.kind,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      url: attachment.url,
+    }));
 
     const optimisticMessage: ChatMessage = {
       id: clientMessageId,
       role: "USER",
       content: trimmedMessage,
       createdAt: new Date().toISOString(),
+      attachments: optimisticAttachments,
       replyTo: previousReplyTarget
         ? {
             authorName: previousReplyTarget.authorName,
@@ -359,6 +483,7 @@ export function ChatClient({
     setError(null);
     setMessages((current) => [...current, optimisticMessage]);
     setMessage("");
+    setPendingImages([]);
     setReplyTarget(null);
     setIsOtherTyping(false);
 
@@ -370,18 +495,29 @@ export function ChatClient({
     void sendTypingState(false);
 
     try {
+      const formData = new FormData();
+      formData.set("clientMessageId", clientMessageId);
+      formData.set("message", trimmedMessage);
+
+      if (agentId) {
+        formData.set("agentId", agentId);
+      }
+
+      if (recipientId) {
+        formData.set("recipientId", recipientId);
+      }
+
+      if (previousReplyTarget?.id) {
+        formData.set("replyToMessageId", previousReplyTarget.id);
+      }
+
+      previousPendingImages.forEach((attachment) => {
+        formData.append("images", attachment.file, attachment.filename);
+      });
+
       const response = await fetch(recipientKind === "agent" ? "/api/chat" : "/api/dm", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          agentId,
-          clientMessageId,
-          message: trimmedMessage,
-          recipientId,
-          replyToMessageId: previousReplyTarget?.id ?? null,
-        }),
+        body: formData,
       });
 
       const payload = (await response.json()) as {
@@ -393,6 +529,7 @@ export function ChatClient({
           createdAt: string;
         };
         userMessage?: {
+          attachments?: ChatMessage["attachments"];
           clientMessageId?: string | null;
           createdAt: string;
           id: string;
@@ -404,6 +541,7 @@ export function ChatClient({
           current.filter((currentMessage) => currentMessage.id !== clientMessageId),
         );
         setMessage(previousMessageDraft);
+        setPendingImages(previousPendingImages);
         setReplyTarget(previousReplyTarget);
         setError(payload.error ?? "The message could not be sent.");
         setIsSending(false);
@@ -414,6 +552,7 @@ export function ChatClient({
         setMessages((current) =>
           replacePendingUserMessage(current, {
             clientMessageId,
+            attachments: payload.userMessage!.attachments ?? optimisticAttachments,
             content: trimmedMessage,
             createdAt: payload.userMessage!.createdAt,
             replyTo: optimisticMessage.replyTo,
@@ -427,8 +566,10 @@ export function ChatClient({
           {
             id: payload.replyMessage!.id,
             role: "AGENT",
+            attachments: [],
             content: payload.replyMessage!.content,
             createdAt: payload.replyMessage!.createdAt,
+            replyTo: null,
           },
         ]);
       }
@@ -443,12 +584,17 @@ export function ChatClient({
         });
       }
 
+      previousPendingImages.forEach((attachment) => {
+        URL.revokeObjectURL(attachment.previewUrl);
+        pendingImageUrlsRef.current.delete(attachment.previewUrl);
+      });
       setIsSending(false);
     } catch (sendError) {
       setMessages((current) =>
         current.filter((currentMessage) => currentMessage.id !== clientMessageId),
       );
       setMessage(previousMessageDraft);
+      setPendingImages(previousPendingImages);
       setReplyTarget(previousReplyTarget);
       setError(
         sendError instanceof Error ? sendError.message : "The message could not be sent.",
@@ -544,7 +690,7 @@ export function ChatClient({
                     onClick={() =>
                       setReplyTarget({
                         authorName: authorLabelForMessage(row.message, counterpart),
-                        content: row.message.content,
+                        content: messagePreviewContent(row.message),
                         id: row.message.id,
                       })
                     }
@@ -587,7 +733,8 @@ export function ChatClient({
                       </span>
                     </div>
                   ) : null}
-                  <p>{row.message.content}</p>
+                  {row.message.content ? <p>{row.message.content}</p> : null}
+                  <MessageAttachments attachments={row.message.attachments} />
                 </div>
               </div>
               {row.message.role !== "USER" ? (
@@ -597,7 +744,7 @@ export function ChatClient({
                     onClick={() =>
                       setReplyTarget({
                         authorName: authorLabelForMessage(row.message, counterpart),
-                        content: row.message.content,
+                        content: messagePreviewContent(row.message),
                         id: row.message.id,
                       })
                     }
@@ -641,7 +788,32 @@ export function ChatClient({
         <div ref={messageEndRef} />
       </div>
 
-      <form className="message-composer" onSubmit={handleSubmit}>
+      <form
+        className={`message-composer ${isDraggingImages ? "message-composer-dragging" : ""}`}
+        onDragEnter={(event) => {
+          if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
+            event.preventDefault();
+            setIsDraggingImages(true);
+          }
+        }}
+        onDragOver={(event) => {
+          if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
+            event.preventDefault();
+            setIsDraggingImages(true);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDraggingImages(false);
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDraggingImages(false);
+          addPendingImageFiles(Array.from(event.dataTransfer.files));
+        }}
+        onSubmit={handleSubmit}
+      >
         {error ? <p className="helper-text message-error">{error}</p> : null}
         {replyTarget ? (
           <div className="composer-reply-banner">
@@ -662,7 +834,41 @@ export function ChatClient({
             </button>
           </div>
         ) : null}
+        {pendingImages.length > 0 ? (
+          <div className="composer-attachments">
+            {pendingImages.map((attachment) => (
+              <div className="composer-attachment-preview" key={attachment.id}>
+                <img alt={attachment.filename} src={attachment.previewUrl} />
+                <button
+                  aria-label={`Remove ${attachment.filename}`}
+                  onClick={() => removePendingImage(attachment.id)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="composer-bar">
+          <input
+            accept="image/gif,image/jpeg,image/png,image/webp"
+            hidden
+            multiple
+            onChange={(event) => {
+              addPendingImageFiles(Array.from(event.target.files ?? []));
+              event.currentTarget.value = "";
+            }}
+            ref={fileInputRef}
+            type="file"
+          />
+          <button
+            className="composer-attach-button"
+            onClick={() => fileInputRef.current?.click()}
+            type="button"
+          >
+            +
+          </button>
           <textarea
             aria-label="Message"
             ref={textareaRef}
@@ -713,6 +919,7 @@ function mergeMessages(
         previous[index].id === message.id &&
         previous[index].content === message.content &&
         previous[index].createdAt === message.createdAt &&
+        JSON.stringify(previous[index].attachments) === JSON.stringify(message.attachments) &&
         previous[index].role === message.role &&
         previous[index].replyTo?.id === message.replyTo?.id &&
         previous[index].replyTo?.content === message.replyTo?.content,
@@ -743,6 +950,7 @@ function replacePendingUserMessage(
 
       return {
         ...message,
+        attachments: pending.attachments,
         content: pending.content,
         createdAt: pending.createdAt,
         id: persistedId,
@@ -762,6 +970,10 @@ function isSameUserMessage(left: ChatMessage, right: ChatMessage) {
   }
 
   if (left.content !== right.content) {
+    return false;
+  }
+
+  if (JSON.stringify(left.attachments) !== JSON.stringify(right.attachments)) {
     return false;
   }
 

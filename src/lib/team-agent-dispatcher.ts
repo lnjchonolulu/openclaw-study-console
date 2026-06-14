@@ -3,6 +3,11 @@ import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
 import {
+  attachmentPreviewText,
+  normalizeChatAttachments,
+  openClawImagesFromChatAttachments,
+} from "@/lib/chat-attachments";
+import {
   configuredDefaultReviewMinutes,
   markTaskWaitingForReview,
 } from "@/lib/agent-task-review-schedule";
@@ -119,6 +124,7 @@ type DispatchMessage = {
     openclawAgentId: string;
   } | null;
   agentId?: string | null;
+  attachmentsJson?: unknown;
   content: string;
   createdAt: Date;
   id: string;
@@ -479,10 +485,19 @@ function formatRecentMessages(messages: DispatchMessage[]) {
       const author = message.user
         ? `${message.user.displayName} (@${message.user.username})`
         : (message.agent?.displayName ?? "Agent");
+      const attachments = normalizeChatAttachments(message.attachmentsJson);
+      const attachmentText = attachmentPreviewText(attachments);
+      const content = [message.content, attachmentText].filter(Boolean).join(" ");
 
-      return `[${message.createdAt.toISOString()}] ${author}: ${message.content}`;
+      return `[${message.createdAt.toISOString()}] ${author}: ${content}`;
     })
     .join("\n");
+}
+
+async function openClawImagesForMessage(message: DispatchMessage) {
+  return openClawImagesFromChatAttachments(
+    normalizeChatAttachments(message.attachmentsJson),
+  );
 }
 
 function formatRoomMembers(room: {
@@ -860,6 +875,7 @@ async function classifyHumanTurn({
     const result = await runAgentTurn({
       agentId: arbiterAgent.openclawAgentId,
       conversationKey: `team:${room.id}:task-intent:${chainId}`,
+      imageAttachments: await openClawImagesForMessage(triggeringMessage),
       instructions: `You are conservatively classifying a human turn in a CyWorld Team Chat.
 This is a private routing decision. Do not answer the user and do not use tools.
 
@@ -885,7 +901,7 @@ Recent conversation:
 ${recentLog || "(no previous messages)"}
 
 Latest human message:
-${triggeringMessage.content}`,
+${triggeringMessage.content || attachmentPreviewText(normalizeChatAttachments(triggeringMessage.attachmentsJson))}`,
     });
 
     return parseHumanTurnIntent(result.assistantText, triggeringMessage.content);
@@ -1407,6 +1423,7 @@ async function runAssignedTeamTask({
     const result = await runAgentTurn({
       agentId: agent.openclawAgentId,
       conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
+      imageAttachments: await openClawImagesForMessage(triggeringMessage),
       instructions:
         assignment === "clarify"
           ? `${[
@@ -1456,7 +1473,7 @@ Recent conversation:
 ${recentLog || "(no previous messages)"}
 
 Human request:
-${triggeringMessage.content}
+${triggeringMessage.content || attachmentPreviewText(normalizeChatAttachments(triggeringMessage.attachmentsJson))}
 
 ${assignment === "clarify" ? `Ask the one clarification question as ${agent.displayName}.` : `Carry this task forward as ${agent.displayName}, then post the useful channel update.`}`,
       ...(assignment === "execute"
@@ -1714,6 +1731,7 @@ async function askAgentForTeamProposal({
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
     conversationKey: `team:${room.id}:agent:${agent.openclawAgentId}`,
+    imageAttachments: await openClawImagesForMessage(latestMessage),
     instructions: `${[
       instructions,
       selectiveNoteContext,
@@ -1754,7 +1772,7 @@ Recent conversation:
 ${recentLog || "(no previous messages)"}
 
 Latest ${latestMessage.user ? "human" : "agent"} message:
-${latestMessage.content}
+${latestMessage.content || attachmentPreviewText(normalizeChatAttachments(latestMessage.attachmentsJson))}
 
 Should ${agent.displayName} speak now?`,
     tools: CYWORLD_AGENT_TOOLS,
@@ -1946,6 +1964,7 @@ async function createAgentMessage({
 
   return {
     author: created.agent?.displayName ?? agent.displayName,
+    attachments: [],
     content: created.content,
     createdAt: created.createdAt.toISOString(),
     id: created.id,
@@ -1955,7 +1974,11 @@ async function createAgentMessage({
             created.replyToMessage.user?.displayName ??
             created.replyToMessage.agent?.displayName ??
             "Unknown",
-          content: created.replyToMessage.content,
+          content:
+            created.replyToMessage.content ||
+            attachmentPreviewText(
+              normalizeChatAttachments(created.replyToMessage.attachmentsJson),
+            ),
           id: created.replyToMessage.id,
           userId:
             created.replyToMessage.userId ??

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { parseChatPayload } from "@/lib/chat-attachments";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
@@ -25,19 +26,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    agentId?: string;
-    clientMessageId?: string;
-    message?: string;
-    replyToMessageId?: string;
-  };
-  const clientMessageId = body.clientMessageId?.trim() || null;
-  const targetAgentId = body.agentId?.trim() || user.agent?.openclawAgentId;
-  const message = body.message?.trim();
-  const replyToMessageId = body.replyToMessageId?.trim() || null;
+  const body = await parseChatPayload(request);
+  const clientMessageId = body.clientMessageId || null;
+  const targetAgentId = body.agentId || user.agent?.openclawAgentId;
+  const message = body.message;
+  const replyToMessageId = body.replyToMessageId || null;
 
-  if (!message) {
-    return NextResponse.json({ error: "Message is required." }, { status: 400 });
+  if (!message && body.attachments.length === 0) {
+    return NextResponse.json({ error: "Message or image is required." }, { status: 400 });
   }
 
   if (!targetAgentId) {
@@ -85,6 +81,7 @@ export async function POST(request: Request) {
       userId: user.id,
       role: "USER",
       content: message,
+      attachmentsJson: body.attachments,
       replyToMessageId,
     },
   });
@@ -213,6 +210,7 @@ export async function POST(request: Request) {
           createdAt: replyMessage.createdAt.toISOString(),
         },
         userMessage: {
+          attachments: body.attachments,
           clientMessageId,
           createdAt: createdUserMessage.createdAt.toISOString(),
           id: createdUserMessage.id,
@@ -252,6 +250,7 @@ export async function POST(request: Request) {
 
     const result = await runAgentTurn({
       agentId: dmRoom.targetAgent.openclawAgentId,
+      imageAttachments: body.openClawImages,
       instructions: turnInstructions,
       message,
       conversationKey: `room:${dmRoom.room.id}`,
@@ -298,6 +297,7 @@ export async function POST(request: Request) {
         createdAt: replyMessage.createdAt.toISOString(),
       },
       userMessage: {
+        attachments: body.attachments,
         clientMessageId,
         createdAt: createdUserMessage.createdAt.toISOString(),
         id: createdUserMessage.id,

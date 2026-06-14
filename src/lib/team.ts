@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import {
+  attachmentPreviewText,
+  normalizeChatAttachments,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
+import {
   getAgentMeta,
   getUserMeta,
   normalizeProfileConfig,
@@ -30,6 +35,7 @@ export type TeamChannelDetail = {
   members: TeamParticipant[];
   messages: {
     author: string;
+    attachments: ChatAttachment[];
     content: string;
     createdAt: string;
     id: string;
@@ -541,6 +547,7 @@ export async function getTeamChannelDetail(
       }),
       messages: fallbackRoom.messages.map((message) => ({
         author: message.user?.displayName ?? message.agent?.displayName ?? "Unknown",
+        attachments: normalizeChatAttachments(message.attachmentsJson),
         content: message.content,
         createdAt: message.createdAt.toISOString(),
         id: message.id,
@@ -550,7 +557,11 @@ export async function getTeamChannelDetail(
                 message.replyToMessage.user?.displayName ??
                 message.replyToMessage.agent?.displayName ??
                 "Unknown",
-              content: message.replyToMessage.content,
+              content:
+                message.replyToMessage.content ||
+                attachmentPreviewText(
+                  normalizeChatAttachments(message.replyToMessage.attachmentsJson),
+                ),
               id: message.replyToMessage.id,
               userId:
                 message.replyToMessage.userId ??
@@ -574,6 +585,7 @@ export async function getTeamChannelDetail(
     }),
     messages: room.messages.map((message) => ({
       author: message.user?.displayName ?? message.agent?.displayName ?? "Unknown",
+      attachments: normalizeChatAttachments(message.attachmentsJson),
       content: message.content,
       createdAt: message.createdAt.toISOString(),
       id: message.id,
@@ -583,7 +595,11 @@ export async function getTeamChannelDetail(
               message.replyToMessage.user?.displayName ??
               message.replyToMessage.agent?.displayName ??
               "Unknown",
-            content: message.replyToMessage.content,
+            content:
+              message.replyToMessage.content ||
+              attachmentPreviewText(
+                normalizeChatAttachments(message.replyToMessage.attachmentsJson),
+              ),
             id: message.replyToMessage.id,
             userId:
               message.replyToMessage.userId ??
@@ -806,6 +822,7 @@ export async function createTeamMessage(
   userId: string,
   roomId: string,
   content: string,
+  attachments: ChatAttachment[] = [],
   replyToMessageId?: string | null,
 ) {
   const room = await prisma.room.findFirst({
@@ -868,6 +885,7 @@ export async function createTeamMessage(
       userId,
       role: "USER",
       content,
+      attachmentsJson: attachments,
       replyToMessageId: replyToMessageId?.trim() || null,
     },
     include: {
