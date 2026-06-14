@@ -138,7 +138,7 @@ model User {
   connectedIntegrations  ExternalIntegration[]
   requestedEmailThreads  EmailThread[]                @relation("EmailThreadRequester")
   relationshipGuidance   AgentRelationshipGuidance[]  @relation("RelationshipTargetUser")
-  createdVideoCalls      VideoCall[]                   @relation("VideoCallCreator")
+  createdVideoCalls      VideoCall[]                  @relation("VideoCallCreator")
   videoCallParticipants  VideoCallParticipant[]
 }
 
@@ -154,24 +154,24 @@ model Team {
 }
 
 model Agent {
-  id                String             @id @default(cuid())
-  userId            String             @unique
-  openclawAgentId   String             @unique
-  displayName       String
-  workspacePath     String
-  profileConfigJson Json?
-  personaSummary    String?
-  soulConfigJson    Json?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  user              User               @relation(fields: [userId], references: [id])
-  messages          Message[]
-  roomAgents        RoomAgent[]
-  scheduledMessages ScheduledMessage[]
-  tasks             AgentTask[]        @relation("AgentTaskOwner")
-  handoffTasks      AgentTask[]        @relation("AgentTaskTargetAgent")
-  toolExecutions    AgentToolExecution[]
-  emailThreads      EmailThread[]
+  id                   String                      @id @default(cuid())
+  userId               String                      @unique
+  openclawAgentId      String                      @unique
+  displayName          String
+  workspacePath        String
+  profileConfigJson    Json?
+  personaSummary       String?
+  soulConfigJson       Json?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  user                 User                        @relation(fields: [userId], references: [id])
+  messages             Message[]
+  roomAgents           RoomAgent[]
+  scheduledMessages    ScheduledMessage[]
+  tasks                AgentTask[]                 @relation("AgentTaskOwner")
+  handoffTasks         AgentTask[]                 @relation("AgentTaskTargetAgent")
+  toolExecutions       AgentToolExecution[]
+  emailThreads         EmailThread[]
   relationshipGuidance AgentRelationshipGuidance[]
 }
 
@@ -291,14 +291,14 @@ model ScheduledMessage {
 }
 
 model AgentTask {
-  id                String             @id @default(cuid())
+  id                String               @id @default(cuid())
   agentId           String
   targetAgentId     String?
   parentTaskId      String?
   requesterUserId   String
   targetUserId      String?
   sourceRoomId      String?
-  status            AgentTaskStatus    @default(OPEN)
+  status            AgentTaskStatus      @default(OPEN)
   kind              String
   title             String
   objective         String
@@ -306,16 +306,16 @@ model AgentTask {
   nextReviewAt      DateTime?
   reviewLeaseUntil  DateTime?
   lastReviewedAt    DateTime?
-  reviewCount       Int                @default(0)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  agent             Agent              @relation("AgentTaskOwner", fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
-  targetAgent       Agent?             @relation("AgentTaskTargetAgent", fields: [targetAgentId], references: [openclawAgentId], onDelete: SetNull)
-  parentTask        AgentTask?         @relation("AgentTaskChildren", fields: [parentTaskId], references: [id], onDelete: SetNull)
-  childTasks        AgentTask[]        @relation("AgentTaskChildren")
-  requester         User               @relation("AgentTaskRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
-  targetUser        User?              @relation("AgentTaskTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
-  sourceRoom        Room?              @relation(fields: [sourceRoomId], references: [id], onDelete: SetNull)
+  reviewCount       Int                  @default(0)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  agent             Agent                @relation("AgentTaskOwner", fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+  targetAgent       Agent?               @relation("AgentTaskTargetAgent", fields: [targetAgentId], references: [openclawAgentId], onDelete: SetNull)
+  parentTask        AgentTask?           @relation("AgentTaskChildren", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childTasks        AgentTask[]          @relation("AgentTaskChildren")
+  requester         User                 @relation("AgentTaskRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  targetUser        User?                @relation("AgentTaskTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  sourceRoom        Room?                @relation(fields: [sourceRoomId], references: [id], onDelete: SetNull)
   messages          Message[]
   scheduledMessages ScheduledMessage[]
   events            AgentTaskEvent[]
@@ -331,19 +331,19 @@ model AgentTask {
 }
 
 model AgentToolExecution {
-  id                 String                   @id @default(cuid())
-  idempotencyKey     String                   @unique
-  callId             String
-  taskId             String?
-  actingAgentId      String
-  toolName           String
-  status             AgentToolExecutionStatus @default(RUNNING)
-  resultText         String?
-  error              String?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  task               AgentTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  actingAgent        Agent                    @relation(fields: [actingAgentId], references: [openclawAgentId], onDelete: Cascade)
+  id             String                   @id @default(cuid())
+  idempotencyKey String                   @unique
+  callId         String
+  taskId         String?
+  actingAgentId  String
+  toolName       String
+  status         AgentToolExecutionStatus @default(RUNNING)
+  resultText     String?
+  error          String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  task           AgentTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  actingAgent    Agent                    @relation(fields: [actingAgentId], references: [openclawAgentId], onDelete: Cascade)
 
   @@index([taskId, createdAt])
   @@index([actingAgentId, createdAt])
@@ -592,34 +592,37 @@ model ExternalIntegration {
 }
 
 model VideoCall {
-  id              String                 @id @default(cuid())
-  name            String
-  dailyRoomName   String                 @unique
-  dailyRoomUrl    String
-  createdByUserId String?
-  status          VideoCallStatus        @default(ACTIVE)
-  startedAt       DateTime               @default(now())
-  endedAt         DateTime?
-  transcriptText  String?
-  transcriptStatus String                @default("PENDING")
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  createdBy       User?                  @relation("VideoCallCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  participants    VideoCallParticipant[]
+  id                  String                 @id @default(cuid())
+  name                String
+  dailyRoomName       String                 @unique
+  dailyRoomUrl        String
+  dailyTranscriptId   String?                @unique
+  createdByUserId     String?
+  status              VideoCallStatus        @default(ACTIVE)
+  startedAt           DateTime               @default(now())
+  endedAt             DateTime?
+  transcriptText      String?
+  transcriptStatus    String                 @default("PENDING")
+  transcriptSourceUrl String?
+  transcriptFetchedAt DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  createdBy           User?                  @relation("VideoCallCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  participants        VideoCallParticipant[]
 
   @@index([status, startedAt])
   @@index([createdByUserId, startedAt])
 }
 
 model VideoCallParticipant {
-  callId     String
-  userId     String
-  status     VideoCallParticipantStatus @default(INVITED)
-  invitedAt  DateTime                   @default(now())
-  joinedAt   DateTime?
-  leftAt     DateTime?
-  call       VideoCall                  @relation(fields: [callId], references: [id], onDelete: Cascade)
-  user       User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  callId    String
+  userId    String
+  status    VideoCallParticipantStatus @default(INVITED)
+  invitedAt DateTime                   @default(now())
+  joinedAt  DateTime?
+  leftAt    DateTime?
+  call      VideoCall                  @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([callId, userId])
   @@index([userId, status])

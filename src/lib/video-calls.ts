@@ -349,29 +349,11 @@ export async function leaveVideoCall(callId: string, userId: string) {
       where: {
         id: callId,
       },
-      include: {
-        participants: {
-          include: {
-            user: true,
-          },
-        },
+      select: {
+        transcriptStatus: true,
+        transcriptText: true,
       },
     });
-
-    const transcriptLines = call
-      ? [
-          `CyWorld Video Call Transcript`,
-          ``,
-          `Call: ${call.name}`,
-          `Started: ${call.startedAt.toISOString()}`,
-          `Ended: ${new Date().toISOString()}`,
-          `Participants: ${call.participants
-            .map((participant) => participant.user.displayName)
-            .join(", ")}`,
-          ``,
-          `Automatic transcription is pending Daily transcript webhook integration.`,
-        ]
-      : [];
 
     await prisma.videoCall.update({
       where: {
@@ -380,8 +362,9 @@ export async function leaveVideoCall(callId: string, userId: string) {
       data: {
         endedAt: new Date(),
         status: "ENDED",
-        transcriptStatus: "PLACEHOLDER",
-        transcriptText: transcriptLines.join("\n"),
+        transcriptStatus: call?.transcriptText?.trim()
+          ? call.transcriptStatus
+          : "PENDING",
       },
     });
   }
