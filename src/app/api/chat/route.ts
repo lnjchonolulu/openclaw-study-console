@@ -14,9 +14,91 @@ import {
   shouldTriggerCyWorldDriveSync,
   triggerCyWorldDriveSyncAll,
 } from "@/lib/cyworld-drive-sync";
-import { buildStudyFilesRuntimeContext } from "@/lib/files";
+import {
+  buildRecentGoogleDocsRuntimeContext,
+  buildStudyFilesRuntimeContext,
+} from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
+
+type TrackedToolCall = {
+  name: string;
+  ok: boolean;
+  resultText: string;
+};
+
+const GOOGLE_DOCS_WRITE_TOOLS = new Set([
+  "study_update_google_docs",
+  "study_write_google_docs_text",
+]);
+
+function parseToolResultOk(resultText: string) {
+  try {
+    const parsed = JSON.parse(resultText) as { ok?: unknown };
+
+    return parsed.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+function hasSuccessfulGoogleDocsWrite(toolCalls: TrackedToolCall[]) {
+  return toolCalls.some(
+    (call) => GOOGLE_DOCS_WRITE_TOOLS.has(call.name) && call.ok,
+  );
+}
+
+function messageLooksLikeGoogleDocsWriteRequest(
+  message: string,
+  hasRecentGoogleDocs: boolean,
+) {
+  const text = message.toLowerCase();
+  const mentionsGoogleDoc =
+    /\bgoogle\s+(doc|docs|document)\b/.test(text) ||
+    /\bdoc(ument)?\b/.test(text);
+  const asksForWrite =
+    /\b(add|append|draft|edit|fill|insert|put|replace|update|write)\b/.test(text) ||
+    /\b(empty|blank|content|still empty|try again)\b/.test(text);
+  const followUpToRecentDoc =
+    hasRecentGoogleDocs &&
+    /\b(that|this|the)\s+(file|doc|document)\b/.test(text);
+  const emptyFollowUp = hasRecentGoogleDocs && /\b(empty|blank|fill it|try again)\b/.test(text);
+
+  return (mentionsGoogleDoc && asksForWrite) || followUpToRecentDoc || emptyFollowUp;
+}
+
+function assistantClaimsGoogleDocsWriteSuccess(text: string) {
+  const lower = text.toLowerCase();
+  const claimsSuccess =
+    /\b(done|filled|updated|written|successfully|complete|created)\b/.test(lower);
+  const mentionsDoc = /\bgoogle\s+(doc|docs|document)\b/.test(lower) || /\bdocument\b/.test(lower);
+
+  return claimsSuccess && mentionsDoc;
+}
+
+function buildGoogleDocsWriteVerificationPrompt({
+  assistantText,
+  message,
+}: {
+  assistantText: string;
+  message: string;
+}) {
+  return [
+    "CyWorld verification detected a missing Google Docs write receipt.",
+    "",
+    "The user's latest request appears to require filling, writing, or updating a Google Docs document.",
+    "Your previous response did not produce a successful study_write_google_docs_text or study_update_google_docs tool receipt.",
+    "",
+    "Continue the same user request now:",
+    "- If the target Google Doc is identifiable from the conversation or the visible Google Docs context, call study_write_google_docs_text or study_update_google_docs.",
+    "- If the target document is not identifiable, ask one short clarification for the document link or target.",
+    "- Do not claim the document was filled, written, or updated unless the Google Docs write/update tool returns ok:true.",
+    "",
+    `Original user request: ${message}`,
+    "",
+    `Previous assistant response that lacked a write receipt: ${assistantText}`,
+  ].join("\n");
+}
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -224,6 +306,11 @@ export async function POST(request: Request) {
       maxVisibleEntries: 16,
       userId: user.id,
     });
+    const recentGoogleDocsContext = await buildRecentGoogleDocsRuntimeContext({
+      agentDatabaseId: dmRoom.targetAgent.id,
+      maxEntries: 5,
+      userId: user.id,
+    });
     const selectiveNoteContext = await buildSelectiveAgentNoteContext({
       agentId: dmRoom.targetAgent.openclawAgentId,
       counterpart: {
@@ -237,30 +324,67 @@ export async function POST(request: Request) {
       instructions,
       selectiveNoteContext,
       filesContext,
+      recentGoogleDocsContext,
     ]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n");
 
-    const result = await runAgentTurn({
-      agentId: dmRoom.targetAgent.openclawAgentId,
-      imageAttachments: body.openClawImages,
-      instructions: turnInstructions,
-      message,
-      conversationKey: `room:${dmRoom.room.id}`,
-      tools: CYWORLD_AGENT_TOOLS,
-      onToolCall: (call) =>
-        handleCyWorldAgentToolCall({
-          call,
-          currentHumanUserId: user.id,
-          objective: message,
-          requesterUserId: user.id,
-          senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-          sourceRoomId: dmRoom.room.id,
-          triggerType: "human_dm",
-        }),
-    });
+    const toolCalls: TrackedToolCall[] = [];
+    const runTurnWithTrackedTools = (turnMessage: string) =>
+      runAgentTurn({
+        agentId: dmRoom.targetAgent.openclawAgentId,
+        imageAttachments: body.openClawImages,
+        instructions: turnInstructions,
+        message: turnMessage,
+        conversationKey: `room:${dmRoom.room.id}`,
+        tools: CYWORLD_AGENT_TOOLS,
+        onToolCall: async (call) => {
+          const resultText = await handleCyWorldAgentToolCall({
+            call,
+            currentHumanUserId: user.id,
+            objective: message,
+            requesterUserId: user.id,
+            senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+            sourceRoomId: dmRoom.room.id,
+            triggerType: "human_dm",
+          });
 
-    const assistantText = result.assistantText;
+          toolCalls.push({
+            name: call.name,
+            ok: parseToolResultOk(resultText),
+            resultText,
+          });
+
+          return resultText;
+        },
+      });
+
+    const needsGoogleDocsWrite = messageLooksLikeGoogleDocsWriteRequest(
+      message,
+      Boolean(recentGoogleDocsContext),
+    );
+    let result = await runTurnWithTrackedTools(message);
+    let assistantText = result.assistantText;
+
+    if (needsGoogleDocsWrite && !hasSuccessfulGoogleDocsWrite(toolCalls)) {
+      result = await runTurnWithTrackedTools(
+        buildGoogleDocsWriteVerificationPrompt({
+          assistantText,
+          message,
+        }),
+      );
+      assistantText = result.assistantText;
+    }
+
+    if (
+      needsGoogleDocsWrite &&
+      !hasSuccessfulGoogleDocsWrite(toolCalls) &&
+      assistantClaimsGoogleDocsWriteSuccess(assistantText)
+    ) {
+      throw new Error(
+        "Google Docs write was not verified. Please ask again with the document link or target document name.",
+      );
+    }
 
     const replyMessage = await prisma.message.create({
       data: {

@@ -631,6 +631,82 @@ export async function buildStudyFilesRuntimeContext({
   ].join("\n");
 }
 
+export async function buildRecentGoogleDocsRuntimeContext({
+  agentDatabaseId,
+  maxEntries = 5,
+  userId,
+}: {
+  agentDatabaseId: string;
+  maxEntries?: number;
+  userId: string;
+}) {
+  const context = await getFileWorkspaceContext(userId);
+  const agentKey = `agent:${agentDatabaseId}`;
+
+  await ensurePersonalsStructure(context);
+
+  const records = await prisma.fileRecord.findMany({
+    where: {
+      OR: [{ teamId: context.teamId }, { teamId: null }],
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    select: {
+      accessConfigJson: true,
+      createdAt: true,
+      filename: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
+      id: true,
+      isFolder: true,
+      mimeType: true,
+      owner: {
+        select: {
+          displayName: true,
+        },
+      },
+      ownerUserId: true,
+      parentId: true,
+      sizeBytes: true,
+      storageKey: true,
+      sourceType: true,
+      systemKey: true,
+      teamId: true,
+      updatedAt: true,
+    },
+  });
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  const visibleDocs = records
+    .filter(
+      (record) =>
+        !record.isFolder &&
+        record.externalProvider === "GOOGLE" &&
+        record.mimeType === "application/vnd.google-apps.document" &&
+        canAccessRecordWithKey(record, agentKey, recordsById),
+    )
+    .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+    .slice(0, maxEntries);
+
+  if (visibleDocs.length === 0) {
+    return null;
+  }
+
+  return [
+    "Recent visible Google Docs targets",
+    "- Use these when the user says 'this document', 'that file', 'the empty doc', or asks you to fill/update a recently created Google Doc.",
+    "- If one target is clearly implied, use its Google URL with study_write_google_docs_text or study_update_google_docs.",
+    "- Do not claim the document was filled or updated unless a Google Docs write/update tool returns ok:true.",
+    visibleDocs
+      .map((record) => {
+        const path = buildStudyFilePath(record, recordsById);
+        const url = record.externalUrl ? `; Google URL: ${record.externalUrl}` : "";
+
+        return `- ${path} (${record.filename}${url})`;
+      })
+      .join("\n"),
+  ].join("\n");
+}
+
 export async function listWorkspaceFolder(
   parentId: string | null,
   userId: string,
