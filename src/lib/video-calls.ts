@@ -117,6 +117,7 @@ async function dailyCreateRoom(name: string) {
         enable_prejoin_ui: true,
         enable_recording: false,
         enable_transcription: "cloud",
+        enable_transcription_storage: true,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12,
       },
     }),
