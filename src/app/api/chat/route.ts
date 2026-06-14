@@ -14,10 +14,7 @@ import {
   shouldTriggerCyWorldDriveSync,
   triggerCyWorldDriveSyncAll,
 } from "@/lib/cyworld-drive-sync";
-import {
-  buildRecentGoogleDocsRuntimeContext,
-  buildStudyFilesRuntimeContext,
-} from "@/lib/files";
+import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -48,10 +45,7 @@ function hasSuccessfulGoogleDocsWrite(toolCalls: TrackedToolCall[]) {
   );
 }
 
-function messageLooksLikeGoogleDocsWriteRequest(
-  message: string,
-  hasRecentGoogleDocs: boolean,
-) {
+function messageLooksLikeGoogleDocsWriteRequest(message: string, hasVisibleGoogleDocs: boolean) {
   const text = message.toLowerCase();
   const mentionsGoogleDoc =
     /\bgoogle\s+(doc|docs|document)\b/.test(text) ||
@@ -60,9 +54,9 @@ function messageLooksLikeGoogleDocsWriteRequest(
     /\b(add|append|draft|edit|fill|insert|put|replace|update|write)\b/.test(text) ||
     /\b(empty|blank|content|still empty|try again)\b/.test(text);
   const followUpToRecentDoc =
-    hasRecentGoogleDocs &&
+    hasVisibleGoogleDocs &&
     /\b(that|this|the)\s+(file|doc|document)\b/.test(text);
-  const emptyFollowUp = hasRecentGoogleDocs && /\b(empty|blank|fill it|try again)\b/.test(text);
+  const emptyFollowUp = hasVisibleGoogleDocs && /\b(empty|blank|fill it|try again)\b/.test(text);
 
   return (mentionsGoogleDoc && asksForWrite) || followUpToRecentDoc || emptyFollowUp;
 }
@@ -306,11 +300,6 @@ export async function POST(request: Request) {
       maxVisibleEntries: 16,
       userId: user.id,
     });
-    const recentGoogleDocsContext = await buildRecentGoogleDocsRuntimeContext({
-      agentDatabaseId: dmRoom.targetAgent.id,
-      maxEntries: 5,
-      userId: user.id,
-    });
     const selectiveNoteContext = await buildSelectiveAgentNoteContext({
       agentId: dmRoom.targetAgent.openclawAgentId,
       counterpart: {
@@ -324,7 +313,6 @@ export async function POST(request: Request) {
       instructions,
       selectiveNoteContext,
       filesContext,
-      recentGoogleDocsContext,
     ]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n");
@@ -361,7 +349,7 @@ export async function POST(request: Request) {
 
     const needsGoogleDocsWrite = messageLooksLikeGoogleDocsWriteRequest(
       message,
-      Boolean(recentGoogleDocsContext),
+      filesContext.includes("Google file") && filesContext.includes("Google URL:"),
     );
     let result = await runTurnWithTrackedTools(message);
     let assistantText = result.assistantText;
