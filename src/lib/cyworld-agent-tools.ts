@@ -1,7 +1,9 @@
 import {
   AgentTaskEventType,
-  type Prisma,
+  Prisma,
 } from "@prisma/client";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   createCalendarEvent,
   deleteCalendarEventForUser,
@@ -12,6 +14,10 @@ import {
 } from "@/lib/calendar";
 import { runAgentHandoff } from "@/lib/agent-handoff";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
+import {
+  normalizeChatAttachments,
+  saveGeneratedChatImageAttachment,
+} from "@/lib/chat-attachments";
 import {
   markTaskWaitingForReview,
   nextTaskReviewAt,
@@ -47,6 +53,10 @@ import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import type { OpenClawFunctionCall, OpenClawFunctionTool } from "@/lib/openclaw";
 import { listPendingAgentTasks } from "@/lib/pending-agent-tasks";
 import { prisma } from "@/lib/prisma";
+import {
+  editOpenAiImage,
+  generateOpenAiImage,
+} from "@/lib/openai-images";
 import {
   dateKeyInTimeZone,
   formatDateTimeInTimeZone,
@@ -214,6 +224,67 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["targetOwnerUsername", "request"],
+    },
+  },
+  {
+    name: "study_generate_image",
+    description:
+      "Generate a new image and share it into the current CyWorld DM or Team Chat as an image attachment. Use it when the user asks this agent to draw, create, generate, mock up, render, visualize, or make an image. Do not claim the image was created unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        filename: {
+          type: "string",
+          description:
+            "Optional filename for the generated image, such as concept.png. CyWorld will sanitize it.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "The full image prompt. Include visual style, subject, composition, and constraints from the conversation.",
+        },
+        size: {
+          type: "string",
+          enum: ["auto", "1024x1024", "1024x1536", "1536x1024"],
+          description:
+            "Optional output size. Use auto unless the user requested square, portrait, or landscape.",
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "study_edit_image",
+    description:
+      "Edit an image that was shared in the current CyWorld conversation and post the edited result back into the same DM or Team Chat. Prefer sourceMessageId when the user replied to a specific image message; otherwise omit it and CyWorld will use the most recent image attachment in this room. Do not claim the edit succeeded unless this tool returns ok:true.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        filename: {
+          type: "string",
+          description:
+            "Optional filename for the edited image, such as edited-concept.png. CyWorld will sanitize it.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "The requested edit. Preserve important source-image details unless the user asked to change them.",
+        },
+        size: {
+          type: "string",
+          enum: ["auto", "1024x1024", "1024x1536", "1536x1024"],
+          description:
+            "Optional output size. Use auto unless the user requested square, portrait, or landscape.",
+        },
+        sourceMessageId: {
+          type: "string",
+          description:
+            "Optional CyWorld message ID containing the source image, especially when editing a replied-to image.",
+        },
+      },
+      required: ["prompt"],
     },
   },
   {
@@ -977,6 +1048,126 @@ function cleanUsername(value: unknown) {
 
 function cleanMessage(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function generatedImageFilename(value: unknown, fallback: string) {
+  const cleaned = cleanMessage(value);
+
+  if (!cleaned) {
+    return fallback;
+  }
+
+  return cleaned.toLowerCase().match(/\.(png|jpg|jpeg|webp)$/)
+    ? cleaned
+    : `${cleaned}.png`;
+}
+
+async function createAgentImageMessage({
+  agentOpenclawId,
+  attachment,
+  content,
+  roomId,
+  taskId,
+}: {
+  agentOpenclawId: string;
+  attachment: Prisma.InputJsonValue;
+  content: string;
+  roomId: string;
+  taskId?: string | null;
+}) {
+  const message = await prisma.message.create({
+    data: {
+      agentId: agentOpenclawId,
+      attachmentsJson: [attachment],
+      content,
+      role: "AGENT",
+      roomId,
+      taskId: taskId ?? null,
+    },
+  });
+
+  await prisma.room.update({
+    where: {
+      id: roomId,
+    },
+    data: {},
+  });
+
+  return message;
+}
+
+async function readChatImageAttachment(attachment: {
+  filename: string;
+  mimeType: string;
+  url: string;
+}) {
+  if (!attachment.url.startsWith("/uploads/chat/")) {
+    return null;
+  }
+
+  const relativePath = attachment.url.replace(/^\/+/, "");
+  const filePath = path.join(process.cwd(), "public", relativePath);
+  const buffer = await readFile(filePath).catch(() => null);
+
+  if (!buffer) {
+    return null;
+  }
+
+  return {
+    buffer,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+  };
+}
+
+async function findEditableImageInRoom({
+  roomId,
+  sourceMessageId,
+}: {
+  roomId: string;
+  sourceMessageId?: string;
+}) {
+  const messages = sourceMessageId
+    ? await prisma.message.findMany({
+        where: {
+          id: sourceMessageId,
+          roomId,
+        },
+        take: 1,
+      })
+    : await prisma.message.findMany({
+        where: {
+          roomId,
+          attachmentsJson: {
+            not: Prisma.JsonNull,
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 30,
+      });
+
+  for (const message of messages) {
+    const image = normalizeChatAttachments(message.attachmentsJson)[0];
+
+    if (!image) {
+      continue;
+    }
+
+    const source = await readChatImageAttachment(image);
+
+    if (!source) {
+      continue;
+    }
+
+    return {
+      messageId: message.id,
+      source,
+    };
+  }
+
+  return null;
 }
 
 function escapeRegExp(value: string) {
@@ -2719,6 +2910,110 @@ async function executeCyWorldAgentToolCall({
     });
 
     return JSON.stringify(result);
+  }
+
+  if (call.name === "study_generate_image") {
+    const prompt = cleanMessage(args.prompt);
+
+    if (!prompt) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_image_prompt",
+      });
+    }
+
+    if (!sourceRoomId) {
+      return JSON.stringify({
+        ok: false,
+        reason: "no_current_cyworld_room",
+      });
+    }
+
+    const generated = await generateOpenAiImage({
+      prompt,
+      size: args.size,
+    });
+    const attachment = await saveGeneratedChatImageAttachment({
+      buffer: generated.buffer,
+      filename: generatedImageFilename(args.filename, "generated-image.png"),
+      mimeType: generated.mimeType,
+    });
+    const message = await createAgentImageMessage({
+      agentOpenclawId: senderAgentOpenclawId,
+      attachment: attachment as Prisma.InputJsonValue,
+      content: "Generated image.",
+      roomId: sourceRoomId,
+      taskId,
+    });
+
+    return JSON.stringify({
+      attachment,
+      messageId: message.id,
+      ok: true,
+      roomId: sourceRoomId,
+      toolNote:
+        "The generated image has already been posted into the current CyWorld conversation as an attachment.",
+    });
+  }
+
+  if (call.name === "study_edit_image") {
+    const prompt = cleanMessage(args.prompt);
+
+    if (!prompt) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_image_edit_prompt",
+      });
+    }
+
+    if (!sourceRoomId) {
+      return JSON.stringify({
+        ok: false,
+        reason: "no_current_cyworld_room",
+      });
+    }
+
+    const source = await findEditableImageInRoom({
+      roomId: sourceRoomId,
+      sourceMessageId: cleanMessage(args.sourceMessageId) || undefined,
+    });
+
+    if (!source) {
+      return JSON.stringify({
+        ok: false,
+        reason: "no_editable_image_found_in_current_room",
+        guidance:
+          "Ask the user to attach or reply to the image they want edited, then call this tool again.",
+      });
+    }
+
+    const edited = await editOpenAiImage({
+      image: source.source,
+      prompt,
+      size: args.size,
+    });
+    const attachment = await saveGeneratedChatImageAttachment({
+      buffer: edited.buffer,
+      filename: generatedImageFilename(args.filename, "edited-image.png"),
+      mimeType: edited.mimeType,
+    });
+    const message = await createAgentImageMessage({
+      agentOpenclawId: senderAgentOpenclawId,
+      attachment: attachment as Prisma.InputJsonValue,
+      content: "Edited image.",
+      roomId: sourceRoomId,
+      taskId,
+    });
+
+    return JSON.stringify({
+      attachment,
+      messageId: message.id,
+      ok: true,
+      roomId: sourceRoomId,
+      sourceMessageId: source.messageId,
+      toolNote:
+        "The edited image has already been posted into the current CyWorld conversation as an attachment.",
+    });
   }
 
   if (call.name === "study_list_calendar") {

@@ -448,6 +448,8 @@ export function buildAgentRuntimeInstructions({
     `Available human usernames: ${availableHumanUsernames.map((username) => `@${username}`).join(", ") || "(none)"}.`,
     "Use these CyWorld tools only when you truly want the app to act on a CyWorld resource or deliver something outside the current conversation.",
     "Do not claim that pairing is required for CyWorld human DMs. CyWorld DM tools are the supported delivery path.",
+    "If the user asks you to generate, draw, render, make, or visualize an image, use study_generate_image. If the user asks you to modify an image that was attached in the current conversation, use study_edit_image. These tools post the resulting image directly into the current CyWorld conversation.",
+    "Do not claim an image was generated or edited unless the image tool returns ok:true. If study_edit_image cannot find a source image, ask the user to attach or reply to the image they want changed.",
     "",
     "Keep these routing instructions in mind while answering the user's latest message.",
   );

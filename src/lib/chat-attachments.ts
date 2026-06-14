@@ -151,6 +151,45 @@ export async function saveChatImageAttachments(files: FormDataEntryValue[]) {
   };
 }
 
+export async function saveGeneratedChatImageAttachment({
+  buffer,
+  filename,
+  mimeType,
+}: {
+  buffer: Buffer;
+  filename: string;
+  mimeType: string;
+}) {
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    throw new Error("Generated image type is not supported.");
+  }
+
+  if (buffer.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error("Generated image must be 8 MB or smaller.");
+  }
+
+  const now = new Date();
+  const year = String(now.getUTCFullYear());
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const uploadDir = path.join(process.cwd(), "public", "uploads", "chat", year, month);
+  const publicPrefix = `/uploads/chat/${year}/${month}`;
+  await mkdir(uploadDir, { recursive: true });
+
+  const id = globalThis.crypto.randomUUID();
+  const safeName = safeFilename(filename, `generated-image.${extensionForMimeType(mimeType)}`);
+  const storedName = `${id}.${extensionForMimeType(mimeType)}`;
+  await writeFile(path.join(uploadDir, storedName), buffer);
+
+  return {
+    filename: safeName,
+    id,
+    kind: "image" as const,
+    mimeType,
+    size: buffer.byteLength,
+    url: `${publicPrefix}/${storedName}`,
+  };
+}
+
 export async function openClawImagesFromChatAttachments(
   attachments: ChatAttachment[],
 ): Promise<OpenClawImageAttachment[]> {
