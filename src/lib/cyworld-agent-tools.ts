@@ -47,6 +47,7 @@ import {
 } from "@/lib/google-integration";
 import {
   authorizeGoogleWorkspaceFileForAgent,
+  createWorkspaceFolderForAgent,
   createGoogleWorkspaceEntryForAgent,
   getAgentEmailAttachments,
 } from "@/lib/files";
@@ -688,6 +689,43 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: ["toEmails", "title", "startAt", "endAt"],
+    },
+  },
+  {
+    name: "study_create_drive_folder",
+    description:
+      "Create a plain CyWorld Drive folder through CyWorld's permissioned Drive layer. Use this when the user asks to create a folder, directory, or shared workspace folder in CyWorld Drive. Set parentFolderPath when the user identifies a visible CyWorld Drive location; otherwise the folder is created at Drive root. By default the owner and this agent can access it. Add accessUsernames for human participants and accessAgentOwnerUsernames for those participants' personal agents when the user explicitly wants to share access.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        accessAgentOwnerUsernames: {
+          type: "array",
+          description:
+            "Optional CyWorld usernames whose personal agents should be able to access the new folder. This is separate from human access.",
+          items: {
+            type: "string",
+          },
+        },
+        accessUsernames: {
+          type: "array",
+          description:
+            "Optional human CyWorld usernames who should be able to access the new folder.",
+          items: {
+            type: "string",
+          },
+        },
+        folderName: {
+          type: "string",
+          description: "The new CyWorld Drive folder name.",
+        },
+        parentFolderPath: {
+          type: "string",
+          description:
+            "Optional CyWorld Drive folder path such as /Personals/hyungjun or /Research. If omitted, the folder is created at Drive root.",
+        },
+      },
+      required: ["folderName"],
     },
   },
   {
@@ -3507,6 +3545,30 @@ async function executeCyWorldAgentToolCall({
         fileType: fileType as "slides" | "docs" | "sheets",
         folderPath: cyworldFolderPath || null,
         title,
+      }),
+    );
+  }
+
+  if (call.name === "study_create_drive_folder") {
+    const folderName = cleanMessage(args.folderName);
+    const parentFolderPath = cleanMessage(args.parentFolderPath);
+    const accessUsernames = cleanStringArray(args.accessUsernames);
+    const accessAgentOwnerUsernames = cleanStringArray(args.accessAgentOwnerUsernames);
+
+    if (!folderName) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_folder_name",
+      });
+    }
+
+    return JSON.stringify(
+      await createWorkspaceFolderForAgent({
+        accessAgentOwnerUsernames,
+        accessUsernames,
+        agentOpenclawId: senderAgentOpenclawId,
+        folderName,
+        parentFolderPath: parentFolderPath || null,
       }),
     );
   }

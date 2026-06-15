@@ -715,15 +715,19 @@ export async function listWorkspaceFolder(
 }
 
 export async function createWorkspaceFolder({
+  createdByParticipantKey,
   createdByUserId,
   name,
   parentId,
   participantKeys,
+  sourceType = "USER_FOLDER",
 }: {
+  createdByParticipantKey?: string;
   createdByUserId: string;
   name: string;
   parentId: string | null;
   participantKeys?: string[];
+  sourceType?: string;
 }) {
   const trimmedName = name.trim();
 
@@ -732,12 +736,13 @@ export async function createWorkspaceFolder({
   }
 
   const context = await getFileWorkspaceContext(createdByUserId);
+  const actorKey = createdByParticipantKey ?? context.currentUserKey;
 
   if (parentId) {
     const parentFolder = await getFolderOrThrow(parentId);
     await requireParticipantAccess(
       parentFolder.id,
-      context.currentUserKey,
+      actorKey,
       "You do not have access to this folder.",
     );
   }
@@ -751,9 +756,11 @@ export async function createWorkspaceFolder({
       storageKey: `folder:${randomUUID()}`,
       isFolder: true,
       visibility: "TEAM",
-      sourceType: "USER_FOLDER",
+      sourceType,
       accessConfigJson: serializeAccessConfig({
-        participantKeys: [...new Set([context.currentUserKey, ...(participantKeys ?? [])])],
+        createdByParticipantKey: actorKey,
+        participantKeys: [...new Set([actorKey, ...(participantKeys ?? [])])],
+        updatedByParticipantKey: actorKey,
       }),
     },
     select: {
@@ -783,6 +790,112 @@ export async function createWorkspaceFolder({
   });
 
   return mapEntry(folder, context);
+}
+
+export async function createWorkspaceFolderForAgent({
+  accessAgentOwnerUsernames = [],
+  accessUsernames = [],
+  agentOpenclawId,
+  folderName,
+  parentFolderPath,
+}: {
+  accessAgentOwnerUsernames?: string[];
+  accessUsernames?: string[];
+  agentOpenclawId: string;
+  folderName: string;
+  parentFolderPath?: string | null;
+}) {
+  const agent = await prisma.agent.findUnique({
+    where: { openclawAgentId: agentOpenclawId },
+    select: {
+      id: true,
+      user: {
+        select: {
+          id: true,
+          teamId: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  if (!agent?.user) {
+    throw new Error("CyWorld agent owner was not found.");
+  }
+
+  const agentParticipantKey = `agent:${agent.id}`;
+  const ownerParticipantKey = `user:${agent.user.id}`;
+  const parentId = parentFolderPath?.trim()
+    ? await resolveWorkspaceFolderPathForParticipant({
+        folderPath: parentFolderPath,
+        participantKey: agentParticipantKey,
+        teamId: agent.user.teamId,
+      })
+    : null;
+
+  const usernames = [...new Set([...accessUsernames, ...accessAgentOwnerUsernames])]
+    .map((username) => username.trim().replace(/^@/, "").toLowerCase())
+    .filter(Boolean);
+  const targetUsers = usernames.length
+    ? await prisma.user.findMany({
+        where: {
+          username: {
+            in: usernames,
+          },
+          status: "ACTIVE",
+          teamId: agent.user.teamId,
+        },
+        select: {
+          agent: {
+            select: {
+              id: true,
+            },
+          },
+          id: true,
+          username: true,
+        },
+      })
+    : [];
+  const targetUsersByUsername = new Map(
+    targetUsers.map((user) => [user.username.toLowerCase(), user]),
+  );
+  const missingUsernames = usernames.filter(
+    (username) => !targetUsersByUsername.has(username),
+  );
+
+  if (missingUsernames.length > 0) {
+    throw new Error(
+      `Unknown or inactive CyWorld participant: ${missingUsernames.join(", ")}`,
+    );
+  }
+
+  const userAccessKeys = accessUsernames
+    .map((username) => targetUsersByUsername.get(username.trim().replace(/^@/, "").toLowerCase()))
+    .filter((user): user is NonNullable<typeof user> => Boolean(user))
+    .map((user) => `user:${user.id}`);
+  const agentAccessKeys = accessAgentOwnerUsernames
+    .map((username) => targetUsersByUsername.get(username.trim().replace(/^@/, "").toLowerCase()))
+    .filter((user): user is NonNullable<typeof user> => Boolean(user?.agent?.id))
+    .map((user) => `agent:${user.agent!.id}`);
+
+  const entry = await createWorkspaceFolder({
+    createdByParticipantKey: agentParticipantKey,
+    createdByUserId: agent.user.id,
+    name: folderName,
+    parentId,
+    participantKeys: [
+      ownerParticipantKey,
+      agentParticipantKey,
+      ...userAccessKeys,
+      ...agentAccessKeys,
+    ],
+    sourceType: "AGENT_CREATED_FOLDER",
+  });
+
+  return {
+    entry,
+    ok: true as const,
+  };
 }
 
 export async function uploadWorkspaceFiles({

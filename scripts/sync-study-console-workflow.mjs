@@ -165,6 +165,7 @@ Use CyWorld tools for:
 - Sending new Shared Gmail, including To, CC, and accessible local CyWorld Drive attachments.
 - Listing and replying inside this agent's own tracked Shared Gmail threads.
 - Sending external .ics calendar invite email to people outside CyWorld.
+- Creating CyWorld Drive folders through \`study_create_drive_folder\`, with CyWorld permissions and receipts.
 - Creating Google Slides, Google Docs, and Google Sheets through the shared CyWorld Google account.
 - Inspecting and editing accessible Google Workspace files.
 - Inspecting, adding, replying to, and resolving Google Drive review comments.
@@ -208,6 +209,12 @@ File-change rule:
 
 - Revised existing files are normally imported back to CyWorld Drive as new files, not silent replacements.
 - Name revised outputs clearly, for example "Original Name - edited by ${username}'s agent.ext".
+
+Folder-creation rule:
+
+- Use \`study_create_drive_folder\` when the user asks you to create a CyWorld Drive folder or directory.
+- Do not create folders by manually running \`mkdir\` inside \`CYWORLD_DRIVE\` unless CyWorld explicitly asks for a local mirror repair. The official tool records permissions, creator identity, and action receipts.
+- Human participants and their personal agents are separate access subjects. Only grant both when the user asked for both.
 
 ### CyWorld Calendar
 
