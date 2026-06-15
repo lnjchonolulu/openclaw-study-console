@@ -63,6 +63,7 @@ import {
   formatDateTimeInTimeZone,
   normalizeTimeZone,
 } from "@/lib/timezone";
+import { scheduleVideoCall } from "@/lib/video-calls";
 
 export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
@@ -380,6 +381,40 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: "study_schedule_video_call",
+    description:
+      "Reserve a future CyWorld Video Call for human participants. Use it when the user asks to schedule, reserve, arrange, or set up a video call in CyWorld. This does not start a live call: humans must start or join the live room from the Video Call tab. Agents cannot attend, watch, listen to, speak in, start, or control live video calls. The current human participant becomes the organizer, and the invited human participants receive pending CyWorld Calendar invitations.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        endAt: {
+          type: "string",
+          description:
+            "Video call end as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
+        },
+        invitedUsernames: {
+          type: "array",
+          description:
+            "CyWorld human usernames to invite, without @. Do not include agents. The current human organizer is automatically included in the scheduled call.",
+          items: {
+            type: "string",
+          },
+        },
+        name: {
+          type: "string",
+          description: "Video call name.",
+        },
+        startAt: {
+          type: "string",
+          description:
+            "Video call start as an ISO 8601 datetime string with the correct timezone offset for the current human participant unless another timezone was specified.",
+        },
+      },
+      required: ["name", "startAt", "endAt", "invitedUsernames"],
     },
   },
   {
@@ -968,6 +1003,15 @@ function toolReceiptSummary(toolName: string, result: Record<string, unknown> | 
     if (result.event && typeof result.event === "object" && !Array.isArray(result.event)) {
       const title = (result.event as { title?: unknown }).title;
       return `CyWorld tool ${toolName} succeeded${typeof title === "string" ? ` for "${title}"` : ""}.`;
+    }
+
+    if (
+      result.videoCall &&
+      typeof result.videoCall === "object" &&
+      !Array.isArray(result.videoCall)
+    ) {
+      const name = (result.videoCall as { name?: unknown }).name;
+      return `CyWorld tool ${toolName} succeeded${typeof name === "string" ? ` for "${name}"` : ""}.`;
     }
 
     if (result.entry && typeof result.entry === "object" && !Array.isArray(result.entry)) {
@@ -2025,6 +2069,159 @@ async function handleCalendarCreateTool({
   });
 }
 
+async function handleVideoCallScheduleTool({
+  args,
+  currentHumanUserId,
+  objective,
+}: {
+  args: Record<string, unknown>;
+  currentHumanUserId?: string;
+  objective?: string;
+}) {
+  if (!currentHumanUserId) {
+    return JSON.stringify({
+      ok: false,
+      reason: "video_call_schedule_requires_current_human",
+      guidance:
+        "Do not schedule a CyWorld Video Call from an internal handoff or background context. Ask the relevant human to approve it in their own conversation.",
+    });
+  }
+
+  const name = cleanMessage(args.name);
+  const startAt = parseDate(args.startAt);
+  const endAt = parseDate(args.endAt);
+  const organizer = await prisma.user.findUnique({
+    where: {
+      id: currentHumanUserId,
+    },
+    select: {
+      id: true,
+      timezone: true,
+      username: true,
+    },
+  });
+
+  if (!organizer) {
+    return JSON.stringify({
+      ok: false,
+      reason: "current_human_not_found",
+    });
+  }
+
+  const requesterTimezone = normalizeTimeZone(organizer.timezone);
+
+  if (!name || !startAt || !endAt) {
+    return JSON.stringify({
+      ok: false,
+      reason: "missing_or_invalid_name_startAt_or_endAt",
+    });
+  }
+
+  if (endAt.getTime() <= startAt.getTime()) {
+    return JSON.stringify({
+      ok: false,
+      reason: "endAt_must_be_after_startAt",
+    });
+  }
+
+  if (
+    objective &&
+    mentionsTodayLikeDate(objective) &&
+    dateKeyInTimeZone(startAt, requesterTimezone) !==
+      dateKeyInTimeZone(new Date(), requesterTimezone)
+  ) {
+    return JSON.stringify({
+      ok: false,
+      reason: "relative_date_does_not_match_today_in_requester_timezone",
+      currentDate: dateKeyInTimeZone(new Date(), requesterTimezone),
+      requestedStartDate: dateKeyInTimeZone(startAt, requesterTimezone),
+      requesterTimezone,
+      guidance:
+        "The user used today-like language. Recalculate the video call date from the current human participant's timezone or ask a clarification before scheduling it.",
+    });
+  }
+
+  const requestedUsernames = Array.from(
+    new Set(
+      cleanStringArray(args.invitedUsernames)
+        .map((username) => cleanUsername(username))
+        .filter(Boolean)
+        .filter((username) => username !== organizer.username),
+    ),
+  );
+
+  const invitees = await prisma.user.findMany({
+    where: {
+      username: {
+        in: requestedUsernames.length > 0 ? requestedUsernames : ["__none__"],
+      },
+      status: "ACTIVE",
+    },
+    select: {
+      id: true,
+      username: true,
+    },
+  });
+  const foundUsernames = new Set(invitees.map((invitee) => invitee.username));
+  const missingUsernames = requestedUsernames.filter(
+    (username) => !foundUsernames.has(username),
+  );
+
+  if (missingUsernames.length > 0) {
+    return JSON.stringify({
+      ok: false,
+      reason: "unknown_or_inactive_video_call_invitees",
+      missingUsernames,
+      guidance:
+        "Ask the user to confirm the human participants. Agents cannot be invited to live CyWorld Video Calls.",
+    });
+  }
+
+  let scheduleError: string | null = null;
+  const scheduled = await scheduleVideoCall({
+    createdByUserId: organizer.id,
+    endAt,
+    invitedUserIds: invitees.map((invitee) => invitee.id),
+    name,
+    startAt,
+  }).catch((error: unknown) => {
+    scheduleError = error instanceof Error ? error.message : "Unknown error";
+    return null;
+  });
+
+  if (!scheduled) {
+    return JSON.stringify({
+      ok: false,
+      reason: "video_call_schedule_failed",
+      error: scheduleError,
+    });
+  }
+
+  return JSON.stringify({
+    ok: true,
+    videoCall: {
+      endAt: endAt.toISOString(),
+      endLocal: formatDateTimeInTimeZone(endAt, requesterTimezone, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
+      id: scheduled.id,
+      invitedUsernames: invitees.map((invitee) => invitee.username),
+      name: scheduled.name,
+      organizerUsername: organizer.username,
+      startAt: startAt.toISOString(),
+      startLocal: formatDateTimeInTimeZone(startAt, requesterTimezone, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
+      status: scheduled.status,
+    },
+    toolNote:
+      "The CyWorld Video Call is scheduled. The organizer is accepted, invited human participants receive pending CyWorld Calendar invitations, and agents cannot attend the live call.",
+    timeZone: requesterTimezone,
+  });
+}
+
 async function requireCurrentHumanCalendarMutation(
   currentHumanUserId: string | undefined,
 ) {
@@ -3078,6 +3275,14 @@ async function executeCyWorldAgentToolCall({
 
   if (call.name === "study_create_calendar_event") {
     return handleCalendarCreateTool({
+      args,
+      currentHumanUserId: context.currentHumanUserId ?? undefined,
+      objective,
+    });
+  }
+
+  if (call.name === "study_schedule_video_call") {
+    return handleVideoCallScheduleTool({
       args,
       currentHumanUserId: context.currentHumanUserId ?? undefined,
       objective,
