@@ -47,6 +47,7 @@ import {
 } from "@/lib/google-integration";
 import {
   authorizeGoogleWorkspaceFileForAgent,
+  createWorkspaceFileForAgent,
   createWorkspaceFolderForAgent,
   createGoogleWorkspaceEntryForAgent,
   getAgentEmailAttachments,
@@ -729,9 +730,41 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
+    name: "study_save_chat_attachment_to_drive",
+    description:
+      "Copy an image attachment from the current CyWorld DM or Team Chat into a CyWorld Drive folder. Use this when the user asks to upload, save, copy, move, or put a chat image/file/attachment/logo into a CyWorld Drive folder. This is for ordinary uploaded or generated image files such as PNG, JPG, WebP, or GIF, not Google Docs, Sheets, or Slides. If the target folder does not exist, create it first with study_create_drive_folder. If sourceAttachmentId is omitted, CyWorld uses the most recent image attachment visible in the current room.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        filename: {
+          type: "string",
+          description:
+            "Optional filename to use in CyWorld Drive. If omitted, CyWorld keeps the attachment filename.",
+        },
+        sourceAttachmentId: {
+          type: "string",
+          description:
+            "Optional attachment ID when a specific image attachment should be saved.",
+        },
+        sourceMessageId: {
+          type: "string",
+          description:
+            "Optional message ID when the source image is attached to a specific message.",
+        },
+        targetFolderPath: {
+          type: "string",
+          description:
+            "CyWorld Drive folder path such as /Personals/hyungjun or /Research. Use / for Drive root.",
+        },
+      },
+      required: ["targetFolderPath"],
+    },
+  },
+  {
     name: "study_create_google_workspace_file",
     description:
-      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account and register it in CyWorld Drive. Use this when the user asks for a new Google presentation, document, or spreadsheet. Set cyworldFolderPath when the user names a visible CyWorld Drive folder; otherwise the file is placed in the owner's personal folder. CyWorld validates folder access. After creation, use the matching Google update tool to add content.",
+      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account and register it in CyWorld Drive. Use this only when the user explicitly asks for a new Google presentation, Google document, Google spreadsheet, Slides, Docs, or Sheets file. Do not use this for plain CyWorld Drive folders/directories or ordinary uploaded/generated images, PDFs, or attachments. For Drive folders use study_create_drive_folder. For putting a chat image/logo/attachment into Drive use study_save_chat_attachment_to_drive. Set cyworldFolderPath when the user names a visible CyWorld Drive folder; otherwise the file is placed in the owner's personal folder. CyWorld validates folder access. After creation, use the matching Google update tool to add content.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -1233,11 +1266,16 @@ async function readChatImageAttachment(attachment: {
   mimeType: string;
   url: string;
 }) {
-  if (!attachment.url.startsWith("/uploads/chat/")) {
+  const isPublicUpload = attachment.url.startsWith("/uploads/chat/");
+  const isApiAttachment = attachment.url.startsWith("/api/chat-attachments/");
+
+  if (!isPublicUpload && !isApiAttachment) {
     return null;
   }
 
-  const relativePath = attachment.url.replace(/^\/+/, "");
+  const relativePath = isApiAttachment
+    ? attachment.url.replace(/^\/api\/chat-attachments\//, "uploads/chat/")
+    : attachment.url.replace(/^\/+/, "");
   const filePath = path.join(process.cwd(), "public", relativePath);
   const buffer = await readFile(filePath).catch(() => null);
 
@@ -1250,6 +1288,61 @@ async function readChatImageAttachment(attachment: {
     filename: attachment.filename,
     mimeType: attachment.mimeType,
   };
+}
+
+async function findChatImageAttachmentInRoom({
+  roomId,
+  sourceAttachmentId,
+  sourceMessageId,
+}: {
+  roomId: string;
+  sourceAttachmentId?: string;
+  sourceMessageId?: string;
+}) {
+  const messages = sourceMessageId
+    ? await prisma.message.findMany({
+        where: {
+          id: sourceMessageId,
+          roomId,
+        },
+        take: 1,
+      })
+    : await prisma.message.findMany({
+        where: {
+          roomId,
+          attachmentsJson: {
+            not: Prisma.JsonNull,
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 50,
+      });
+
+  for (const message of messages) {
+    const attachments = normalizeChatAttachments(message.attachmentsJson);
+
+    for (const attachment of attachments) {
+      if (sourceAttachmentId && attachment.id !== sourceAttachmentId) {
+        continue;
+      }
+
+      const source = await readChatImageAttachment(attachment);
+
+      if (!source) {
+        continue;
+      }
+
+      return {
+        attachment,
+        messageId: message.id,
+        source,
+      };
+    }
+  }
+
+  return null;
 }
 
 async function findEditableImageInRoom({
@@ -3571,6 +3664,61 @@ async function executeCyWorldAgentToolCall({
         parentFolderPath: parentFolderPath || null,
       }),
     );
+  }
+
+  if (call.name === "study_save_chat_attachment_to_drive") {
+    const targetFolderPath = cleanMessage(args.targetFolderPath);
+    const filename = cleanMessage(args.filename);
+    const sourceAttachmentId = cleanMessage(args.sourceAttachmentId);
+    const sourceMessageId = cleanMessage(args.sourceMessageId);
+
+    if (!sourceRoomId) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_current_cyworld_room",
+      });
+    }
+
+    if (!targetFolderPath) {
+      return JSON.stringify({
+        ok: false,
+        reason: "missing_target_folder_path",
+      });
+    }
+
+    const found = await findChatImageAttachmentInRoom({
+      roomId: sourceRoomId,
+      sourceAttachmentId: sourceAttachmentId || undefined,
+      sourceMessageId: sourceMessageId || undefined,
+    });
+
+    if (!found) {
+      return JSON.stringify({
+        ok: false,
+        reason: sourceAttachmentId
+          ? "chat_attachment_not_found_or_unreadable"
+          : "no_recent_chat_image_attachment_found",
+      });
+    }
+
+    const normalizedTargetPath = targetFolderPath === "/" ? "" : targetFolderPath;
+    const result = await createWorkspaceFileForAgent({
+      agentOpenclawId: senderAgentOpenclawId,
+      content: found.source.buffer,
+      filename: filename || found.source.filename,
+      folderPath: normalizedTargetPath,
+      mimeType: found.source.mimeType,
+    });
+    const savedPath = `${targetFolderPath.replace(/\/+$/, "") || "/"}/${
+      result.entry.filename
+    }`.replace(/^\/\//, "/");
+
+    return JSON.stringify({
+      ...result,
+      savedPath,
+      sourceAttachmentId: found.attachment.id,
+      sourceMessageId: found.messageId,
+    });
   }
 
   if (call.name === "study_inspect_google_slides") {

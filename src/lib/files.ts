@@ -618,6 +618,8 @@ export async function buildStudyFilesRuntimeContext({
     "- The CyWorld Drive UI root is /.",
     "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use CYWORLD_DRIVE/ as the filesystem mirror of CyWorld Drive.",
     "- UI path /X maps directly to workspace path CYWORLD_DRIVE/X. Do not add or remove a home segment.",
+    "- To create a real CyWorld Drive folder, use study_create_drive_folder. Do not create Google Docs, Sheets, or Slides as folder substitutes.",
+    "- To save a chat image/file/attachment/logo into CyWorld Drive, use study_save_chat_attachment_to_drive. Do not create a Google document merely to contain that uploaded image.",
     "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
     "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
     "- Google Docs, Sheets, and Slides entries listed here are live Google files registered in CyWorld Drive. Use the matching Google Workspace tools to inspect or edit them; do not edit their managed mirror reference as if it were the live document.",
@@ -894,6 +896,102 @@ export async function createWorkspaceFolderForAgent({
 
   return {
     entry,
+    ok: true as const,
+  };
+}
+
+export async function createWorkspaceFileForAgent({
+  agentOpenclawId,
+  content,
+  filename,
+  folderPath,
+  mimeType,
+}: {
+  agentOpenclawId: string;
+  content: Buffer;
+  filename: string;
+  folderPath: string;
+  mimeType?: string | null;
+}) {
+  const agent = await prisma.agent.findUnique({
+    where: { openclawAgentId: agentOpenclawId },
+    select: {
+      id: true,
+      user: {
+        select: {
+          id: true,
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!agent?.user) {
+    throw new Error("CyWorld agent owner was not found.");
+  }
+
+  const agentParticipantKey = `agent:${agent.id}`;
+  const parentId = folderPath.trim()
+    ? await resolveWorkspaceFolderPathForParticipant({
+        folderPath,
+        participantKey: agentParticipantKey,
+        teamId: agent.user.teamId,
+      })
+    : null;
+  const context = await getFileWorkspaceContext(agent.user.id);
+  const root = await ensureStorageRoot();
+  const safeName = sanitizeFilename(filename);
+  const recordId = randomUUID();
+  const storageKey = `${recordId}-${safeName}`;
+
+  await writeFile(path.join(root, storageKey), content);
+
+  const entry = await prisma.fileRecord.create({
+    data: {
+      id: recordId,
+      ownerUserId: agent.user.id,
+      teamId: agent.user.teamId,
+      parentId,
+      filename: safeName,
+      storageKey,
+      mimeType: mimeType || null,
+      sizeBytes: content.byteLength,
+      visibility: "TEAM",
+      sourceType: "AGENT_UPLOAD",
+      accessConfigJson: serializeAccessConfig({
+        createdByParticipantKey: agentParticipantKey,
+        participantKeys: [],
+        updatedByParticipantKey: agentParticipantKey,
+      }),
+    },
+    select: {
+      accessConfigJson: true,
+      createdAt: true,
+      filename: true,
+      externalFileId: true,
+      externalProvider: true,
+      externalUrl: true,
+      id: true,
+      isFolder: true,
+      mimeType: true,
+      owner: {
+        select: {
+          displayName: true,
+        },
+      },
+      ownerUserId: true,
+      parentId: true,
+      sizeBytes: true,
+      storageKey: true,
+      sourceType: true,
+      systemKey: true,
+      teamId: true,
+      updatedAt: true,
+    },
+  });
+
+  return {
+    entry: mapEntry(entry, context),
     ok: true as const,
   };
 }
