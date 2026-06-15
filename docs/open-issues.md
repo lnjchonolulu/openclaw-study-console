@@ -205,9 +205,29 @@ integration paths, but they do not all follow the same action lifecycle.
    - Tool descriptions now describe semantic intent such as asking, telling,
      contacting, checking availability, or emailing, rather than relying only
      on exact product terms.
+   - The managed scaffold now includes a broader common-request map so agents
+     can translate casual user language into CyWorld actions without requiring
+     exact terms like "DM", "Drive", "Calendar", or "Google Workspace".
+   - The current risk is not only missing tools. It is also wrong-tool
+     substitution: for example, using Google Docs when the user meant a
+     CyWorld Drive folder, using OpenClaw workspace files when the user meant
+     visible CyWorld files, or treating a normal question as a delivery action.
    - Remaining verification should cover vague references across several
      simultaneously visible files, ambiguous human recipients, calendar versus
-     scheduled-message requests, and team-room references.
+     scheduled-message requests, team-room references, Google Workspace
+     references, image attachments, and "what can you do?" capability questions.
+
+   Remaining gaps to track:
+
+   - Non-image chat-file attachment import is not the same as image attachment
+     saving. Agents should not pretend image-only attachment tools can import
+     arbitrary PDFs or office files from chat.
+   - The scaffold should stay focused on CyWorld ontology and tool contracts,
+     not phrase-by-phrase patches. New tools should be added only when an
+     app-side permissioned action is genuinely missing.
+   - Every new CyWorld capability should update three places together:
+     the actual function tool contract, the common scaffold in AGENTS/TOOLS,
+     and the product contract documentation.
 
 4. Harden shared Gmail follow-up routing. **Status: implemented at the routing
    layer, needs realistic thread testing.**
@@ -245,6 +265,29 @@ integration paths, but they do not all follow the same action lifecycle.
 
 ### Known Missing Or Incomplete Capabilities
 
+- CyWorld tool semantics need a grounding pass before adding more narrow tools.
+  The recurring failure mode is not simply "missing one more tool"; it is that
+  OpenClaw sometimes maps a user request onto the wrong CyWorld concept. The
+  default interpretation should be:
+
+  - "Drive", "workspace files", "shared folder", "visible file", "the folder
+    in the interface", and similar phrasing usually mean **CyWorld Drive**.
+  - Google Docs, Sheets, Slides, Google Workspace, or Google Drive should be
+    selected only when the user explicitly names Google, provides a Google URL,
+    or asks for a Google-native document/spreadsheet/presentation.
+  - Even when Google Workspace is used, the agent is acting through CyWorld's
+    shared Google account as a platform access point. It is not freely
+    collaborating inside the human user's personal Google Drive.
+
+  The durable scaffold should teach this world model clearly in `AGENTS.md` and
+  `TOOLS.md`. New tools should be added only when CyWorld must perform a real
+  app-side action or enforce permissions. They should not become a growing list
+  of brittle phrase-specific patches.
+  Current chat-to-Drive saving is intentionally scoped to image attachments
+  such as PNG/JPG/WebP/GIF, screenshots, generated images, and logos. Generic
+  non-image chat file attachment import remains open; until then, users should
+  upload those files through the Drive UI or point agents to an existing
+  CyWorld Drive path.
 - Agent Handoff is now the first-class primitive for agent-to-agent work outside
   team-chat chains. It uses the target agent's real OpenClaw runtime and durable
   task events without exposing a hidden agent DM UI. Same-pair continuation now

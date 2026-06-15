@@ -263,12 +263,13 @@ CyWorld tool calls are allowed for:
 - Sending shared Gmail email.
 - Sending external `.ics` calendar invite email.
 - Requesting work from another personal agent through a traceable Agent Handoff.
+- Creating CyWorld Drive folders with app-level permissions and receipts.
+- Saving chat image attachments such as PNG/JPG/WebP/GIF, screenshots, generated images, or logos into CyWorld Drive.
 - Generating a new image into the current CyWorld conversation.
 - Editing an image attachment from the current CyWorld conversation.
 - Creating Google Slides, Docs, and Sheets in CyWorld Drive.
 - Inspecting and editing accessible Google Slides, Docs, and Sheets.
 - Inspecting, adding, replying to, and resolving Google Drive review comments.
-- Future: Drive-specific tool calls if needed.
 
 CyWorld must validate:
 
@@ -281,6 +282,70 @@ CyWorld must validate:
 
 If the action or target is ambiguous, CyWorld should ask for clarification. It
 should not silently guess or silently correct a major target.
+
+### Concept Dictionary
+
+Agents should use these meanings consistently:
+
+- **CyWorld Drive**: the user-facing shared file workspace in the Drive tab.
+  Inside CyWorld, plain "Drive", "workspace", "shared folder", "uploaded file",
+  "visible file", and "the file in the interface" usually mean CyWorld Drive.
+- **Shared Google Workspace**: Google Docs, Sheets, and Slides accessed through
+  the shared CyWorld Google account. Use it only when the user explicitly asks
+  for a Google-native document, spreadsheet, presentation, comment, or Google
+  URL.
+- **Google Drive**: Google's external storage service. Do not treat it as the
+  default meaning of "Drive" inside CyWorld.
+- **OpenClaw workspace**: the agent's private runtime files such as `AGENTS.md`,
+  `USER.md`, `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`,
+  and memory files. These are not CyWorld Drive files.
+- **Chat image attachment**: an image, screenshot, generated image, or logo
+  attached in the current CyWorld DM or Team Chat.
+
+Concrete tool contract:
+
+- For a plain folder or directory in the Drive tab, use
+  `study_create_drive_folder`.
+- For saving a chat image attachment into a Drive folder, use
+  `study_save_chat_attachment_to_drive`. This tool currently saves image
+  attachments only; it is not a generic PDF/document attachment importer.
+- For a new Google Docs, Sheets, or Slides file, use
+  `study_create_google_workspace_file`, then the matching Google update tool.
+- Do not create a Google Doc, Sheet, or Slide as a workaround for a CyWorld
+  Drive folder, a PNG/logo upload, or an ordinary file-save request.
+
+### Common Request Coverage
+
+CyWorld agents should not need users to speak in exact product terms. The common
+mapping should be:
+
+- **Reach or coordinate with someone**: use CyWorld DM, scheduled DM, or Agent
+  Handoff depending on whether the intended recipient is a human participant or
+  another personal agent's owner-specific context.
+- **Schedule, reserve, or find meeting time**: use CyWorld Calendar for events,
+  Video Call reservation for live human calls, and DMs/Handoffs only to gather
+  missing availability or permission.
+- **Follow up, continue, or check whether something happened**: inspect pending
+  tasks, action receipts, relevant conversation history, calendar invitations,
+  or tracked email threads before acting.
+- **Files, folders, uploads, and visible workspace items**: default to CyWorld
+  Drive and its manifest. Use Google Workspace only when the user explicitly
+  wants a live Google Docs/Sheets/Slides object or provides a Google URL.
+- **Images, logos, screenshots, or generated images**: treat them as chat image
+  attachments or image-generation/editing outputs unless the user explicitly
+  asks for a Google-native file.
+- **Email and external invite workflows**: use Shared Gmail as a CyWorld-owned
+  communication channel. Track threads and receipts so later replies can be
+  routed back to the right agent/task.
+- **Identity, preferences, relationships, and owner policy**: use the markdown
+  configuration and CyWorld Settings sync. Do not treat app settings and agent
+  markdown files as unrelated systems.
+- **"What can you do?" questions**: explain CyWorld capabilities and limits in
+  user-facing terms, not as raw implementation internals.
+
+The goal is not to add brittle phrase categories. The goal is to give OpenClaw a
+stable CyWorld ontology so it can use its own reasoning while CyWorld still
+enforces permissions, targets, and receipts.
 
 ## Intent And Recipient Handling
 

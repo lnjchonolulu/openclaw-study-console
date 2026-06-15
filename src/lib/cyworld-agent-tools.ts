@@ -732,7 +732,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_save_chat_attachment_to_drive",
     description:
-      "Copy an image attachment from the current CyWorld DM or Team Chat into a CyWorld Drive folder. Use this when the user asks to upload, save, copy, move, or put a chat image/file/attachment/logo into a CyWorld Drive folder. This is for ordinary uploaded or generated image files such as PNG, JPG, WebP, or GIF, not Google Docs, Sheets, or Slides. If the target folder does not exist, create it first with study_create_drive_folder. If sourceAttachmentId is omitted, CyWorld uses the most recent image attachment visible in the current room.",
+      "Copy an image attachment from the current CyWorld DM or Team Chat into a CyWorld Drive folder. Use this when the user asks to upload, save, copy, move, or put a chat image attachment, screenshot, generated image, or logo into a CyWorld Drive folder. This is for ordinary uploaded or generated image files such as PNG, JPG, WebP, or GIF, not arbitrary non-image documents, PDFs, Google Docs, Sheets, or Slides. If the target folder does not exist, create it first with study_create_drive_folder. If sourceAttachmentId is omitted, CyWorld uses the most recent image attachment visible in the current room. Do not create a Google document just to contain an image attachment.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -764,7 +764,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_create_google_workspace_file",
     description:
-      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account and register it in CyWorld Drive. Use this only when the user explicitly asks for a new Google presentation, Google document, Google spreadsheet, Slides, Docs, or Sheets file. Do not use this for plain CyWorld Drive folders/directories or ordinary uploaded/generated images, PDFs, or attachments. For Drive folders use study_create_drive_folder. For putting a chat image/logo/attachment into Drive use study_save_chat_attachment_to_drive. Set cyworldFolderPath when the user names a visible CyWorld Drive folder; otherwise the file is placed in the owner's personal folder. CyWorld validates folder access. After creation, use the matching Google update tool to add content.",
+      "Create a new blank Google Slides, Docs, or Sheets file owned by the shared CyWorld Google account and register it in CyWorld Drive. Use this only when the user explicitly asks for a new Google presentation, Google document, Google spreadsheet, Slides, Docs, or Sheets file. Do not use this for plain CyWorld Drive folders/directories or ordinary uploaded/generated images, PDFs, or attachments. For Drive folders use study_create_drive_folder. For putting a chat image/logo/screenshot attachment into Drive use study_save_chat_attachment_to_drive. Set cyworldFolderPath when the user names a visible CyWorld Drive folder; otherwise the file is placed in the owner's personal folder. CyWorld validates folder access. After creation, use the matching Google update tool to add content.",
     parameters: {
       type: "object",
       additionalProperties: false,

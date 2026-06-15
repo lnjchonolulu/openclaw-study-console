@@ -619,7 +619,7 @@ export async function buildStudyFilesRuntimeContext({
     "- If your OpenClaw workspace has a CYWORLD_DRIVE/MANIFEST.md file, use CYWORLD_DRIVE/ as the filesystem mirror of CyWorld Drive.",
     "- UI path /X maps directly to workspace path CYWORLD_DRIVE/X. Do not add or remove a home segment.",
     "- To create a real CyWorld Drive folder, use study_create_drive_folder. Do not create Google Docs, Sheets, or Slides as folder substitutes.",
-    "- To save a chat image/file/attachment/logo into CyWorld Drive, use study_save_chat_attachment_to_drive. Do not create a Google document merely to contain that uploaded image.",
+    "- To save a chat image attachment, screenshot, generated image, or logo into CyWorld Drive, use study_save_chat_attachment_to_drive. This tool currently supports image attachments; for non-image files, use the Drive upload flow or an existing visible Drive path. Do not create a Google document merely to contain that uploaded image.",
     "- If the user asks what files you can see, answer from the visible CyWorld Drive entries below. Do not list AGENTS.md, SOUL.md, IDENTITY.md, MEMORY.md, TOOLS.md, or other OpenClaw workspace files unless the user explicitly asks about OpenClaw workspace files.",
     "- Access here is the app-level shared drive access. If an entry is listed as no access, say you cannot access that folder in CyWorld Drive.",
     "- Google Docs, Sheets, and Slides entries listed here are live Google files registered in CyWorld Drive. Use the matching Google Workspace tools to inspect or edit them; do not edit their managed mirror reference as if it were the live document.",
