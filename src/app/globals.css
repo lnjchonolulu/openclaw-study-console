@@ -2353,7 +2353,7 @@ button.primary-button {
 
 .video-call-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(190px, 28%);
+  grid-template-rows: minmax(0, 1fr) minmax(190px, 28%);
   gap: 16px;
   height: 100%;
   min-height: 0;
@@ -2381,6 +2381,7 @@ button.primary-button {
 
 .video-call-top-actions {
   display: flex;
+  justify-content: center;
   gap: 10px;
 }
 
@@ -2391,7 +2392,7 @@ button.primary-button {
   gap: 18px;
   min-height: 0;
   padding: 24px;
-  border: 1px dashed rgba(17, 17, 17, 0.12);
+  border: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.42);
   overflow-y: auto;
@@ -2512,18 +2513,6 @@ button.primary-button {
 .video-call-list-header h2 {
   font-size: 1.1rem;
   letter-spacing: -0.03em;
-}
-
-.video-call-list-header span {
-  display: grid;
-  place-items: center;
-  min-width: 28px;
-  height: 28px;
-  border: 1px solid rgba(17, 17, 17, 0.1);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 800;
 }
 
 .video-call-scheduled-list,

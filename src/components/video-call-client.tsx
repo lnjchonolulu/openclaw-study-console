@@ -440,11 +440,8 @@ export function VideoCallClient({
 
   return (
     <div className="video-call-panel">
-      <div className="video-call-panel-header">
-        <div>
-          <span className="context-label">Video Call</span>
-          <h1>Calls</h1>
-        </div>
+      <div className="video-call-command">
+        <VideoCallIcon />
         <div className="video-call-top-actions">
           <button
             className="primary-button"
@@ -456,7 +453,7 @@ export function VideoCallClient({
             Start Call
           </button>
           <button
-            className="secondary-button"
+            className="primary-button"
             onClick={() => {
               openModal("SCHEDULE");
             }}
@@ -465,10 +462,6 @@ export function VideoCallClient({
             Schedule Call
           </button>
         </div>
-      </div>
-
-      <div className="video-call-command">
-        <VideoCallIcon />
         {visibleActiveCalls.length === 0 ? (
           <div className="video-call-empty">
             <p>No active invited calls.</p>
@@ -484,41 +477,7 @@ export function VideoCallClient({
       <div className="video-call-lists">
         <section className="video-call-list-section">
           <div className="video-call-list-header">
-            <h2>Scheduled</h2>
-            <span>{scheduledCalls.length}</span>
-          </div>
-          <div className="video-call-scheduled-list">
-            {scheduledCalls.length > 0 ? (
-              scheduledCalls.map((call) => (
-                <article className="video-call-scheduled-item" key={call.id}>
-                  <div>
-                    <span className="context-label">
-                      {formatCallDate(call.scheduledFor ?? call.startedAt)}
-                    </span>
-                    <h3>{call.name}</h3>
-                    <p>{compactParticipants(uniqueParticipants(call))}</p>
-                  </div>
-                  <button
-                    className="secondary-button"
-                    onClick={() => {
-                      void startScheduledCall(call);
-                    }}
-                    type="button"
-                  >
-                    Start
-                  </button>
-                </article>
-              ))
-            ) : (
-              <p className="video-call-history-empty">No scheduled calls.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="video-call-list-section">
-          <div className="video-call-list-header">
             <h2>History</h2>
-            <span>{history.length}</span>
           </div>
           <div className="video-call-history-list">
             {history.length > 0 ? (
@@ -559,6 +518,38 @@ export function VideoCallClient({
               ))
             ) : (
               <p className="video-call-history-empty">No call history yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="video-call-list-section">
+          <div className="video-call-list-header">
+            <h2>Scheduled</h2>
+          </div>
+          <div className="video-call-scheduled-list">
+            {scheduledCalls.length > 0 ? (
+              scheduledCalls.map((call) => (
+                <article className="video-call-scheduled-item" key={call.id}>
+                  <div>
+                    <span className="context-label">
+                      {formatCallDate(call.scheduledFor ?? call.startedAt)}
+                    </span>
+                    <h3>{call.name}</h3>
+                    <p>{compactParticipants(uniqueParticipants(call))}</p>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      void startScheduledCall(call);
+                    }}
+                    type="button"
+                  >
+                    Start
+                  </button>
+                </article>
+              ))
+            ) : (
+              <p className="video-call-history-empty">No scheduled calls.</p>
             )}
           </div>
         </section>
