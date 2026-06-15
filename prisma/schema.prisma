@@ -96,14 +96,17 @@ enum IntegrationProvider {
 }
 
 enum VideoCallStatus {
+  SCHEDULED
   ACTIVE
   ENDED
 }
 
 enum VideoCallParticipantStatus {
   INVITED
+  ACCEPTED
   JOINED
   LEFT
+  DECLINED
 }
 
 model User {
@@ -531,6 +534,7 @@ model CalendarEvent {
   hiddenForUsers   CalendarEventHidden[]
   invitations      CalendarInvitation[]
   titleOverrides   CalendarEventTitleOverride[]
+  videoCall         VideoCall?
 
   @@index([teamId, startAt])
   @@index([createdByUserId, startAt])
@@ -594,11 +598,13 @@ model ExternalIntegration {
 model VideoCall {
   id                  String                 @id @default(cuid())
   name                String
-  dailyRoomName       String                 @unique
-  dailyRoomUrl        String
+  dailyRoomName       String?                @unique
+  dailyRoomUrl        String?
   dailyTranscriptId   String?
   createdByUserId     String?
+  calendarEventId     String?                @unique
   status              VideoCallStatus        @default(ACTIVE)
+  scheduledFor        DateTime?
   startedAt           DateTime               @default(now())
   endedAt             DateTime?
   transcriptText      String?
@@ -608,9 +614,11 @@ model VideoCall {
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   createdBy           User?                  @relation("VideoCallCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  calendarEvent       CalendarEvent?         @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
   participants        VideoCallParticipant[]
 
   @@index([status, startedAt])
+  @@index([status, scheduledFor])
   @@index([createdByUserId, startedAt])
 }
 

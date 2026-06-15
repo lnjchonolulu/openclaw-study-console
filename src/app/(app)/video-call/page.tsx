@@ -7,7 +7,7 @@ import {
 
 export default async function VideoCallPage() {
   const user = await requireUser();
-  const [{ activeCalls, history }, inviteCandidates] = await Promise.all([
+  const [{ activeCalls, history, scheduledCalls }, inviteCandidates] = await Promise.all([
     listVideoCallState(user.id),
     listVideoCallInviteCandidates(user.id),
   ]);
@@ -18,6 +18,7 @@ export default async function VideoCallPage() {
         currentUserId={user.id}
         initialActiveCalls={activeCalls}
         initialHistory={history}
+        initialScheduledCalls={scheduledCalls}
         inviteCandidates={inviteCandidates}
         ownAgentId={user.agent?.openclawAgentId ?? null}
       />

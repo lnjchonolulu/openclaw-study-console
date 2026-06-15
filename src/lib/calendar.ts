@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { listTeamParticipants, type TeamParticipant } from "@/lib/team";
 import {
   monthBoundaryUtc,
@@ -367,6 +368,7 @@ export async function updateCalendarEvent(args: {
     },
     include: {
       invitations: true,
+      videoCall: true,
     },
   });
 
@@ -509,6 +511,7 @@ export async function deleteCalendarEventForUser(args: {
     },
     include: {
       invitations: true,
+      videoCall: true,
     },
   });
 
@@ -571,7 +574,7 @@ export async function deleteCalendarEventForUser(args: {
     (key) => !declinedKeys.includes(key),
   );
 
-  await prisma.$transaction([
+  const updates: Prisma.PrismaPromise<unknown>[] = [
     prisma.calendarEvent.update({
       where: {
         id: event.id,
@@ -603,7 +606,23 @@ export async function deleteCalendarEventForUser(args: {
         userId: user.id,
       },
     }),
-  ]);
+  ];
+
+  if (event.videoCall) {
+    updates.push(
+      prisma.videoCallParticipant.updateMany({
+        where: {
+          callId: event.videoCall.id,
+          userId: user.id,
+        },
+        data: {
+          status: "DECLINED",
+        },
+      }),
+    );
+  }
+
+  await prisma.$transaction(updates);
 
   return {
     action: "DECLINED" as const,
@@ -626,7 +645,11 @@ export async function respondToCalendarInvitation(args: {
       },
     },
     include: {
-      event: true,
+      event: {
+        include: {
+          videoCall: true,
+        },
+      },
     },
   });
 
@@ -648,7 +671,7 @@ export async function respondToCalendarInvitation(args: {
       (key) => !userAccessKeys.includes(key),
     );
 
-    await prisma.$transaction([
+    const updates: Prisma.PrismaPromise<unknown>[] = [
       prisma.calendarEvent.update({
         where: {
           id: invitation.eventId,
@@ -680,7 +703,23 @@ export async function respondToCalendarInvitation(args: {
           userId: args.userId,
         },
       }),
-    ]);
+    ];
+
+    if (invitation.event.videoCall) {
+      updates.push(
+        prisma.videoCallParticipant.updateMany({
+          where: {
+            callId: invitation.event.videoCall.id,
+            userId: args.userId,
+          },
+          data: {
+            status: "DECLINED",
+          },
+        }),
+      );
+    }
+
+    await prisma.$transaction(updates);
 
     return {
       eventId: invitation.eventId,
@@ -689,7 +728,7 @@ export async function respondToCalendarInvitation(args: {
     };
   }
 
-  await prisma.$transaction([
+  const updates: Prisma.PrismaPromise<unknown>[] = [
     prisma.calendarEvent.update({
       where: {
         id: invitation.eventId,
@@ -717,7 +756,27 @@ export async function respondToCalendarInvitation(args: {
         userId: args.userId,
       },
     }),
-  ]);
+  ];
+
+  if (invitation.event.videoCall) {
+    updates.push(
+      prisma.videoCallParticipant.updateMany({
+        where: {
+          callId: invitation.event.videoCall.id,
+          status: {
+            not: "JOINED",
+          },
+          userId: args.userId,
+        },
+        data: {
+          leftAt: null,
+          status: "ACCEPTED",
+        },
+      }),
+    );
+  }
+
+  await prisma.$transaction(updates);
 
   return {
     eventId: invitation.eventId,

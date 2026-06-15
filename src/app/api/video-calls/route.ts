@@ -5,6 +5,7 @@ import {
   hasJoinedActiveVideoCall,
   listVideoCallInviteCandidates,
   listVideoCallState,
+  scheduleVideoCall,
 } from "@/lib/video-calls";
 
 export async function GET() {
@@ -33,8 +34,11 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
+    endAt?: string;
     invitedUserIds?: string[];
+    mode?: "START" | "SCHEDULE";
     name?: string;
+    startAt?: string;
   };
   const name = body.name?.trim();
   const invitedUserIds = Array.isArray(body.invitedUserIds) ? body.invitedUserIds : [];
@@ -43,14 +47,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Call name is required." }, { status: 400 });
   }
 
-  if (await hasJoinedActiveVideoCall(user.id)) {
-    return NextResponse.json(
-      { error: "Leave your current call before joining or starting another one." },
-      { status: 409 },
-    );
-  }
-
   try {
+    if (body.mode === "SCHEDULE") {
+      const startAt = body.startAt ? new Date(body.startAt) : null;
+      const endAt = body.endAt ? new Date(body.endAt) : null;
+
+      if (!startAt || Number.isNaN(startAt.getTime()) || !endAt || Number.isNaN(endAt.getTime())) {
+        return NextResponse.json(
+          { error: "Valid start and end times are required." },
+          { status: 400 },
+        );
+      }
+
+      const call = await scheduleVideoCall({
+        createdByUserId: user.id,
+        endAt,
+        invitedUserIds,
+        name,
+        startAt,
+      });
+
+      return NextResponse.json({ call });
+    }
+
+    if (await hasJoinedActiveVideoCall(user.id)) {
+      return NextResponse.json(
+        { error: "Leave your current call before starting another one." },
+        { status: 409 },
+      );
+    }
+
     const call = await createVideoCall({
       createdByUserId: user.id,
       invitedUserIds,

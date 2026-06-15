@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { hasJoinedActiveVideoCall, joinVideoCall } from "@/lib/video-calls";
+import { startScheduledVideoCall } from "@/lib/video-calls";
 
 export async function POST(
   _request: Request,
@@ -14,20 +14,18 @@ export async function POST(
 
   const { callId } = await context.params;
 
-  if (await hasJoinedActiveVideoCall(user.id, callId)) {
-    return NextResponse.json(
-      { error: "Leave your current call before joining another one." },
-      { status: 409 },
-    );
-  }
-
   try {
-    const call = await joinVideoCall(callId, user.id);
+    const call = await startScheduledVideoCall(callId, user.id);
     return NextResponse.json({ call });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "This call is not available to your account." },
-      { status: 404 },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "This scheduled call could not be started.",
+      },
+      { status: 400 },
     );
   }
 }
