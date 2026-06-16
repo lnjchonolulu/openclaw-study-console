@@ -667,37 +667,12 @@ export async function leaveVideoCall(callId: string, userId: string) {
         id: callId,
       },
       select: {
-        scheduledFor: true,
         transcriptStatus: true,
         transcriptText: true,
       },
     });
 
     const now = new Date();
-
-    if (call?.scheduledFor && call.scheduledFor.getTime() > now.getTime()) {
-      await prisma.$transaction([
-        prisma.videoCall.update({
-          where: {
-            id: callId,
-          },
-          data: {
-            endedAt: null,
-            status: "SCHEDULED",
-          },
-        }),
-        prisma.videoCallParticipant.updateMany({
-          where: {
-            callId,
-            status: "LEFT",
-          },
-          data: {
-            status: "ACCEPTED",
-          },
-        }),
-      ]);
-      return;
-    }
 
     await prisma.videoCall.update({
       where: {

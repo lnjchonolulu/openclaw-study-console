@@ -124,6 +124,12 @@ function uniqueParticipants(call: VideoCallSummary) {
   });
 }
 
+function isUpcomingScheduledCall(call: VideoCallSummary) {
+  const scheduledAt = call.scheduledFor ?? call.startedAt;
+
+  return new Date(scheduledAt).getTime() >= Date.now();
+}
+
 function ParticipantRow({
   label,
   participants,
@@ -167,7 +173,9 @@ export function VideoCallClient({
   const router = useRouter();
   const [activeCalls, setActiveCalls] = useState(initialActiveCalls);
   const [history, setHistory] = useState(initialHistory);
-  const [scheduledCalls, setScheduledCalls] = useState(initialScheduledCalls);
+  const [scheduledCalls, setScheduledCalls] = useState(() =>
+    initialScheduledCalls.filter(isUpcomingScheduledCall),
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("START");
   const [name, setName] = useState("");
@@ -240,7 +248,7 @@ export function VideoCallClient({
 
     setActiveCalls(payload.activeCalls ?? []);
     setHistory(payload.history ?? []);
-    setScheduledCalls(payload.scheduledCalls ?? []);
+    setScheduledCalls((payload.scheduledCalls ?? []).filter(isUpcomingScheduledCall));
   }
 
   useEffect(() => {
@@ -316,7 +324,9 @@ export function VideoCallClient({
     resetModal();
 
     if (modalMode === "SCHEDULE") {
-      setScheduledCalls((current) => [payload.call!, ...current]);
+      setScheduledCalls((current) =>
+        [payload.call!, ...current].filter(isUpcomingScheduledCall),
+      );
       window.dispatchEvent(new Event("calendar-pending-should-refresh"));
       return;
     }
