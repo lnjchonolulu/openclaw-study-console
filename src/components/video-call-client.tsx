@@ -369,17 +369,26 @@ export function VideoCallClient({
     await refreshState();
   }
 
-  async function deleteHistory(call: VideoCallSummary) {
+  async function removeCallFromList(call: VideoCallSummary, list: "history" | "scheduled") {
     const response = await fetch(`/api/video-calls/${encodeURIComponent(call.id)}`, {
       method: "DELETE",
     });
 
     if (!response.ok) {
-      setNotice("History item could not be deleted.");
+      setNotice(
+        list === "history"
+          ? "History item could not be deleted."
+          : "Scheduled call could not be removed.",
+      );
       return;
     }
 
-    setHistory((current) => current.filter((item) => item.id !== call.id));
+    if (list === "history") {
+      setHistory((current) => current.filter((item) => item.id !== call.id));
+      return;
+    }
+
+    setScheduledCalls((current) => current.filter((item) => item.id !== call.id));
   }
 
   async function shareTranscript(call: VideoCallSummary) {
@@ -507,7 +516,7 @@ export function VideoCallClient({
                     <button
                       className="secondary-button"
                       onClick={() => {
-                        void deleteHistory(call);
+                        void removeCallFromList(call, "history");
                       }}
                       type="button"
                     >
@@ -537,15 +546,26 @@ export function VideoCallClient({
                     <h3>{call.name}</h3>
                     <p>{compactParticipants(uniqueParticipants(call))}</p>
                   </div>
-                  <button
-                    className="secondary-button"
-                    onClick={() => {
-                      void startScheduledCall(call);
-                    }}
-                    type="button"
-                  >
-                    Start
-                  </button>
+                  <div className="video-call-history-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        void startScheduledCall(call);
+                      }}
+                      type="button"
+                    >
+                      Start
+                    </button>
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        void removeCallFromList(call, "scheduled");
+                      }}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </article>
               ))
             ) : (

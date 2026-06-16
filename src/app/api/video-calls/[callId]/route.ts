@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { deleteVideoCallHistory } from "@/lib/video-calls";
+import { removeVideoCallFromUserList } from "@/lib/video-calls";
 
 export async function DELETE(
   _request: Request,
@@ -13,7 +13,7 @@ export async function DELETE(
   }
 
   const { callId } = await context.params;
-  await deleteVideoCallHistory(callId, user.id);
+  await removeVideoCallFromUserList(callId, user.id);
 
   return NextResponse.json({ ok: true });
 }

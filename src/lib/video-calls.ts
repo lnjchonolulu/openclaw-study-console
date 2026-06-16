@@ -183,6 +183,7 @@ async function dailyStartRoomTranscription(roomName: string) {
 }
 
 export async function listVideoCallState(userId: string) {
+  const now = new Date();
   const [activeCalls, scheduledCalls, history] = await Promise.all([
     prisma.videoCall.findMany({
       where: {
@@ -212,6 +213,9 @@ export async function listVideoCallState(userId: string) {
     }),
     prisma.videoCall.findMany({
       where: {
+        scheduledFor: {
+          gte: now,
+        },
         status: "SCHEDULED",
         participants: {
           some: {
@@ -752,7 +756,7 @@ export async function getVideoCallTranscript(callId: string, userId: string) {
   };
 }
 
-export async function deleteVideoCallHistory(callId: string, userId: string) {
+export async function removeVideoCallFromUserList(callId: string, userId: string) {
   await prisma.videoCallParticipant.deleteMany({
     where: {
       callId,
