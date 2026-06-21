@@ -20,7 +20,11 @@
     "tools": [
       "study_list_pending_tasks",
       "study_send_dm",
-      "study_schedule_dm"
+      "study_schedule_dm",
+      "study_recall_conversation",
+      "study_update_owner_sharing_policies",
+      "study_set_relationship_guidance",
+      "study_schedule_wakeup"
     ]
   }
 }

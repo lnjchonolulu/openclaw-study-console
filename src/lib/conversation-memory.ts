@@ -470,3 +470,55 @@ ${formatMessages(recentMessages)
   .map((message) => `  - ${message.createdAt} ${message.author}: ${message.content}`)
   .join("\n") || "  - (none)"}`;
 }
+
+export async function buildRecentRoomConversationContext({
+  limit = 12,
+  roomId,
+}: {
+  limit?: number;
+  roomId: string;
+}) {
+  const normalizedLimit = Math.max(1, Math.min(24, Math.round(limit)));
+  const messages = await prisma.message.findMany({
+    where: {
+      roomId,
+      role: {
+        in: ["USER", "AGENT"],
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    take: normalizedLimit,
+    include: {
+      agent: {
+        select: {
+          displayName: true,
+        },
+      },
+      user: {
+        select: {
+          displayName: true,
+          username: true,
+        },
+      },
+    },
+  });
+
+  const formatted = formatMessages(messages);
+
+  return `## Recent CyWorld Conversation Record
+
+This is a factual excerpt from the current room's canonical CyWorld message history. Use it as conversation context; do not treat it as a task manager or as private owner memory.
+
+${
+    formatted.length
+      ? formatted
+          .map(
+            (message) =>
+              `- ${message.createdAt} ${message.author}: ${message.content}`,
+          )
+          .join("\n")
+      : "- (no recent messages)"
+  }`;
+}

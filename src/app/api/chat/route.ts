@@ -4,8 +4,12 @@ import { parseChatPayload } from "@/lib/chat-attachments";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
 import { getAgentRelationshipContext } from "@/lib/agent-relationships";
-import { handleInboundTaskReply } from "@/lib/agent-task-workflow";
+import { buildRecentRoomConversationContext } from "@/lib/conversation-memory";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -176,6 +180,38 @@ function buildGoogleWorkspaceWriteVerificationPrompt({
   ].join("\n");
 }
 
+function formatReplyTargetContext(
+  replyTarget: {
+    agent?: {
+      displayName: string;
+    } | null;
+    content: string;
+    createdAt: Date;
+    role: string;
+    user?: {
+      displayName: string;
+      username: string;
+    } | null;
+  } | null,
+) {
+  if (!replyTarget) {
+    return "";
+  }
+
+  const author =
+    replyTarget.role === "AGENT"
+      ? replyTarget.agent?.displayName ?? "Agent"
+      : replyTarget.user
+        ? `${replyTarget.user.displayName} (@${replyTarget.user.username})`
+        : "System";
+
+  return `## Current Reply Target
+
+The current human message is a direct UI reply to this earlier CyWorld message.
+
+- ${replyTarget.createdAt.toISOString()} ${author}: ${replyTarget.content}`;
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
 
@@ -252,7 +288,7 @@ export async function POST(request: Request) {
 
   try {
     const audience =
-      dmRoom.targetAgent.userId === user.id ? "direct_line" : "shared_spaces";
+      dmRoom.targetAgent.userId === user.id ? "direct_line" : "non_owner_dm";
     const activeHumans = await prisma.user.findMany({
       where: {
         status: "ACTIVE",
@@ -271,7 +307,7 @@ export async function POST(request: Request) {
       },
     });
     const relationshipContext =
-      audience === "shared_spaces"
+      audience === "non_owner_dm"
         ? await getAgentRelationshipContext({
             agentDatabaseId: dmRoom.targetAgent.id,
             targetUserId: user.id,
@@ -307,81 +343,38 @@ export async function POST(request: Request) {
       relationshipContext,
     });
 
-    const repliedToTaskMessage = replyToMessageId
-      ? await prisma.message.findFirst({
-          where: {
-            id: replyToMessageId,
-            roomId: dmRoom.room.id,
-            taskId: {
-              not: null,
-            },
-          },
-          select: {
-            id: true,
-          },
-        })
-      : null;
-    const shouldAttemptTaskReply =
-      audience === "shared_spaces" && Boolean(repliedToTaskMessage);
-    const taskReply = shouldAttemptTaskReply
-      ? await handleInboundTaskReply({
-          agentDisplayName: dmRoom.targetAgent.displayName,
-          agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-          behaviorConfig: dmRoom.targetAgent.soulConfigJson,
-          ownerDisplayName: dmRoom.targetAgent.user.displayName,
-          ownerTimezone: dmRoom.targetAgent.user.timezone,
-          ownerUsername: dmRoom.targetAgent.user.username,
-          personaSummary: dmRoom.targetAgent.personaSummary,
-          replyingDisplayName: user.displayName,
-          replyingTimezone: user.timezone,
-          roomId: dmRoom.room.id,
-          replyingUserId: user.id,
-          userMessageId: createdUserMessage.id,
-          replyingUsername: user.username,
-          replyMessage: message,
-        })
-      : null;
-
-    if (taskReply) {
-      const replyMessage = await prisma.message.create({
-        data: {
-          roomId: dmRoom.room.id,
-          role: "AGENT",
-          agentId: dmRoom.targetAgent.openclawAgentId,
-          content: taskReply.acknowledgement,
-        },
-      });
-
-      await prisma.room.update({
-        where: {
-          id: dmRoom.room.id,
-        },
-        data: {},
-      });
-
-      return NextResponse.json({
-        reply: taskReply.acknowledgement,
-        replyMessage: {
-          id: replyMessage.id,
-          content: replyMessage.content,
-          createdAt: replyMessage.createdAt.toISOString(),
-        },
-        userMessage: {
-          attachments: body.attachments,
-          clientMessageId,
-          createdAt: createdUserMessage.createdAt.toISOString(),
-          id: createdUserMessage.id,
-        },
-        roomId: dmRoom.room.id,
-      });
-    }
-
     const filesContext = await buildStudyFilesRuntimeContext({
       agentDatabaseId: dmRoom.targetAgent.id,
       maxInaccessibleFolders: 8,
       maxVisibleEntries: 16,
       userId: user.id,
     });
+    const recentConversationContext = await buildRecentRoomConversationContext({
+      roomId: dmRoom.room.id,
+    });
+    const replyTargetContext = replyToMessageId
+      ? formatReplyTargetContext(
+          await prisma.message.findFirst({
+            where: {
+              id: replyToMessageId,
+              roomId: dmRoom.room.id,
+            },
+            include: {
+              agent: {
+                select: {
+                  displayName: true,
+                },
+              },
+              user: {
+                select: {
+                  displayName: true,
+                  username: true,
+                },
+              },
+            },
+          }),
+        )
+      : "";
     const selectiveNoteContext = await buildSelectiveAgentNoteContext({
       agentId: dmRoom.targetAgent.openclawAgentId,
       counterpart: {
@@ -391,8 +384,19 @@ export async function POST(request: Request) {
       },
       ownerUsername: dmRoom.targetAgent.user.username,
     });
+    const turnContext = await createAgentTurnContext({
+      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+      currentHumanUserId: user.id,
+      objective: message,
+      requesterUserId: user.id,
+      sourceRoomId: dmRoom.room.id,
+      triggerType: "human_dm",
+    });
     const turnInstructions = [
       instructions,
+      formatAgentTurnContextInstruction(turnContext.id),
+      recentConversationContext,
+      replyTargetContext,
       selectiveNoteContext,
       filesContext,
     ]

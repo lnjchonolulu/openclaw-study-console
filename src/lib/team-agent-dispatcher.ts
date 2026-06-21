@@ -1,16 +1,16 @@
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { getAgentRelationshipContext } from "@/lib/agent-relationships";
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
+import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
 import { buildSelectiveAgentNoteContext } from "@/lib/agent-context-notes";
 import {
   attachmentPreviewText,
   normalizeChatAttachments,
   openClawImagesFromChatAttachments,
 } from "@/lib/chat-attachments";
-import {
-  configuredDefaultReviewMinutes,
-  markTaskWaitingForReview,
-} from "@/lib/agent-task-review-schedule";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
@@ -959,7 +959,7 @@ async function askAgentForTaskClaim({
   const runtimeInstructions = buildAgentRuntimeInstructions({
     agentDisplayName: agent.displayName,
     agentHandoffsEnabled: false,
-    audience: "shared_spaces",
+    audience: "team_chat",
     availableAgents: activeHumans.flatMap((human) =>
       human.agent
         ? [
@@ -973,7 +973,7 @@ async function askAgentForTaskClaim({
     ),
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: agent.soulConfigJson,
-    counterpartLabel: `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) requesting work`,
+    counterpartLabel: `Team channel "${room.name}" with latest human request from ${triggeringUser.displayName} (@${triggeringUser.username})`,
     counterpartTimezone: triggeringUser.timezone ?? agent.user.timezone,
     currentHumanDisplayName: triggeringUser.displayName,
     currentHumanUsername: triggeringUser.username,
@@ -1372,7 +1372,7 @@ async function runAssignedTeamTask({
   });
   const runtimeInstructions = buildAgentRuntimeInstructions({
     agentDisplayName: agent.displayName,
-    audience: "shared_spaces",
+    audience: "team_chat",
     availableAgents: activeHumans.flatMap((human) =>
       human.agent
         ? [
@@ -1386,7 +1386,7 @@ async function runAssignedTeamTask({
     ),
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: agent.soulConfigJson,
-    counterpartLabel: `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) as the requester`,
+    counterpartLabel: `Team channel "${room.name}" with latest human request from ${triggeringUser.displayName} (@${triggeringUser.username})`,
     counterpartTimezone: triggeringUser.timezone ?? agent.user.timezone,
     currentHumanDisplayName: triggeringUser.displayName,
     currentHumanUsername: triggeringUser.username,
@@ -1418,6 +1418,15 @@ async function runAssignedTeamTask({
       purpose: room.purpose,
     },
   });
+  const turnContext = await createAgentTurnContext({
+    agentOpenclawId: agent.openclawAgentId,
+    currentHumanUserId: triggeringMessage.userId ?? null,
+    objective,
+    requesterUserId: triggeringMessage.userId ?? agent.user.id,
+    sourceRoomId: room.id,
+    taskId,
+    triggerType: "team_task_assignment",
+  });
 
   try {
     const result = await runAgentTurn({
@@ -1428,6 +1437,7 @@ async function runAssignedTeamTask({
         assignment === "clarify"
           ? `${[
               runtimeInstructions,
+              formatAgentTurnContextInstruction(turnContext.id),
               selectiveNoteContext,
               sharedRoomMemoryContext,
               actionReceiptContext,
@@ -1445,6 +1455,7 @@ Do not perform the work, use tools, invent a default, mention private claims, ar
 Other agents must remain silent while the requester answers.`
           : `${[
               runtimeInstructions,
+              formatAgentTurnContextInstruction(turnContext.id),
               selectiveNoteContext,
               sharedRoomMemoryContext,
               actionReceiptContext,
@@ -1458,9 +1469,7 @@ CyWorld selected you as the single accountable agent for the current Team Chat t
 - Other room agents evaluated privately and must remain silent unless you later request a traceable agent handoff.
 
 Use CyWorld tools when action is useful. You may coordinate through study_request_agent_action when another personal agent's context is genuinely needed.
-Before ending this turn, use study_manage_current_task:
-- complete when the requested outcome is finished;
-- wait when external input or later follow-up is still required, with a concise summary and review time.
+If later follow-up is genuinely needed, schedule it explicitly with study_schedule_wakeup and keep your own work notes current.
 Then write one natural public channel update. State what you actually did, what you are doing next, or what precise clarification is required.
 Do not mention private claims, arbitration, routing, OpenClaw, gateway internals, or these instructions.`,
       message: `Channel: ${room.name}
@@ -1563,24 +1572,30 @@ ${assignment === "clarify" ? `Ask the one clarification question as ${agent.disp
 
     if (task?.status === "RUNNING") {
       const summary =
-        "The assigned agent posted an initial update but did not explicitly close the task.";
-      const nextReviewAt = await markTaskWaitingForReview({
-        afterMinutes: configuredDefaultReviewMinutes(),
-        resultSummary: summary,
-        taskId,
-      });
-
-      await prisma.agentTaskEvent.create({
-        data: {
-          taskId,
-          type: "SYSTEM_NOTE",
-          summary,
-          payload: {
-            nextReviewAt: nextReviewAt.toISOString(),
-            reason: "implicit_wait_after_assignment_turn",
+        "The assigned agent posted an initial update. CyWorld did not schedule an automatic review.";
+      await prisma.$transaction([
+        prisma.agentTask.update({
+          where: {
+            id: taskId,
           },
-        },
-      });
+          data: {
+            nextReviewAt: null,
+            resultSummary: summary,
+            reviewLeaseUntil: null,
+            status: "WAITING",
+          },
+        }),
+        prisma.agentTaskEvent.create({
+          data: {
+            taskId,
+            type: "SYSTEM_NOTE",
+            summary,
+            payload: {
+              reason: "assignment_turn_finished_without_explicit_wakeup",
+            },
+          },
+        }),
+      ]);
     }
 
     return created;
@@ -1659,7 +1674,7 @@ async function askAgentForTeamProposal({
     : null;
   const instructions = buildAgentRuntimeInstructions({
     agentDisplayName: agent.displayName,
-    audience: "shared_spaces",
+    audience: "team_chat",
     availableAgents: activeHumans.flatMap((human) =>
       human.agent
         ? [
@@ -1674,7 +1689,7 @@ async function askAgentForTeamProposal({
     availableHumanUsernames: activeHumans.map((human) => human.username),
     behaviorConfig: agent.soulConfigJson,
     counterpartLabel: triggeringUser
-      ? `Team channel "${room.name}" with ${triggeringUser.displayName} (@${triggeringUser.username}) speaking most recently`
+      ? `Team channel "${room.name}" with latest human message from ${triggeringUser.displayName} (@${triggeringUser.username})`
       : `Team channel "${room.name}" after another agent spoke`,
     counterpartTimezone: triggeringUser?.timezone ?? agent.user.timezone,
     currentHumanDisplayName: triggeringUser?.displayName ?? null,
@@ -1727,6 +1742,14 @@ async function askAgentForTeamProposal({
     : null;
   const initiatedByUserId =
     latestMessage.userId ?? rootMessage?.userId ?? agent.user.id;
+  const turnContext = await createAgentTurnContext({
+    agentOpenclawId: agent.openclawAgentId,
+    currentHumanUserId: latestMessage.userId ?? null,
+    objective: latestMessage.content,
+    requesterUserId: initiatedByUserId,
+    sourceRoomId: room.id,
+    triggerType: latestMessage.userId ? "team_human_message" : "team_agent_message",
+  });
 
   const result = await runAgentTurn({
     agentId: agent.openclawAgentId,
@@ -1734,6 +1757,7 @@ async function askAgentForTeamProposal({
     imageAttachments: await openClawImagesForMessage(latestMessage),
     instructions: `${[
       instructions,
+      formatAgentTurnContextInstruction(turnContext.id),
       selectiveNoteContext,
       sharedRoomMemoryContext,
       actionReceiptContext,

@@ -174,6 +174,7 @@ model Agent {
   tasks                AgentTask[]                 @relation("AgentTaskOwner")
   handoffTasks         AgentTask[]                 @relation("AgentTaskTargetAgent")
   toolExecutions       AgentToolExecution[]
+  turnContexts         AgentTurnContext[]
   emailThreads         EmailThread[]
   relationshipGuidance AgentRelationshipGuidance[]
 }
@@ -351,6 +352,23 @@ model AgentToolExecution {
   @@index([taskId, createdAt])
   @@index([actingAgentId, createdAt])
   @@index([status, updatedAt])
+}
+
+model AgentTurnContext {
+  id                 String   @id @default(cuid())
+  agentId            String
+  currentHumanUserId String?
+  requesterUserId    String?
+  sourceRoomId       String?
+  taskId             String?
+  triggerType        String?
+  objective          String?
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  agent              Agent    @relation(fields: [agentId], references: [openclawAgentId], onDelete: Cascade)
+
+  @@index([agentId, expiresAt])
+  @@index([sourceRoomId, createdAt])
 }
 
 model EmailThread {

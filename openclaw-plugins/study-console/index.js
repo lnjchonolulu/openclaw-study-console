@@ -80,6 +80,50 @@ async function callStudyConsole(ctx, path, body) {
   return payload;
 }
 
+function withoutTurnContextId(params) {
+  const rest = { ...(params ?? {}) };
+  delete rest.turnContextId;
+
+  return rest;
+}
+
+async function callCyWorldTool(ctx, toolName, callId, params) {
+  const senderAgentOpenclawId = deriveAgentId(ctx);
+
+  if (!senderAgentOpenclawId) {
+    return {
+      ok: false,
+      reason: "missing_agent_identity",
+    };
+  }
+
+  const turnContextId =
+    typeof params?.turnContextId === "string" ? params.turnContextId.trim() : "";
+
+  if (!turnContextId) {
+    return {
+      ok: false,
+      reason: "missing_turn_context_id",
+      guidance:
+        "Use the turnContextId from the CyWorld Plugin Turn Context section of the current runtime instructions.",
+    };
+  }
+
+  return callStudyConsole(ctx, "/tool-call", {
+    argumentsJson: JSON.stringify(withoutTurnContextId(params)),
+    callId: String(callId || `${toolName}:${Date.now()}`),
+    senderAgentOpenclawId,
+    toolName,
+    turnContextId,
+  });
+}
+
+const turnContextProperty = {
+  type: "string",
+  description:
+    "The exact turnContextId from the CyWorld Plugin Turn Context section of the current runtime instructions.",
+};
+
 function createSendDmTool(ctx) {
   return {
     name: "study_send_dm",
@@ -174,7 +218,7 @@ function createListPendingTasksTool(ctx) {
     name: "study_list_pending_tasks",
     label: "CyWorld Pending Tasks",
     description:
-      "Inspect this agent's unfinished CyWorld tasks and latest durable events. Use this first during heartbeat or recovery after a delay, restart, email reply, handoff, scheduled message, or interrupted action. Do not repeat an action merely because its task remains pending.",
+      "Inspect CyWorld's durable action log for this agent, including app-mediated requests, handoffs, external messages, email threads, and tool receipts. Use this when you need factual execution history; keep your own plans in OpenClaw workspace notes.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -207,17 +251,187 @@ function createListPendingTasksTool(ctx) {
   };
 }
 
+function createRecallConversationTool(ctx) {
+  return {
+    name: "study_recall_conversation",
+    label: "CyWorld Recall Conversation",
+    description:
+      "Recall CyWorld conversation history that this agent is allowed to use. Omit withUsername and teamChannelName for the current DM or Team Chat. Set withUsername to recall this agent's DM with a specific human, or teamChannelName to recall a Team Chat. Use this only when older conversation context is actually needed. CyWorld enforces room membership and the owner's conversation-memory sharing policy.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Maximum matching messages to return, from 1 to 30.",
+        },
+        query: {
+          type: "string",
+          description:
+            "Optional text to search for. Omit it to retrieve the most recent messages in the selected conversation.",
+        },
+        teamChannelName: {
+          type: "string",
+          description:
+            "Optional CyWorld Team Chat channel name. Do not combine with withUsername.",
+        },
+        turnContextId: turnContextProperty,
+        withUsername: {
+          type: "string",
+          description:
+            "Optional CyWorld username whose DM with this agent should be recalled, without @. Do not combine with teamChannelName.",
+        },
+      },
+      required: ["turnContextId"],
+    },
+    async execute(id, params) {
+      return jsonToolResult(
+        await callCyWorldTool(ctx, "study_recall_conversation", id, params),
+      );
+    },
+  };
+}
+
+function createUpdateOwnerSharingPoliciesTool(ctx) {
+  return {
+    name: "study_update_owner_sharing_policies",
+    label: "CyWorld Update Owner Sharing Policies",
+    description:
+      "Save the owner's choices for calendar sharing and remembered-conversation sharing. Use only while speaking directly with this agent's owner, especially during bootstrap after the owner has clearly chosen Never, Ask every time, or Always allowed. Omit a field that the owner has not decided.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        calendarSharingPolicy: {
+          type: "string",
+          enum: ["never", "ask_each_time", "always"],
+        },
+        conversationMemorySharingPolicy: {
+          type: "string",
+          enum: ["never", "ask_each_time", "always"],
+        },
+        turnContextId: turnContextProperty,
+      },
+      required: ["turnContextId"],
+    },
+    async execute(id, params) {
+      return jsonToolResult(
+        await callCyWorldTool(ctx, "study_update_owner_sharing_policies", id, params),
+      );
+    },
+  };
+}
+
+function createSetRelationshipGuidanceTool(ctx) {
+  return {
+    name: "study_set_relationship_guidance",
+    label: "CyWorld Set Relationship Guidance",
+    description:
+      "Save whether the owner wants one general Shared Spaces approach or person-specific social guidance. Use only while speaking directly with this agent's owner. Person-specific entries are free-text owner preferences for how this agent should relate to known CyWorld users; they are not permissions and must not be invented.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["general", "person_specific"],
+        },
+        relationships: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              interactionGuidance: {
+                type: "string",
+                description:
+                  "Optional natural-language guidance for tone, distance, candor, or social stance with this person.",
+              },
+              relationshipLabel: {
+                type: "string",
+                description:
+                  "Optional owner-authored description such as senior colleague or close friend.",
+              },
+              username: {
+                type: "string",
+                description: "Existing active CyWorld username, without @.",
+              },
+            },
+            required: ["username"],
+          },
+        },
+        turnContextId: turnContextProperty,
+      },
+      required: ["mode", "turnContextId"],
+    },
+    async execute(id, params) {
+      return jsonToolResult(
+        await callCyWorldTool(ctx, "study_set_relationship_guidance", id, params),
+      );
+    },
+  };
+}
+
+function createScheduleWakeupTool(ctx) {
+  return {
+    name: "study_schedule_wakeup",
+    label: "CyWorld Schedule Agent Wakeup",
+    description:
+      "Schedule a future wakeup for this same OpenClaw agent when there is a specific reason to reconsider something later. This is a judgment opportunity, not an automatic reminder message. At wakeup time CyWorld will provide the purpose and recent room context; the agent must decide what, if anything, to do.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        delayMinutes: {
+          type: "number",
+          description:
+            "Optional delay from now in minutes. Provide either delayMinutes or wakeAt.",
+        },
+        purpose: {
+          type: "string",
+          description:
+            "Why the agent should wake later, including what to check or reconsider.",
+        },
+        turnContextId: turnContextProperty,
+        wakeAt: {
+          type: "string",
+          description:
+            "Optional ISO 8601 datetime for the wakeup. Provide either wakeAt or delayMinutes.",
+        },
+      },
+      required: ["purpose", "turnContextId"],
+    },
+    async execute(id, params) {
+      return jsonToolResult(
+        await callCyWorldTool(ctx, "study_schedule_wakeup", id, params),
+      );
+    },
+  };
+}
+
 export default definePluginEntry({
   id: "study_console",
   name: "CyWorld",
-  description: "CyWorld task recovery and participant messaging tools.",
+  description: "CyWorld action-log inspection and participant messaging tools.",
   register(api) {
+    api.registerTool((ctx) => createRecallConversationTool(ctx), {
+      name: "study_recall_conversation",
+    });
     api.registerTool((ctx) => createListPendingTasksTool(ctx), {
       name: "study_list_pending_tasks",
+    });
+    api.registerTool((ctx) => createScheduleWakeupTool(ctx), {
+      name: "study_schedule_wakeup",
     });
     api.registerTool((ctx) => createSendDmTool(ctx), { name: "study_send_dm" });
     api.registerTool((ctx) => createScheduleDmTool(ctx), {
       name: "study_schedule_dm",
+    });
+    api.registerTool((ctx) => createSetRelationshipGuidanceTool(ctx), {
+      name: "study_set_relationship_guidance",
+    });
+    api.registerTool((ctx) => createUpdateOwnerSharingPoliciesTool(ctx), {
+      name: "study_update_owner_sharing_policies",
     });
   },
 });

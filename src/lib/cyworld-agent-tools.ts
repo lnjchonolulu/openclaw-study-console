@@ -19,9 +19,7 @@ import {
   saveGeneratedChatImageAttachment,
 } from "@/lib/chat-attachments";
 import {
-  markTaskWaitingForReview,
   nextTaskReviewAt,
-  normalizeReviewMinutes,
 } from "@/lib/agent-task-review-schedule";
 import { normalizeAgentBehaviorConfig } from "@/lib/agent-behavior";
 import { updateOwnerRelationshipGuidance } from "@/lib/agent-relationships";
@@ -163,7 +161,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_list_pending_tasks",
     description:
-      "Inspect this agent's unfinished CyWorld tasks and their latest durable events. Use it during heartbeat or when recovering work after a delay, restart, email reply, handoff, scheduled message, or interrupted action. The result distinguishes new input, stalled execution, and ordinary waiting. Do not repeat an action merely because its task remains pending.",
+      "Inspect CyWorld's durable action log for this agent: app-mediated requests, handoffs, external messages, email threads, and tool receipts. Use this when you need factual execution history or recovery context. This is not the agent's primary worklog; keep your own plans in your OpenClaw workspace notes. Do not repeat an action merely because it appears in this log.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -178,29 +176,30 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
     },
   },
   {
-    name: "study_manage_current_task",
+    name: "study_schedule_wakeup",
     description:
-      "Update the lifecycle of the current CyWorld task after reviewing its durable history. Use wait when external input or a later re-check is still needed, and provide reviewAfterMinutes. Use complete only when the objective is actually finished or no further action is useful. This tool only operates on the active task supplied by CyWorld.",
+      "Schedule a future wakeup for this same OpenClaw agent when there is a specific reason to reconsider something later. This is a judgment opportunity, not an automatic reminder message. At wakeup time CyWorld will provide the purpose and recent room context; the agent must decide what, if anything, to do.",
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
-        action: {
-          type: "string",
-          enum: ["wait", "complete"],
-        },
-        reviewAfterMinutes: {
+        delayMinutes: {
           type: "number",
           description:
-            "Required for wait. Choose when this agent should wake and reconsider the task if no new input arrives.",
+            "Optional delay from now in minutes. Provide either delayMinutes or wakeAt.",
         },
-        summary: {
+        purpose: {
           type: "string",
           description:
-            "A concise durable note explaining the current task state and next expected step.",
+            "Why the agent should wake later, including what to check or reconsider.",
+        },
+        wakeAt: {
+          type: "string",
+          description:
+            "Optional ISO 8601 datetime for the wakeup. Provide either wakeAt or delayMinutes.",
         },
       },
-      required: ["action", "summary"],
+      required: ["purpose"],
     },
   },
   {
@@ -306,12 +305,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         expectReply: {
           type: "boolean",
           description:
-            "Set true when this message asks the recipient for information and the agent should wait for a reply.",
-        },
-        reviewAfterMinutes: {
-          type: "number",
-          description:
-            "When expectReply is true, choose how many minutes to wait before this agent automatically re-checks the task if no reply arrives. Omit for the configurable CyWorld default.",
+            "Set true when this message asks the recipient for information. This records the expectation in CyWorld's action log only; it does not schedule an automatic reminder or task review. If you need a future check, call study_schedule_wakeup explicitly.",
         },
         toUsername: {
           type: "string",
@@ -532,12 +526,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
         expectReply: {
           type: "boolean",
           description:
-            "Set true when this scheduled message asks the recipient for information and the agent should wait for a reply.",
-        },
-        reviewAfterMinutes: {
-          type: "number",
-          description:
-            "When a reply is expected, choose how many minutes after delivery to wait before this agent automatically re-checks the task. Omit for the configurable CyWorld default.",
+            "Set true when this scheduled message asks the recipient for information. This records the expectation in CyWorld's action log only; it does not schedule an automatic reminder or task review. If you need a future check, call study_schedule_wakeup explicitly.",
         },
         toUsername: {
           type: "string",
@@ -1053,7 +1042,6 @@ function shouldRecordToolReceipt(toolName: string) {
   return ![
     "study_list_email_threads",
     "study_list_pending_tasks",
-    "study_manage_current_task",
     "study_recall_conversation",
   ].includes(toolName);
 }
@@ -3132,103 +3120,83 @@ async function executeCyWorldAgentToolCall({
     );
   }
 
-  if (call.name === "study_manage_current_task") {
-    if (!taskId) {
+  if (call.name === "study_schedule_wakeup") {
+    const purpose = cleanMessage(args.purpose);
+    const delayMinutes =
+      typeof args.delayMinutes === "number" && Number.isFinite(args.delayMinutes)
+        ? Math.max(1, Math.round(args.delayMinutes))
+        : null;
+    const wakeAtFromIso =
+      typeof args.wakeAt === "string" && args.wakeAt.trim()
+        ? new Date(args.wakeAt)
+        : null;
+    const wakeAt =
+      wakeAtFromIso && !Number.isNaN(wakeAtFromIso.getTime())
+        ? wakeAtFromIso
+        : delayMinutes
+          ? nextTaskReviewAt({ afterMinutes: delayMinutes })
+          : null;
+
+    if (!purpose || !wakeAt) {
       return JSON.stringify({
         ok: false,
-        reason: "no_active_task",
+        reason: "missing_purpose_or_wakeup_time",
       });
     }
 
-    const task = await prisma.agentTask.findFirst({
+    if (wakeAt.getTime() <= Date.now()) {
+      return JSON.stringify({
+        ok: false,
+        reason: "wakeup_time_must_be_in_the_future",
+      });
+    }
+
+    const agent = await prisma.agent.findUnique({
       where: {
-        id: taskId,
-        agentId: senderAgentOpenclawId,
-        status: {
-          in: ["OPEN", "RUNNING", "WAITING"],
-        },
+        openclawAgentId: senderAgentOpenclawId,
       },
       select: {
-        id: true,
+        userId: true,
       },
     });
 
-    if (!task) {
+    if (!agent) {
       return JSON.stringify({
         ok: false,
-        reason: "active_task_not_found",
+        reason: "acting_agent_not_found",
       });
     }
 
-    const action = args.action === "complete" ? "complete" : "wait";
-    const summary = cleanMessage(args.summary);
-
-    if (!summary) {
-      return JSON.stringify({
-        ok: false,
-        reason: "missing_summary",
-      });
-    }
-
-    if (action === "complete") {
-      await prisma.$transaction([
-        prisma.agentTask.update({
-          where: {
-            id: task.id,
-          },
-          data: {
-            lastReviewedAt: new Date(),
-            nextReviewAt: null,
-            resultSummary: summary,
-            reviewLeaseUntil: null,
-            status: "COMPLETED",
-          },
-        }),
-        prisma.agentTaskEvent.create({
-          data: {
-            taskId: task.id,
-            type: "AGENT_DECISION",
-            summary,
-            payload: {
-              action,
-            },
-          },
-        }),
-      ]);
-
-      return JSON.stringify({
-        action,
-        ok: true,
-        taskId: task.id,
-      });
-    }
-
-    const reviewAfterMinutes = normalizeReviewMinutes(args.reviewAfterMinutes);
-    const nextReviewAt = await markTaskWaitingForReview({
-      afterMinutes: reviewAfterMinutes,
-      resultSummary: summary,
-      taskId: task.id,
-    });
-
-    await prisma.agentTaskEvent.create({
+    const wakeup = await prisma.agentTask.create({
       data: {
-        taskId: task.id,
-        type: "AGENT_DECISION",
-        summary,
-        payload: {
-          action,
-          nextReviewAt: nextReviewAt.toISOString(),
-          reviewAfterMinutes,
+        agentId: senderAgentOpenclawId,
+        kind: "explicit_wakeup",
+        objective: purpose,
+        parentTaskId: taskId ?? null,
+        requesterUserId: requesterUserId ?? agent.userId,
+        sourceRoomId: sourceRoomId ?? null,
+        status: "WAITING",
+        title: "Scheduled agent wakeup",
+        nextReviewAt: wakeAt,
+        events: {
+          create: {
+            type: AgentTaskEventType.USER_REQUEST,
+            summary: `Agent scheduled a wakeup: ${purpose}`,
+            payload: {
+              parentTaskId: taskId ?? null,
+              purpose,
+              wakeAt: wakeAt.toISOString(),
+            } satisfies Prisma.InputJsonValue,
+          },
         },
       },
     });
 
     return JSON.stringify({
-      action,
-      nextReviewAt: nextReviewAt.toISOString(),
       ok: true,
-      reviewAfterMinutes,
-      taskId: task.id,
+      purpose,
+      taskId: wakeup.id,
+      wakeAt: wakeAt.toISOString(),
     });
   }
 
@@ -3972,7 +3940,6 @@ async function executeCyWorldAgentToolCall({
     recipientResolution.status === "accepted" ? recipientResolution.toUsername : "";
   const message = cleanMessage(args.message);
   const expectReply = args.expectReply === true;
-  const reviewAfterMinutes = normalizeReviewMinutes(args.reviewAfterMinutes);
 
   if (!requestedToUsername || !toUsername || !message) {
     if (recipientResolution.status === "conflict") {
@@ -4027,20 +3994,12 @@ async function executeCyWorldAgentToolCall({
     });
 
     if (createdTask) {
-      const nextReview =
-        result.ok && expectReply
-          ? nextTaskReviewAt({
-              afterMinutes: reviewAfterMinutes,
-            })
-          : null;
-
       await prisma.agentTask.update({
         where: {
           id: createdTask.id,
         },
         data: {
           resultSummary: message,
-          nextReviewAt: nextReview,
           status: result.ok ? (expectReply ? "WAITING" : "COMPLETED") : "FAILED",
         },
       });
@@ -4075,19 +4034,12 @@ async function executeCyWorldAgentToolCall({
     });
 
     if (createdTask) {
-      const deliverAt = new Date(Date.now() + delayMinutes * 60 * 1000);
       await prisma.agentTask.update({
         where: {
           id: createdTask.id,
         },
         data: {
           resultSummary: message,
-          nextReviewAt: result.ok
-            ? nextTaskReviewAt({
-                afterMinutes: reviewAfterMinutes,
-                from: deliverAt,
-              })
-            : null,
           status: result.ok ? "WAITING" : "FAILED",
         },
       });

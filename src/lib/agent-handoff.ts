@@ -2,6 +2,10 @@ import { AgentTaskEventType, type Prisma } from "@prisma/client";
 
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
 import { buildStudyFilesRuntimeContext } from "@/lib/files";
 import {
   runAgentTurn,
@@ -299,6 +303,15 @@ export async function runAgentHandoff({
     ownerUsername: targetOwner.username,
     personaSummary: targetAgent.personaSummary,
   });
+  const turnContext = await createAgentTurnContext({
+    agentOpenclawId: targetAgent.openclawAgentId,
+    currentHumanUserId: null,
+    objective: request,
+    requesterUserId,
+    sourceRoomId,
+    taskId: task.id,
+    triggerType: "agent_handoff",
+  });
 
   try {
     const result = await runAgentTurn({
@@ -306,6 +319,7 @@ export async function runAgentHandoff({
       conversationKey: `agent-handoff:${task.id}:target:${targetAgent.openclawAgentId}`,
       instructions: [
         runtimeInstructions,
+        formatAgentTurnContextInstruction(turnContext.id),
         driveContext,
         receiptContext,
         `Agent Handoff facts

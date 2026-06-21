@@ -5,15 +5,15 @@ import {
 } from "@prisma/client";
 
 import { buildRecentActionReceiptContext } from "@/lib/action-receipts";
-import {
-  configuredDefaultReviewMinutes,
-  markTaskWaitingForReview,
-} from "@/lib/agent-task-review-schedule";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import {
   CYWORLD_AGENT_TOOLS,
   handleCyWorldAgentToolCall,
 } from "@/lib/cyworld-agent-tools";
+import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -38,53 +38,18 @@ function leaseUntil(now: Date) {
   );
 }
 
-function legacyWaitingCutoff(now: Date) {
-  return new Date(
-    now.getTime() - configuredDefaultReviewMinutes() * 60 * 1000,
-  );
-}
-
 function dueTaskWhere(now: Date): Prisma.AgentTaskWhereInput {
   return {
+    kind: "explicit_wakeup",
+    nextReviewAt: {
+      lte: now,
+    },
+    status: AgentTaskStatus.WAITING,
     OR: [
       {
-        status: AgentTaskStatus.WAITING,
-        nextReviewAt: {
-          lte: now,
-        },
-        OR: [
-          {
-            reviewLeaseUntil: null,
-          },
-          {
-            reviewLeaseUntil: {
-              lte: now,
-            },
-          },
-        ],
+        reviewLeaseUntil: null,
       },
       {
-        status: AgentTaskStatus.WAITING,
-        nextReviewAt: null,
-        updatedAt: {
-          lte: legacyWaitingCutoff(now),
-        },
-        OR: [
-          {
-            reviewLeaseUntil: null,
-          },
-          {
-            reviewLeaseUntil: {
-              lte: now,
-            },
-          },
-        ],
-      },
-      {
-        status: AgentTaskStatus.RUNNING,
-        nextReviewAt: {
-          lte: now,
-        },
         reviewLeaseUntil: {
           lte: now,
         },
@@ -197,7 +162,7 @@ async function reviewTask(taskId: string) {
     ),
     availableHumanUsernames: activeUsers.map((user) => user.username),
     behaviorConfig: task.agent.soulConfigJson,
-    counterpartLabel: `scheduled CyWorld review of task "${task.title}" with no new external reply`,
+    counterpartLabel: `agent-scheduled CyWorld wakeup "${task.title}"`,
     currentHumanDisplayName: null,
     currentHumanUsername: null,
     ownerDisplayName: task.agent.user.displayName,
@@ -209,6 +174,15 @@ async function reviewTask(taskId: string) {
     agentOpenclawId: task.agent.openclawAgentId,
     requesterUserId: task.requesterUserId,
     roomId: task.sourceRoomId,
+  });
+  const turnContext = await createAgentTurnContext({
+    agentOpenclawId: task.agent.openclawAgentId,
+    currentHumanUserId: null,
+    objective: task.objective,
+    requesterUserId: task.requesterUserId,
+    sourceRoomId: task.sourceRoomId,
+    taskId: task.id,
+    triggerType: "agent_scheduled_wakeup",
   });
   const taskContext = [
     `Task ID: ${task.id}`,
@@ -237,20 +211,22 @@ async function reviewTask(taskId: string) {
   try {
     const result = await runAgentTurn({
       agentId: task.agent.openclawAgentId,
-      conversationKey: `task:${task.id}:scheduled-review`,
-      instructions: `${[runtimeInstructions, receiptContext]
+      conversationKey: `wakeup:${task.id}:${task.agent.openclawAgentId}`,
+      instructions: `${[
+        runtimeInstructions,
+        formatAgentTurnContextInstruction(turnContext.id),
+        receiptContext,
+      ]
         .filter((part): part is string => Boolean(part?.trim()))
         .join("\n\n")}
 
-You are resuming a durable CyWorld task because its scheduled review time arrived.
-- No new human or agent reply triggered this review.
-- Inspect the task history and action receipts before acting.
-- Continue useful work autonomously when a next step is available.
+You are awake because you previously scheduled this CyWorld wakeup for yourself.
+- This wakeup is a judgment opportunity, not an automatic reminder.
+- Inspect the purpose, recent task/event log, action receipts, and your own workspace notes before deciding what to do.
+- Continue useful work autonomously only when a next step is actually warranted.
 - Do not repeat a side effect that a successful receipt says already happened.
 - Use CyWorld tools for real actions. Do not claim that an action happened without a successful tool result.
-- If the task is still blocked or waiting, call study_manage_current_task with action "wait", a concise summary of the current state, and a suitable reviewAfterMinutes.
-- If the task is genuinely finished, call study_manage_current_task with action "complete" and a concise result summary.
-- You must call study_manage_current_task before ending this review.
+- If another future check is needed, call study_schedule_wakeup explicitly with the reason and time.
 - Any message to a person or room must be delivered through a CyWorld tool. Your final assistant text is an internal review note and is not shown to a user.`,
       message: taskContext,
       tools: CYWORLD_AGENT_TOOLS,
@@ -263,7 +239,7 @@ You are resuming a durable CyWorld task because its scheduled review time arrive
           senderAgentOpenclawId: task.agent.openclawAgentId,
           sourceRoomId: task.sourceRoomId ?? undefined,
           taskId: task.id,
-          triggerType: "scheduled_task_review",
+          triggerType: "agent_scheduled_wakeup",
         }),
       onToolRoundCheckpoint: async ({
         pendingCalls,
@@ -284,36 +260,31 @@ You are resuming a durable CyWorld task because its scheduled review time arrive
         });
       },
     });
-    const updatedTask = await prisma.agentTask.findUnique({
-      where: {
-        id: task.id,
-      },
-      select: {
-        status: true,
-      },
-    });
-
-    if (updatedTask?.status === AgentTaskStatus.RUNNING) {
-      const nextReviewAt = await markTaskWaitingForReview({
-        resultSummary:
-          "The scheduled review completed without an explicit wait or complete decision.",
-        taskId: task.id,
-      });
-
-      await prisma.agentTaskEvent.create({
+    await prisma.$transaction([
+      prisma.agentTask.update({
+        where: {
+          id: task.id,
+        },
+        data: {
+          lastReviewedAt: new Date(),
+          nextReviewAt: null,
+          resultSummary: result.assistantText,
+          reviewLeaseUntil: null,
+          status: AgentTaskStatus.COMPLETED,
+        },
+      }),
+      prisma.agentTaskEvent.create({
         data: {
           taskId: task.id,
           type: AgentTaskEventType.SYSTEM_NOTE,
-          summary:
-            "The agent did not explicitly close or defer the task, so CyWorld scheduled another review.",
+          summary: "Completed agent-scheduled wakeup.",
           payload: {
             assistantText: result.assistantText,
-            nextReviewAt: nextReviewAt.toISOString(),
             toolRounds: result.toolRounds,
           },
         },
-      });
-    }
+      }),
+    ]);
 
     return {
       ok: true as const,
@@ -322,27 +293,32 @@ You are resuming a durable CyWorld task because its scheduled review time arrive
     };
   } catch (error) {
     const reason =
-      error instanceof Error ? error.message : "Unknown scheduled review error.";
-    const nextReviewAt = await markTaskWaitingForReview({
-      resultSummary: `Scheduled review failed and will retry: ${reason}`,
-      taskId: task.id,
-    });
+      error instanceof Error ? error.message : "Unknown scheduled wakeup error.";
 
     await prisma.agentTaskEvent.create({
       data: {
         taskId: task.id,
         type: AgentTaskEventType.SYSTEM_NOTE,
-        summary: `Scheduled review failed; retry scheduled for ${nextReviewAt.toISOString()}.`,
+        summary: `Agent-scheduled wakeup failed: ${reason}`,
         payload: {
           error: reason,
-          nextReviewAt: nextReviewAt.toISOString(),
         },
+      },
+    });
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        nextReviewAt: null,
+        resultSummary: `Agent-scheduled wakeup failed: ${reason}`,
+        reviewLeaseUntil: null,
+        status: AgentTaskStatus.FAILED,
       },
     });
 
     return {
       error: reason,
-      nextReviewAt: nextReviewAt.toISOString(),
       ok: false as const,
       taskId: task.id,
     };

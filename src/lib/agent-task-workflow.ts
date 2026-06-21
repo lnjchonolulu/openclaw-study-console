@@ -1,10 +1,6 @@
 import { AgentTaskEventType, type Prisma } from "@prisma/client";
 import { recordAgentActionReceipt } from "@/lib/action-receipts";
 import {
-  markTaskWaitingForReview,
-  nextTaskReviewAt,
-} from "@/lib/agent-task-review-schedule";
-import {
   deliverAgentReport,
   type AgentReportDestination,
 } from "@/lib/agent-report-delivery";
@@ -777,18 +773,6 @@ export async function createAndRunOutboundAgentTask(input: CreateOutboundAgentTa
     },
     data: {
       resultSummary: delivery.ok ? composed.message : delivery.reason,
-      nextReviewAt: delivery.ok
-        ? input.kind === "schedule_dm" || shouldWaitForReply(input)
-          ? nextTaskReviewAt({
-              from:
-                input.kind === "schedule_dm"
-                  ? new Date(
-                      Date.now() + (input.delayMinutes ?? 1) * 60 * 1000,
-                    )
-                  : new Date(),
-            })
-          : null
-        : null,
       status: delivery.ok
         ? input.kind === "schedule_dm" || shouldWaitForReply(input)
           ? "WAITING"
@@ -1114,9 +1098,16 @@ Decide the next action.`,
     });
 
     if (delivery.ok) {
-      await markTaskWaitingForReview({
-        resultSummary: nextAction.message,
-        taskId: task.id,
+      await prisma.agentTask.update({
+        where: {
+          id: task.id,
+        },
+        data: {
+          nextReviewAt: null,
+          resultSummary: nextAction.message,
+          reviewLeaseUntil: null,
+          status: "WAITING",
+        },
       });
     } else {
       await prisma.agentTask.update({
@@ -1154,9 +1145,16 @@ Decide the next action.`,
       },
     });
   } else {
-    await markTaskWaitingForReview({
-      resultSummary: nextAction.reason ?? null,
-      taskId: task.id,
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        nextReviewAt: null,
+        resultSummary: nextAction.reason ?? null,
+        reviewLeaseUntil: null,
+        status: "WAITING",
+      },
     });
   }
 

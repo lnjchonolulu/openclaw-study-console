@@ -9,7 +9,7 @@ const STALE_RUNNING_MS = 15 * 60 * 1000;
 type PendingTaskAttention =
   | "recover_stalled_execution"
   | "review_new_input"
-  | "scheduled_review_due"
+  | "explicit_wakeup_due"
   | "start_or_review"
   | "waiting_for_external_input";
 
@@ -61,7 +61,7 @@ function resolveAttention({
   }
 
   if (nextReviewAt && nextReviewAt.getTime() <= Date.now()) {
-    return "scheduled_review_due";
+    return "explicit_wakeup_due";
   }
 
   return "waiting_for_external_input";
@@ -270,8 +270,8 @@ export async function listPendingAgentTasks({
         "Inspect the task history and continue only the unfinished step. Do not repeat a side effect that already has a successful receipt.",
       review_new_input:
         "Review the new reply or event and decide the next useful action or report.",
-      scheduled_review_due:
-        "The task's review time has arrived. Re-check its receipts and state, then continue, defer with a new review time, or complete it.",
+      explicit_wakeup_due:
+        "An agent-scheduled wakeup is due. Use it as a judgment opportunity, not as an automatic reminder.",
       start_or_review:
         "Review whether this task still needs action. Act only when the objective and authority are clear.",
       waiting_for_external_input:

@@ -11,6 +11,10 @@ import {
   handleCyWorldAgentToolCall,
 } from "@/lib/cyworld-agent-tools";
 import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
+import {
   listSharedGmailInboxMessages,
   type GmailMessageView,
 } from "@/lib/google-integration";
@@ -177,10 +181,24 @@ async function processEmailReply(message: GmailMessageView) {
     requesterUserId: thread.requesterUserId,
     roomId: thread.sourceRoomId,
   });
+  const objective = `Follow up on email reply in thread "${thread.subject}".`;
+  const turnContext = await createAgentTurnContext({
+    agentOpenclawId: thread.agent.openclawAgentId,
+    currentHumanUserId: null,
+    objective,
+    requesterUserId: thread.requesterUserId,
+    sourceRoomId: thread.sourceRoomId,
+    taskId: thread.taskId,
+    triggerType: "email_reply",
+  });
   const result = await runAgentTurn({
     agentId: thread.agent.openclawAgentId,
     conversationKey: `email-thread:${thread.id}`,
-    instructions: [instructions, actionReceiptContext]
+    instructions: [
+      instructions,
+      formatAgentTurnContextInstruction(turnContext.id),
+      actionReceiptContext,
+    ]
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n"),
     message: summarizeEmailForAgent(message, thread.id),
@@ -189,7 +207,7 @@ async function processEmailReply(message: GmailMessageView) {
       handleCyWorldAgentToolCall({
         call,
         currentHumanUserId: null,
-        objective: `Follow up on email reply in thread "${thread.subject}".`,
+        objective,
         requesterUserId: thread.requesterUserId,
         senderAgentOpenclawId: thread.agent.openclawAgentId,
         sourceRoomId: thread.sourceRoomId ?? undefined,

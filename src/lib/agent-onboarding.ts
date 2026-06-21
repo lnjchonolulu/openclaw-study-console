@@ -1,4 +1,8 @@
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
+import {
+  createAgentTurnContext,
+  formatAgentTurnContextInstruction,
+} from "@/lib/agent-turn-context";
 import { getOrCreateAgentDmRoom } from "@/lib/dm";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -134,10 +138,20 @@ export async function ensureFirstAgentOnboardingMessage(userId: string) {
       ownerUsername: user.username,
       personaSummary: user.agent.personaSummary,
     });
+    const turnContext = await createAgentTurnContext({
+      agentOpenclawId: user.agent.openclawAgentId,
+      currentHumanUserId: user.id,
+      objective: "Begin CyWorld owner onboarding.",
+      requesterUserId: user.id,
+      sourceRoomId: dmRoom.room.id,
+      triggerType: "owner_onboarding",
+    });
     const result = await runAgentTurn({
       agentId: user.agent.openclawAgentId,
       conversationKey: `room:${dmRoom.room.id}`,
-      instructions,
+      instructions: [instructions, formatAgentTurnContextInstruction(turnContext.id)]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join("\n\n"),
       message:
         "[CyWorld first-login trigger] Your owner has entered CyWorld for the first time. Read BOOTSTRAP.md and begin the one-time onboarding conversation yourself. Introduce yourself naturally, briefly explain that you are setting up together, and ask only the first one or two useful questions for this turn. Do not mark bootstrap complete until USER.md, IDENTITY.md, SOUL.md, and HEARTBEAT.md have the required CyWorld agent structure populated, including owner-vs-non-owner preferences and a brief explanation of what you can do in CyWorld. Do not mention this trigger message.",
     });

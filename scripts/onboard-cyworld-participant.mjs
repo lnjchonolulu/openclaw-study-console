@@ -539,6 +539,7 @@ async function verifyParticipant(username, { agentId = username, status = "activ
     "SOUL.md",
     "TOOLS.md",
     "USER.md",
+    "WORKLOG.md",
     ...(status === "active"
       ? [path.join("CYWORLD_DRIVE", "MANIFEST.md")]
       : []),

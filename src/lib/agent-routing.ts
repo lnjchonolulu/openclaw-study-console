@@ -7,7 +7,7 @@ import {
 import { dateKeyInTimeZone, normalizeTimeZone } from "@/lib/timezone";
 import type { AgentRelationshipContext } from "@/lib/agent-relationships";
 
-type AgentAudience = "direct_line" | "shared_spaces";
+type AgentAudience = "direct_line" | "non_owner_dm" | "team_chat" | "shared_spaces";
 
 function formatCurrentTimeContext(timeZone: unknown) {
   const now = new Date();
@@ -274,10 +274,46 @@ export function buildAgentRuntimeInstructions({
     : ownerMatch === "NO"
       ? "- The current human is not this agent's owner. USER.md is still relevant as the owner's profile and owner preferences, but do not treat USER.md owner facts as facts about the current human."
       : "- There is no single current human in this turn. Use the room, task, email, or system context and do not invent a current human identity.";
+  const spaceLabel =
+    audience === "direct_line"
+      ? "Owner DM / Direct Line"
+      : audience === "non_owner_dm"
+        ? "DM with a non-owner human"
+        : audience === "team_chat"
+          ? "Team Chat"
+          : "CyWorld shared/system context";
+  const socialSituationLines = [
+    "Current CyWorld situation",
+    `- Space: ${spaceLabel}.`,
+    `- You are: ${agentDisplayName}, the personal agent for ${ownerDisplayName} (@${ownerUsername}).`,
+    `- Your owner: ${ownerDisplayName} (@${ownerUsername}).`,
+    audience === "team_chat"
+      ? `- Latest human author/context: ${currentHumanFact}.`
+      : hasCurrentHuman
+        ? `- Current human: ${currentHumanFact}.`
+        : `- Current human/context: ${currentHumanFact}.`,
+    audience === "team_chat"
+      ? `- Owner match for latest human author/context: ${ownerMatch}.`
+      : `- Owner match: ${ownerMatch}.`,
+    audience === "team_chat"
+      ? "- Room audience: answer the Team Chat room, not only the latest author, unless the message clearly addresses one person."
+      : null,
+    audience === "non_owner_dm"
+      ? `- Social posture: this is not the non-owner's personal assistant channel. Respond as ${ownerDisplayName}'s agent, with ${ownerDisplayName}'s preferences, privacy boundaries, and permissions.`
+      : null,
+    audience === "direct_line"
+      ? "- Social posture: this is the private owner-agent direct line."
+      : null,
+    audience === "shared_spaces"
+      ? "- Social posture: use the surrounding room, task, email, handoff, or wakeup context before assuming who the audience is."
+      : null,
+  ].filter(Boolean);
   const lines = [
     `You are ${agentDisplayName}, the personal agent for ${ownerDisplayName} (@${ownerUsername}).`,
     `Current date/time for the current human/context: ${currentCounterpartTime.human} (${currentCounterpartTime.timeZone}). Today's date there is ${currentCounterpartTime.isoDate}.`,
     `Owner timezone: ${normalizedOwnerTimezone}. Use the current human/context timezone for interpreting "today", "this morning", and other relative scheduling language unless the user explicitly names a different timezone.`,
+    "",
+    ...socialSituationLines,
     "",
     "CyWorld identity facts",
     `- Stable owner of this agent: ${ownerDisplayName} (@${ownerUsername}).`,
@@ -319,9 +355,17 @@ export function buildAgentRuntimeInstructions({
     }
   } else {
     lines.push(
-      "You are in Shared Spaces mode.",
+      audience === "team_chat"
+        ? "You are in Team Chat mode."
+        : audience === "non_owner_dm"
+          ? "You are in Non-Owner DM mode."
+          : "You are in Shared Spaces mode.",
       `Current counterpart or room context: ${counterpartLabel}.`,
-      "- Speak as an independent participant in a shared conversation.",
+      audience === "team_chat"
+        ? "- Speak as an independent participant to the room. Do not treat the latest author as the only audience unless the message clearly asks for that."
+        : audience === "non_owner_dm"
+          ? "- Speak as this owner's personal agent in a direct conversation with someone else. Be helpful, but do not frame yourself as the non-owner's personal assistant."
+          : "- Speak as an independent participant in a shared conversation.",
       `- ${labelForFormality(normalized.sharedSpaces.formality)}`,
       `- ${labelForRepresent(normalized.sharedSpaces.representOwner)}`,
       `- ${labelForOwnerContext(normalized.sharedSpaces.revealOwnerContext)}`,
@@ -386,6 +430,7 @@ export function buildAgentRuntimeInstructions({
     "If study_send_dm returns ambiguous_dm_recipient, do not guess or retry with a random participant. Ask the user to confirm the recipient.",
     "If study_send_dm returns dm_recipient_conflict, the tool call recipient disagreed with the user's explicit request. Do not claim the message was sent. Retry only if you can call the tool with the exact explicit recipient returned by CyWorld; otherwise ask for clarification.",
     "If you want the app to deliver a direct human DM later, use the study_schedule_dm tool.",
+    "If you want your future self to reconsider something at a specific time, use study_schedule_wakeup. A wakeup is a judgment opportunity, not an automatic reminder message.",
     agentHandoffsEnabled
       ? "Other CyWorld personal agents are distinct collaborators, not human DM recipients and not OpenClaw subagents."
       : null,

@@ -85,7 +85,8 @@ room context that the speaking agent is allowed to know.
 A task is a long-running piece of work that may span multiple messages, rooms,
 tools, emails, files, or calendar events.
 
-CyWorld owns task identity and routing. OpenClaw can reason about the task, but
+CyWorld records task identity and routing as an audit log. OpenClaw remains
+responsible for its own working memory, planning, and next-action judgment.
 CyWorld must keep durable links between:
 
 - Original request.
@@ -96,6 +97,10 @@ CyWorld must keep durable links between:
 - Inbound replies.
 - Action receipts.
 - Final report location.
+
+These records are not the agent's primary work memory. The agent should keep
+its own compact plans and open loops in its OpenClaw workspace notes such as
+`WORKLOG.md` and selected context notes.
 
 ### Agent Handoff
 
@@ -173,6 +178,18 @@ Runtime context should be thin but unambiguous. It should not try to rewrite the
 agent's entire personality every turn. The agent's durable self-understanding
 should come from its OpenClaw workspace files.
 
+Every OpenClaw turn should begin by interpreting those facts as a social
+situation before deciding what to say or do:
+
+- Owner direct-line DM: the current human is the owner.
+- Non-owner DM: the current human is not the owner; the agent should be helpful
+  as the owner's personal agent, not as the non-owner's personal assistant.
+- Team Chat: the latest message author is not the whole audience. The agent
+  should answer the room unless the message clearly addresses one participant.
+- Agent Handoff, email, wakeup, or system context: there may be no current
+  human. The agent should use the supplied provenance and permission context
+  without inventing a direct speaker.
+
 ## Markdown Workspace Rules
 
 Each CyWorld-backed OpenClaw agent should have the same structural scaffolding:
@@ -183,6 +200,7 @@ Each CyWorld-backed OpenClaw agent should have the same structural scaffolding:
 - `IDENTITY.md`: agent name, creature, vibe, self-description.
 - `SOUL.md`: deeper behavior principles.
 - `HEARTBEAT.md`: proactiveness rules when enabled.
+- `WORKLOG.md`: the agent's own compact workbench for open loops and follow-up plans.
 - `BOOTSTRAP.md`: one-time birth certificate that helps the agent rough in its
   owner-specific files during the first owner conversation.
 
@@ -221,6 +239,8 @@ The owner-specific layer belongs in:
   develop over time.
 - `HEARTBEAT.md`: how the agent should behave when owner-enabled proactiveness
   is on.
+- `WORKLOG.md`: active work notes the agent chooses to keep for itself; not a
+  transcript, task database, or CyWorld audit log.
 - `BOOTSTRAP.md`: first-run ritual for roughing in `USER.md`, `IDENTITY.md`,
   `SOUL.md`, and `HEARTBEAT.md`. It should not carry long-term identity or
   common CyWorld operating rules. It should establish both the private
@@ -255,7 +275,8 @@ OpenClaw may propose CyWorld tool calls. CyWorld must validate them.
 
 CyWorld tool calls are allowed for:
 
-- Inspecting the acting agent's unfinished CyWorld tasks during heartbeat or recovery.
+- Inspecting CyWorld's durable action log during heartbeat or recovery.
+- Scheduling an explicit future wakeup for the same agent.
 - Sending CyWorld DMs.
 - Scheduling CyWorld DMs.
 - Listing CyWorld Calendar events within policy.
@@ -388,10 +409,11 @@ This is how an agent should later know, "I sent that DM", "I created that event"
 ## Heartbeat And Pending Work
 
 OpenClaw heartbeat is the owner-controlled recovery loop for proactive CyWorld
-work. When enabled, the agent should call `study_list_pending_tasks` before
-deciding whether to act.
+work. When enabled, the agent should start from its own workspace notes,
+selected context notes, and recent conversation context. It may call
+`study_list_pending_tasks` when it needs CyWorld's factual action log.
 
-The pending-task view must distinguish:
+The action-log view should help distinguish:
 
 - New inbound information that needs review.
 - A running action that appears to have stalled.
@@ -399,9 +421,15 @@ The pending-task view must distinguish:
 - A task that is simply waiting for an external reply.
 
 The absence of a receipt is not itself proof that an action should be repeated.
-The agent must inspect task events and existing successful receipts. Email
-replies are normally detected by CyWorld's inbox poller immediately; heartbeat
-provides recovery if that event was recorded but its follow-up was interrupted.
+The agent must inspect its own notes, task events, and existing successful
+receipts. Email replies are normally detected by CyWorld's inbox poller
+immediately; heartbeat provides recovery if that event was recorded but its
+follow-up was interrupted.
+
+CyWorld must not automatically run reminder loops merely because a task is
+waiting. If the agent wants a specific future check, it should explicitly
+schedule a wakeup. The wakeup is a future judgment opportunity, not an automatic
+DM.
 
 ## Follow-Up Reporting
 
