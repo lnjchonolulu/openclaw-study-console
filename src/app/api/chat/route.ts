@@ -150,6 +150,27 @@ function assistantClaimsGoogleWorkspaceWriteSuccess(text: string) {
   return claimsSuccess && mentionsGoogleWorkspaceFile;
 }
 
+function cyWorldToolMode() {
+  return process.env.CYWORLD_OPENCLAW_TOOL_MODE?.trim() || "direct";
+}
+
+function shouldUsePluginOwnerDmMode({
+  audience,
+  hasImageAttachments,
+  hasGoogleWorkspaceWriteRequest,
+}: {
+  audience: "direct_line" | "non_owner_dm";
+  hasGoogleWorkspaceWriteRequest: boolean;
+  hasImageAttachments: boolean;
+}) {
+  return (
+    cyWorldToolMode() === "plugin_owner_dm" &&
+    audience === "direct_line" &&
+    !hasGoogleWorkspaceWriteRequest &&
+    !hasImageAttachments
+  );
+}
+
 function buildGoogleWorkspaceWriteVerificationPrompt({
   assistantText,
   fileTypes,
@@ -403,6 +424,15 @@ export async function POST(request: Request) {
       .filter((part): part is string => Boolean(part?.trim()))
       .join("\n\n");
 
+    const googleWorkspaceWriteTypes = inferGoogleWorkspaceWriteRequestTypes({
+      message,
+      filesContext,
+    });
+    const usePluginOwnerDmMode = shouldUsePluginOwnerDmMode({
+      audience,
+      hasGoogleWorkspaceWriteRequest: googleWorkspaceWriteTypes.size > 0,
+      hasImageAttachments: body.openClawImages.length > 0,
+    });
     const toolCalls: TrackedToolCall[] = [];
     const runTurnWithTrackedTools = (turnMessage: string) =>
       runAgentTurn({
@@ -411,32 +441,32 @@ export async function POST(request: Request) {
         instructions: turnInstructions,
         message: turnMessage,
         conversationKey: `room:${dmRoom.room.id}`,
-        tools: CYWORLD_AGENT_TOOLS,
-        onToolCall: async (call) => {
-          const resultText = await handleCyWorldAgentToolCall({
-            call,
-            currentHumanUserId: user.id,
-            objective: message,
-            requesterUserId: user.id,
-            senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-            sourceRoomId: dmRoom.room.id,
-            triggerType: "human_dm",
-          });
+        ...(usePluginOwnerDmMode
+          ? {}
+          : {
+              tools: CYWORLD_AGENT_TOOLS,
+              onToolCall: async (call) => {
+                const resultText = await handleCyWorldAgentToolCall({
+                  call,
+                  currentHumanUserId: user.id,
+                  objective: message,
+                  requesterUserId: user.id,
+                  senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+                  sourceRoomId: dmRoom.room.id,
+                  triggerType: "human_dm",
+                });
 
-          toolCalls.push({
-            name: call.name,
-            ok: parseToolResultOk(resultText),
-            resultText,
-          });
+                toolCalls.push({
+                  name: call.name,
+                  ok: parseToolResultOk(resultText),
+                  resultText,
+                });
 
-          return resultText;
-        },
+                return resultText;
+              },
+            }),
       });
 
-    const googleWorkspaceWriteTypes = inferGoogleWorkspaceWriteRequestTypes({
-      message,
-      filesContext,
-    });
     let result = await runTurnWithTrackedTools(message);
     let assistantText = result.assistantText;
 

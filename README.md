@@ -115,6 +115,9 @@ INTERNAL_AGENT_ACTION_TOKEN="..."
 CYWORLD_TASK_REVIEW_LEASE_MINUTES="15"
 CYWORLD_OPENCLAW_TOOL_ROUND_CHECKPOINT="10"
 CYWORLD_OPENCLAW_EMERGENCY_TOOL_ROUND_LIMIT="100"
+# Experimental: owner DM turns omit explicit CyWorld tool injection so OpenClaw
+# can combine native workspace tools with installed study_console plugin tools.
+CYWORLD_OPENCLAW_TOOL_MODE="direct"
 ```
 
 This keeps local web development fast while still using the real Hetzner-hosted agent state.
