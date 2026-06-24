@@ -73,6 +73,13 @@ type WaitingTaskSnapshot = {
   };
 };
 
+type ContinuationToolCallSummary = {
+  expectsReply: boolean;
+  name: string;
+  ok: boolean;
+  resultText: string;
+};
+
 type TaskResolution =
   | {
       kind: "matched";
@@ -228,6 +235,76 @@ function parseToolResultOk(resultText: string) {
   } catch {
     return false;
   }
+}
+
+function parseToolResultJson(resultText: string) {
+  try {
+    return JSON.parse(resultText) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function calendarToolResultInvitesUsername(resultText: string, username: string) {
+  const parsed = parseToolResultJson(resultText);
+  const event = parsed?.event;
+
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    return false;
+  }
+
+  const invitedUsernames = (event as { invitedUsernames?: unknown }).invitedUsernames;
+
+  if (!Array.isArray(invitedUsernames)) {
+    return false;
+  }
+
+  const normalizedUsername = username.toLowerCase();
+
+  return invitedUsernames.some(
+    (candidate) =>
+      typeof candidate === "string" &&
+      candidate.replace(/^@/, "").toLowerCase() === normalizedUsername,
+  );
+}
+
+function buildContinuationAcknowledgementForReply({
+  persistedStatus,
+  replyingUsername,
+  toolCalls,
+}: {
+  persistedStatus: string;
+  replyingUsername: string;
+  toolCalls: ContinuationToolCallSummary[];
+}) {
+  if (persistedStatus === "WAITING") {
+    return "";
+  }
+
+  if (persistedStatus === "FAILED") {
+    return "Thanks. I tried to continue the task, but the next action failed.";
+  }
+
+  const calendarInviteCreated = toolCalls.some(
+    (call) =>
+      call.ok &&
+      call.name === "study_create_calendar_event" &&
+      calendarToolResultInvitesUsername(call.resultText, replyingUsername),
+  );
+
+  if (calendarInviteCreated) {
+    return "Thanks, I sent the calendar invitation.";
+  }
+
+  return "";
+}
+
+function buildReportAcknowledgementForReply(deliveryOk: boolean, failureReason?: string) {
+  if (deliveryOk) {
+    return "Thanks, I passed that along.";
+  }
+
+  return `I got your reply, but I could not report it back: ${failureReason}.`;
 }
 
 function toolCallExpectsReply(argumentsJson: string) {
@@ -1119,12 +1196,7 @@ Decide the next action.`,
   });
 
   if (nextAction.action === "continue_work") {
-    const continuationToolCalls: {
-      expectsReply: boolean;
-      name: string;
-      ok: boolean;
-      resultText: string;
-    }[] = [];
+    const continuationToolCalls: ContinuationToolCallSummary[] = [];
     const continuation = await runAgentTurn({
       agentId: agentOpenclawId,
       conversationKey: `task:${task.id}:continue-work`,
@@ -1226,12 +1298,11 @@ Continue the task now.`,
     });
 
     return {
-      acknowledgement:
-        persistedStatus === "WAITING"
-          ? ""
-          : persistedStatus === "FAILED"
-            ? "Thanks. I tried to continue the task, but the next action failed."
-            : "",
+      acknowledgement: buildContinuationAcknowledgementForReply({
+        persistedStatus,
+        replyingUsername,
+        toolCalls: continuationToolCalls,
+      }),
       nextAction,
       taskId: task.id,
     };
@@ -1261,8 +1332,8 @@ Continue the task now.`,
 
     return {
       acknowledgement: delivery.ok
-        ? ""
-        : `I got your reply, but I could not report it back: ${delivery.reason}.`,
+        ? buildReportAcknowledgementForReply(true)
+        : buildReportAcknowledgementForReply(false, delivery.reason),
       nextAction,
       taskId: task.id,
     };
@@ -1292,8 +1363,8 @@ Continue the task now.`,
 
     return {
       acknowledgement: delivery.ok
-        ? ""
-        : `I got your reply, but I could not report it back: ${delivery.reason}.`,
+        ? buildReportAcknowledgementForReply(true)
+        : buildReportAcknowledgementForReply(false, delivery.reason),
       nextAction,
       taskId: task.id,
     };
