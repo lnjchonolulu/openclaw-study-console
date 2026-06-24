@@ -194,7 +194,7 @@ button.primary-button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 188px 0 minmax(0, 1fr);
+  grid-template-columns: 204px 0 minmax(0, 1fr);
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
@@ -202,7 +202,7 @@ button.primary-button {
 }
 
 .app-shell-context-open {
-  grid-template-columns: 188px 260px minmax(0, 1fr);
+  grid-template-columns: 204px 260px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -490,6 +490,7 @@ button.primary-button {
   min-width: 0;
   flex: 1 1 auto;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .nav-unread-badge {
