@@ -1080,7 +1080,8 @@ The original conversation is ${
         : "not available"
     }.
 The requester is @${task.requester.username}; your owner is @${ownerUsername}.
-Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
+Choose ask_followup when the reply is ambiguous or insufficient and a follow-up to @${replyingUsername} would help clarify the reply.
+Do not negotiate a changed plan with @${replyingUsername} unless the original objective authorized you to negotiate. If the reply proposes a different constraint, condition, or alternative that the requester must decide on, choose report_result instead.
 Choose continue_work when the reply unlocks more work that you should now perform with CyWorld tools or workspace reasoning.
 Choose complete_no_message when no further human-facing message or action is useful and no future input is needed.`,
     message: `Task objective:
@@ -1100,7 +1101,7 @@ Decide the next action.`,
     parsedNextAction.action === "wait"
       ? {
           action: "report_result",
-          message: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+          message: `${replyingDisplayName} replied: "${replyMessage}"`,
         }
       : parsedNextAction;
 
@@ -1378,7 +1379,7 @@ Continue the task now.`,
 
   const delivery = await deliverAgentReport({
     agentOpenclawId,
-    message: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+    message: `${replyingDisplayName} replied: "${replyMessage}"`,
     requesterUsername: task.requester.username,
     sourceRoomId: task.sourceRoomId,
     taskId: task.id,
