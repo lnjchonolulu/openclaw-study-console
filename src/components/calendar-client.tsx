@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import type { CalendarEventView, CalendarMonthView } from "@/lib/calendar";
 import {
@@ -147,7 +147,7 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
   );
   const cells = getMonthCells(view.month);
 
-  async function loadMonth(month: string) {
+  const loadMonth = useCallback(async (month: string) => {
     const response = await fetch(`/api/calendar?month=${encodeURIComponent(month)}`);
 
     if (!response.ok) {
@@ -156,7 +156,28 @@ export function CalendarClient({ initialView }: { initialView: CalendarMonthView
     }
 
     setView((await response.json()) as CalendarMonthView);
-  }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function refreshCurrentMonth() {
+      if (!isMounted) {
+        return;
+      }
+
+      await loadMonth(view.month);
+    }
+
+    const intervalId = window.setInterval(refreshCurrentMonth, 5000);
+    window.addEventListener("calendar-pending-should-refresh", refreshCurrentMonth);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("calendar-pending-should-refresh", refreshCurrentMonth);
+    };
+  }, [loadMonth, view.month]);
 
   function resetModalForCreate(date?: Date) {
     const range = defaultRangeForDate(date);

@@ -352,15 +352,18 @@ export async function POST(request: Request) {
       });
 
       if (taskReply) {
-        const replyMessage = await prisma.message.create({
-          data: {
-            roomId: dmRoom.room.id,
-            role: "AGENT",
-            agentId: dmRoom.targetAgent.openclawAgentId,
-            content: taskReply.acknowledgement,
-            replyToMessageId: createdUserMessage.id,
-          },
-        });
+        const acknowledgement = taskReply.acknowledgement.trim();
+        const replyMessage = acknowledgement
+          ? await prisma.message.create({
+              data: {
+                roomId: dmRoom.room.id,
+                role: "AGENT",
+                agentId: dmRoom.targetAgent.openclawAgentId,
+                content: acknowledgement,
+                replyToMessageId: createdUserMessage.id,
+              },
+            })
+          : null;
 
         await prisma.room.update({
           where: {
@@ -370,12 +373,14 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json({
-          reply: taskReply.acknowledgement,
-          replyMessage: {
-            id: replyMessage.id,
-            content: replyMessage.content,
-            createdAt: replyMessage.createdAt.toISOString(),
-          },
+          reply: acknowledgement,
+          replyMessage: replyMessage
+            ? {
+                id: replyMessage.id,
+                content: replyMessage.content,
+                createdAt: replyMessage.createdAt.toISOString(),
+              }
+            : null,
           userMessage: {
             attachments: body.attachments,
             clientMessageId,
