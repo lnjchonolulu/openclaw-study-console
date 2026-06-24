@@ -359,7 +359,6 @@ export async function POST(request: Request) {
             agentId: dmRoom.targetAgent.openclawAgentId,
             content: taskReply.acknowledgement,
             replyToMessageId: createdUserMessage.id,
-            taskId: taskReply.taskId,
           },
         });
 

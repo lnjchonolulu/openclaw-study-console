@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { primaryNavItems, secondaryNavItems } from "@/lib/navigation";
 import type { DmItem } from "@/lib/dm";
@@ -138,6 +138,7 @@ export function AppShell({
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [teamModalMode, setTeamModalMode] = useState<"create" | "members" | "rename">("create");
   const [activeVideoCall, setActiveVideoCall] = useState<ActiveVideoCall | null>(null);
+  const [dmNavHref, setDmNavHref] = useState("/chat");
   const contextMode =
     pathname === "/chat" ? "dm" : pathname === "/team" ? "team" : null;
   const hasContext = Boolean(contextMode);
@@ -160,6 +161,19 @@ export function AppShell({
           unreadCount: 0,
         }
       : item,
+  );
+  const displayedTeamChannels = teamChannels.map((channel) =>
+    pathname === "/team" && channel.id === selectedChannel
+      ? {
+          ...channel,
+          unreadCount: 0,
+        }
+      : channel,
+  );
+  const dmUnreadTotal = dmItems.reduce((total, item) => total + item.unreadCount, 0);
+  const teamUnreadTotal = teamChannels.reduce(
+    (total, channel) => total + channel.unreadCount,
+    0,
   );
 
   useEffect(() => {
@@ -247,10 +261,6 @@ export function AppShell({
   }, [pathname, selectedDmKey]);
 
   useEffect(() => {
-    if (pathname !== "/team") {
-      return;
-    }
-
     let isMounted = true;
 
     async function refreshTeamSidebar() {
@@ -278,10 +288,15 @@ export function AppShell({
       }
     }
 
-    void refreshTeamSidebar();
+    if (pathname === "/team") {
+      void refreshTeamSidebar();
+    }
+
+    const intervalId = window.setInterval(refreshTeamSidebar, 3000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, [pathname]);
 
@@ -341,11 +356,51 @@ export function AppShell({
     };
   }, [activeVideoCall?.id]);
 
-  function getDmHref(target: DmItem) {
+  const getDmHref = useCallback((target: DmItem) => {
     const paramName = target.kind === "agent" ? "agent" : "user";
 
     return `/chat?${paramName}=${encodeURIComponent(target.id)}`;
-  }
+  }, []);
+
+  const getDmHrefFromKey = useCallback((key: string | null) => {
+    if (!key) {
+      return null;
+    }
+
+    const [kind, id] = key.split(":");
+    const target = dmItems.find((item) => item.kind === kind && item.id === id);
+
+    return target ? getDmHref(target) : null;
+  }, [dmItems, getDmHref]);
+
+  const getDefaultDmHref = useCallback(() => {
+    const target = dmItems[0] ?? availableDms[0];
+
+    if (target) {
+      return getDmHref(target);
+    }
+
+    return user.agentId ? `/chat?agent=${encodeURIComponent(user.agentId)}` : "/chat";
+  }, [availableDms, dmItems, getDmHref, user.agentId]);
+
+  useEffect(() => {
+    const queryUser = searchParams.get("user");
+    const queryAgent = searchParams.get("agent");
+
+    if (pathname !== "/chat" || (!queryUser && !queryAgent)) {
+      return;
+    }
+
+    const key = queryUser ? `person:${queryUser}` : `agent:${queryAgent}`;
+    window.localStorage.setItem("cyworld-last-dm-key", key);
+    setDmNavHref(getDmHrefFromKey(key) ?? getDefaultDmHref());
+  }, [pathname, searchParams, getDefaultDmHref, getDmHrefFromKey]);
+
+  useEffect(() => {
+    const storedKey = window.localStorage.getItem("cyworld-last-dm-key");
+
+    setDmNavHref(getDmHrefFromKey(storedKey) ?? getDefaultDmHref());
+  }, [getDefaultDmHref, getDmHrefFromKey]);
 
   function startDm(target: DmItem) {
     setContextNotice(null);
@@ -508,13 +563,21 @@ export function AppShell({
           <nav className="nav-list" aria-label="Primary">
             {primaryNavItems.map((item) => {
               const isActive = pathname === item.href;
-              const badgeCount = item.href === "/calendar" ? calendarPendingCount : 0;
+              const href = item.href === "/chat" ? dmNavHref : item.href;
+              const badgeCount =
+                item.href === "/calendar"
+                  ? calendarPendingCount
+                  : item.href === "/chat" && pathname !== "/chat"
+                    ? dmUnreadTotal
+                    : item.href === "/team" && pathname !== "/team"
+                      ? teamUnreadTotal
+                      : 0;
 
               return (
                 <Link
                   key={item.href}
                   className={`nav-item${isActive ? " nav-item-active" : ""}`}
-                  href={item.href}
+                  href={href}
                 >
                   <NavIcon name={item.icon} />
                   <span className="nav-title">{item.title}</span>
@@ -656,8 +719,9 @@ export function AppShell({
               </button>
             </div>
             <div className="context-list">
-              {teamChannels.map((channel) => {
+              {displayedTeamChannels.map((channel) => {
                 const isActive = selectedChannel === channel.id;
+                const unreadCount = isActive ? 0 : channel.unreadCount;
 
                 return (
                   <div
@@ -671,7 +735,14 @@ export function AppShell({
                         setContextNotice(null);
                       }}
                     >
-                      <span className="context-item-title">{channel.title}</span>
+                      <span className="context-item-topline">
+                        <span className="context-item-title">{channel.title}</span>
+                        {unreadCount > 0 ? (
+                          <span className="context-unread-badge">
+                            {unreadCount >= 10 ? "10+" : unreadCount}
+                          </span>
+                        ) : null}
+                      </span>
                     </Link>
                     {channel.title !== "General" ? (
                       <div className="context-team-actions">

@@ -27,6 +27,7 @@ export type TeamChannelSummary = {
   memberCount: number;
   purpose: string | null;
   title: string;
+  unreadCount: number;
 };
 
 export type TeamChannelDetail = {
@@ -401,13 +402,99 @@ export async function listTeamChannels(userId: string): Promise<TeamChannelSumma
     },
   });
 
+  const unreadCounts = await Promise.all(
+    rooms.map(async (room) => {
+      const membership = room.members.find((member) => member.userId === userId);
+      const lastReadAt = membership?.lastReadAt ?? new Date(0);
+      const unreadCount = await prisma.message.count({
+        where: {
+          roomId: room.id,
+          createdAt: {
+            gt: lastReadAt,
+          },
+          OR: [
+            {
+              role: "AGENT",
+            },
+            {
+              role: "USER",
+              userId: {
+                not: userId,
+              },
+            },
+          ],
+        },
+      });
+
+      return [room.id, unreadCount] as const;
+    }),
+  );
+  const unreadByRoomId = new Map(unreadCounts);
+
   return rooms.map((room) => ({
     createdBy: room.ownerUserId,
     id: room.id,
     memberCount: room.members.length + room.agents.length,
     purpose: room.purpose,
     title: room.name,
+    unreadCount: unreadByRoomId.get(room.id) ?? 0,
   }));
+}
+
+export async function markTeamChannelAsRead(roomId: string, userId: string) {
+  const context = await getTeamContext(userId);
+
+  if (!context) {
+    return false;
+  }
+
+  const room = await prisma.room.findFirst({
+    where: {
+      id: roomId,
+      type: "TEAM",
+      teamId: context.team.id,
+      OR: [
+        {
+          ownerUserId: userId,
+        },
+        {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+        {
+          agents: {
+            some: {
+              agent: {
+                userId,
+              },
+            },
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!room) {
+    return false;
+  }
+
+  await prisma.roomMember.updateMany({
+    where: {
+      roomId: room.id,
+      userId,
+    },
+    data: {
+      lastReadAt: new Date(),
+    },
+  });
+
+  return true;
 }
 
 export async function getTeamChannelDetail(

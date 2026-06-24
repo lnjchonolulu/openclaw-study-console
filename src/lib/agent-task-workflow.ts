@@ -1054,7 +1054,7 @@ Valid JSON shapes:
 {"action":"wait","reason":"why no action should be taken yet"}
 {"action":"complete_no_message","reason":"why the task is complete without another message"}
 
-Choose report_result when the reply answers the request sufficiently.
+Choose report_result when the reply answers the request sufficiently, including when it says the requested condition is not met, gives an alternative, or blocks the original plan.
 Only set destination when the task or conversation explicitly indicates where the result should be reported.
 If destination is omitted, CyWorld will report to the original conversation and fall back to your owner DM only if that room is unavailable.
 The original conversation is ${
@@ -1065,8 +1065,8 @@ The original conversation is ${
 The requester is @${task.requester.username}; your owner is @${ownerUsername}.
 Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
 Choose continue_work when the reply unlocks more work that you should now perform with CyWorld tools or workspace reasoning.
-Choose wait only when the best next step is to wait for more context.
-Choose complete_no_message only when no further message is useful.`,
+Choose wait only when the task should remain genuinely pending because a future reply, time, or external input is still expected and no useful message or action should happen now.
+Choose complete_no_message when no further human-facing message or action is useful and no future input is needed.`,
     message: `Task objective:
 ${task.objective}
 

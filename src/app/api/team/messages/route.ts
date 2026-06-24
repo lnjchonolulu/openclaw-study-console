@@ -6,7 +6,11 @@ import {
   parseChatPayload,
 } from "@/lib/chat-attachments";
 import { runTeamAgentDispatch } from "@/lib/team-agent-dispatcher";
-import { createTeamMessage, getTeamChannelDetail } from "@/lib/team";
+import {
+  createTeamMessage,
+  getTeamChannelDetail,
+  markTeamChannelAsRead,
+} from "@/lib/team";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -22,6 +26,8 @@ export async function GET(request: Request) {
   if (!detail) {
     return NextResponse.json({ error: "Channel not found." }, { status: 404 });
   }
+
+  await markTeamChannelAsRead(detail.id, user.id);
 
   return NextResponse.json(detail);
 }
@@ -56,6 +62,8 @@ export async function POST(request: Request) {
   if (!created) {
     return NextResponse.json({ error: "Message could not be created." }, { status: 404 });
   }
+
+  await markTeamChannelAsRead(roomId, user.id);
 
   const agentMessages = await runTeamAgentDispatch({
     roomId,

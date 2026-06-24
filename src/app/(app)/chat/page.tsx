@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import {
   getOrCreateAgentDmRoom,
   getOrCreatePersonDmRoom,
+  getDmCollections,
   markRoomAsRead,
   serializeChatMessages,
 } from "@/lib/dm";
@@ -24,13 +25,25 @@ export default async function ChatPage({
   const user = await requireUser();
   const query = await searchParams;
   const selectedUserParam = query.user;
-  const selectedUserId =
+  let selectedUserId: string | null =
     typeof selectedUserParam === "string" ? selectedUserParam : null;
   const selectedAgentParam = query.agent;
-  const selectedAgentId =
+  let selectedAgentId: string | null | undefined =
     !selectedUserId && typeof selectedAgentParam === "string"
       ? selectedAgentParam
       : user.agent?.openclawAgentId;
+
+  if (!selectedUserId && !selectedAgentParam) {
+    const { dmConversations } = await getDmCollections(user.id);
+    const defaultConversation = dmConversations[0];
+
+    if (defaultConversation?.kind === "person") {
+      selectedUserId = defaultConversation.id;
+      selectedAgentId = null;
+    } else if (defaultConversation?.kind === "agent") {
+      selectedAgentId = defaultConversation.id;
+    }
+  }
 
   if (
     !selectedUserId &&
