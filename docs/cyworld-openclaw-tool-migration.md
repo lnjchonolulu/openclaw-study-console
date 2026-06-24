@@ -232,21 +232,13 @@ to omit explicit tools and let OpenClaw assemble native tools plus plugin tools.
 Classifier and arbiter calls can remain explicit or tool-free because they are
 not expected to edit workspace memory.
 
-## Experimental Owner-DM Plugin Mode
+## Plugin Experiment Status
 
-`CYWORLD_OPENCLAW_TOOL_MODE=plugin_owner_dm` enables the first narrow experiment.
+The narrow owner-DM plugin experiment was retired. Current OpenClaw inspection
+suggests `/v1/responses` still uses the native runner and merges native tools
+with client function tools, so the immediate issue is prompt pressure and
+scaffold/runtime size rather than a direct tool-surface replacement.
 
-When this mode is active, owner direct-line DM turns omit the explicit
-`tools: CYWORLD_AGENT_TOOLS` field so OpenClaw can assemble its native workspace
-tools and installed plugin tools. All other agent-facing paths continue using
-direct CyWorld tool injection.
-
-This mode intentionally falls back to direct injection for owner DM turns that
-need surfaces not yet migrated to the plugin:
-
-- Google Workspace write/update requests.
-- Image attachment turns.
-
-This is not the final migration state. It exists only to test whether native
-workspace-file edits and the first seven `study_console` plugin tools can coexist
-in real owner DM conversations.
+The current migration step is to keep direct CyWorld tool injection, reduce
+AGENTS.md / TOOLS.md / runtime pressure, and preserve detailed CyWorld behavior
+in tool descriptions, visible resource context, and compact workspace files.

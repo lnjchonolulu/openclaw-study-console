@@ -6,6 +6,10 @@ import {
 } from "@/lib/agent-report-delivery";
 import { buildAgentRuntimeInstructions } from "@/lib/agent-routing";
 import { getAgentRelationshipContext } from "@/lib/agent-relationships";
+import {
+  CYWORLD_AGENT_TOOLS,
+  handleCyWorldAgentToolCall,
+} from "@/lib/cyworld-agent-tools";
 import { scheduleAgentDm, sendAgentDm } from "@/lib/internal-agent-actions";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +24,10 @@ type AgentNextTaskAction =
   | {
       action: "ask_followup";
       message: string;
+    }
+  | {
+      action: "continue_work";
+      instruction: string;
     }
   | {
       action: "wait";
@@ -45,6 +53,7 @@ type WaitingTaskSnapshot = {
     id: string;
     objective: string;
     requester: {
+      id: string;
       username: string;
     };
     sourceRoom: {
@@ -132,10 +141,15 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
     const parsed = JSON.parse(jsonObject) as {
       action?: unknown;
       destination?: unknown;
+      instruction?: unknown;
       message?: unknown;
       reason?: unknown;
     };
     const action = typeof parsed.action === "string" ? parsed.action : "";
+    const instruction =
+      typeof parsed.instruction === "string"
+        ? cleanComposedMessage(parsed.instruction)
+        : "";
     const message = typeof parsed.message === "string" ? cleanComposedMessage(parsed.message) : "";
     const reason = typeof parsed.reason === "string" ? parsed.reason : undefined;
 
@@ -162,6 +176,16 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
       };
     }
 
+    if (action === "continue_work") {
+      return {
+        action,
+        instruction:
+          instruction ||
+          reason ||
+          "Continue the task using the latest reply and the original objective.",
+      };
+    }
+
     if (action === "complete_no_message") {
       return {
         action,
@@ -178,6 +202,26 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
       action: "wait",
       reason: "The agent returned malformed JSON.",
     };
+  }
+}
+
+function parseToolResultOk(resultText: string) {
+  try {
+    const parsed = JSON.parse(resultText) as { ok?: unknown };
+
+    return parsed.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+function toolCallExpectsReply(argumentsJson: string) {
+  try {
+    const parsed = JSON.parse(argumentsJson) as { expectReply?: unknown };
+
+    return parsed.expectReply === true;
+  } catch {
+    return false;
   }
 }
 
@@ -329,6 +373,7 @@ async function resolveInboundTaskReply({
               id: string;
               objective: string;
               requester: {
+                id: string;
                 username: string;
               };
               sourceRoom: {
@@ -415,6 +460,7 @@ async function resolveInboundTaskReply({
         id: message.task.id,
         objective: message.task.objective,
         requester: {
+          id: message.task.requester.id,
           username: message.task.requester.username,
         },
         sourceRoom: message.task.sourceRoom
@@ -877,6 +923,7 @@ export async function handleInboundTaskReply({
                 id: inboundMessage.replyToMessage.task.id,
                 objective: inboundMessage.replyToMessage.task.objective,
                 requester: {
+                  id: inboundMessage.replyToMessage.task.requester.id,
                   username: inboundMessage.replyToMessage.task.requester.username,
                 },
                 sourceRoom: inboundMessage.replyToMessage.task.sourceRoom
@@ -928,7 +975,9 @@ export async function handleInboundTaskReply({
       id: userMessageId,
     },
     data: {
-      replyToMessageId: inboundMessage.replyToMessageId ?? resolution.matchedOutboundMessageId,
+      ...(inboundMessage.replyToMessageId
+        ? { replyToMessageId: inboundMessage.replyToMessageId }
+        : {}),
       taskId: task.id,
     },
   });
@@ -1001,6 +1050,7 @@ Valid JSON shapes:
 {"action":"report_result","message":"natural report message","destination":"requester_dm"}
 {"action":"report_result","message":"natural report message","destination":"owner_dm"}
 {"action":"ask_followup","message":"exact follow-up DM to send to @${replyingUsername}"}
+{"action":"continue_work","instruction":"what work should be continued next"}
 {"action":"wait","reason":"why no action should be taken yet"}
 {"action":"complete_no_message","reason":"why the task is complete without another message"}
 
@@ -1014,6 +1064,7 @@ The original conversation is ${
     }.
 The requester is @${task.requester.username}; your owner is @${ownerUsername}.
 Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
+Choose continue_work when the reply unlocks more work that you should now perform with CyWorld tools or workspace reasoning.
 Choose wait only when the best next step is to wait for more context.
 Choose complete_no_message only when no further message is useful.`,
     message: `Task objective:
@@ -1041,6 +1092,125 @@ Decide the next action.`,
       } satisfies Prisma.InputJsonValue,
     },
   });
+
+  if (nextAction.action === "continue_work") {
+    const continuationToolCalls: {
+      expectsReply: boolean;
+      name: string;
+      ok: boolean;
+      resultText: string;
+    }[] = [];
+    const continuation = await runAgentTurn({
+      agentId: agentOpenclawId,
+      conversationKey: `task:${task.id}:continue-work`,
+      instructions: `${instructions}
+
+Continue this CyWorld task from the latest reply.
+- Use CyWorld tools when the next step requires app delivery, calendar, Drive, Gmail, Google Workspace, image, wakeup, or handoff actions.
+- If you need to contact someone and wait for their reply, set expectReply when sending the message.
+- Use your final response to summarize progress, completion, or blockers for the original requester. CyWorld will deliver that response to the original conversation when appropriate.
+- Do not claim that a CyWorld action succeeded unless the tool result confirms it.`,
+      message: `Original task objective:
+${task.objective}
+
+Prior task events:
+${eventLog || "(none)"}
+
+Latest reply from ${replyingDisplayName} (@${replyingUsername}):
+${replyMessage}
+
+Continuation instruction:
+${nextAction.instruction}
+
+Continue the task now.`,
+      tools: CYWORLD_AGENT_TOOLS,
+      onToolCall: async (call) => {
+        const resultText = await handleCyWorldAgentToolCall({
+          call,
+          currentHumanUserId: replyingUserId,
+          objective: task.objective,
+          requesterUserId: task.requester.id,
+          senderAgentOpenclawId: agentOpenclawId,
+          sourceRoomId: task.sourceRoomId ?? roomId,
+          taskId: task.id,
+          triggerType: "task_continuation",
+        });
+
+        continuationToolCalls.push({
+          expectsReply: toolCallExpectsReply(call.argumentsJson),
+          name: call.name,
+          ok: parseToolResultOk(resultText),
+          resultText,
+        });
+
+        return resultText;
+      },
+    });
+    const waitingForReply = continuationToolCalls.some(
+      (call) =>
+        call.ok &&
+        call.expectsReply &&
+        (call.name === "study_send_dm" || call.name === "study_schedule_dm"),
+    );
+    const allToolCallsFailed =
+      continuationToolCalls.length > 0 &&
+      continuationToolCalls.every((call) => !call.ok);
+    const nextStatus = allToolCallsFailed
+      ? "FAILED"
+      : waitingForReply
+        ? "WAITING"
+        : "COMPLETED";
+    const continuationReport = continuation.assistantText.trim()
+      ? await deliverAgentReport({
+          agentOpenclawId,
+          message: continuation.assistantText,
+          requesterUsername: task.requester.username,
+          sourceRoomId: task.sourceRoomId,
+          taskId: task.id,
+        })
+      : null;
+    const persistedStatus =
+      continuationReport && !continuationReport.ok && nextStatus !== "WAITING"
+        ? "FAILED"
+        : nextStatus;
+
+    await prisma.agentTaskEvent.create({
+      data: {
+        taskId: task.id,
+        type: "SYSTEM_NOTE",
+        summary: `Continued task after inbound reply; status ${persistedStatus}.`,
+        payload: {
+          assistantText: continuation.assistantText,
+          continuationReport,
+          nextAction,
+          toolCalls: continuationToolCalls,
+        } satisfies Prisma.InputJsonValue,
+      },
+    });
+
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        nextReviewAt: null,
+        resultSummary: continuation.assistantText,
+        reviewLeaseUntil: null,
+        status: persistedStatus,
+      },
+    });
+
+    return {
+      acknowledgement:
+        persistedStatus === "WAITING"
+          ? "Thanks. I'll continue from there and wait for the next reply."
+          : persistedStatus === "FAILED"
+            ? "Thanks. I tried to continue the task, but the next action failed."
+            : "Thanks. I continued the task from your reply.",
+      nextAction,
+      taskId: task.id,
+    };
+  }
 
   if (nextAction.action === "report_result") {
     const delivery = await deliverAgentReport({

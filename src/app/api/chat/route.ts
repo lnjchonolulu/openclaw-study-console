@@ -19,6 +19,7 @@ import {
   triggerCyWorldDriveSyncAll,
 } from "@/lib/cyworld-drive-sync";
 import { buildStudyFilesRuntimeContext } from "@/lib/files";
+import { handleInboundTaskReply } from "@/lib/agent-task-workflow";
 import { runAgentTurn } from "@/lib/openclaw";
 import { prisma } from "@/lib/prisma";
 
@@ -44,6 +45,24 @@ function parseToolResultOk(resultText: string) {
   } catch {
     return false;
   }
+}
+
+function parseToolArguments(argumentsJson: string) {
+  try {
+    return JSON.parse(argumentsJson) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function envFlagEnabled(name: string, fallback = true) {
+  const value = process.env[name]?.trim().toLowerCase();
+
+  if (!value) {
+    return fallback;
+  }
+
+  return !["0", "false", "off", "no"].includes(value);
 }
 
 function hasSuccessfulGoogleWorkspaceWrite(
@@ -150,25 +169,28 @@ function assistantClaimsGoogleWorkspaceWriteSuccess(text: string) {
   return claimsSuccess && mentionsGoogleWorkspaceFile;
 }
 
-function cyWorldToolMode() {
-  return process.env.CYWORLD_OPENCLAW_TOOL_MODE?.trim() || "direct";
+function cyWorldAgentRuntimeMode() {
+  return process.env.CYWORLD_AGENT_RUNTIME_MODE?.trim() === "none" ? "none" : "full";
 }
 
-function shouldUsePluginOwnerDmMode({
-  audience,
-  hasImageAttachments,
-  hasGoogleWorkspaceWriteRequest,
-}: {
-  audience: "direct_line" | "non_owner_dm";
-  hasGoogleWorkspaceWriteRequest: boolean;
-  hasImageAttachments: boolean;
-}) {
+function isReadOnlyCyWorldTool(toolName: string) {
   return (
-    cyWorldToolMode() === "plugin_owner_dm" &&
-    audience === "direct_line" &&
-    !hasGoogleWorkspaceWriteRequest &&
-    !hasImageAttachments
+    toolName === "study_list_pending_tasks" ||
+    toolName === "study_recall_conversation" ||
+    toolName === "study_list_calendar" ||
+    toolName === "study_list_email_threads" ||
+    toolName.startsWith("study_inspect_")
   );
+}
+
+function createsExternalReplyWait(toolName: string, argumentsJson: string, resultText: string) {
+  if (toolName !== "study_send_dm" && toolName !== "study_schedule_dm") {
+    return false;
+  }
+
+  const args = parseToolArguments(argumentsJson);
+
+  return args.expectReply === true && parseToolResultOk(resultText);
 }
 
 function buildGoogleWorkspaceWriteVerificationPrompt({
@@ -310,178 +332,262 @@ export async function POST(request: Request) {
   try {
     const audience =
       dmRoom.targetAgent.userId === user.id ? "direct_line" : "non_owner_dm";
-    const activeHumans = await prisma.user.findMany({
-      where: {
-        status: "ACTIVE",
-      },
-      orderBy: {
-        username: "asc",
-      },
-      select: {
-        agent: {
-          select: {
-            displayName: true,
-            openclawAgentId: true,
-          },
-        },
-        username: true,
-      },
-    });
-    const relationshipContext =
-      audience === "non_owner_dm"
-        ? await getAgentRelationshipContext({
-            agentDatabaseId: dmRoom.targetAgent.id,
-            targetUserId: user.id,
-          })
-        : null;
-    const instructions = buildAgentRuntimeInstructions({
-      agentDisplayName: dmRoom.targetAgent.displayName,
-      audience,
-      availableAgents: activeHumans.flatMap((human) =>
-        human.agent
-          ? [
-              {
-                displayName: human.agent.displayName,
-                openclawAgentId: human.agent.openclawAgentId,
-                ownerUsername: human.username,
-              },
-            ]
-          : [],
-      ),
-      availableHumanUsernames: activeHumans.map((human) => human.username),
-      behaviorConfig: dmRoom.targetAgent.soulConfigJson,
-      counterpartLabel:
-        audience === "direct_line"
-          ? `${user.displayName} (@${user.username})`
-          : `${user.displayName} (@${user.username}), who is not the owner of this agent`,
-      counterpartTimezone: user.timezone,
-      currentHumanDisplayName: user.displayName,
-      currentHumanUsername: user.username,
-      ownerDisplayName: dmRoom.targetAgent.user.displayName,
-      ownerTimezone: dmRoom.targetAgent.user.timezone,
-      ownerUsername: dmRoom.targetAgent.user.username,
-      personaSummary: dmRoom.targetAgent.personaSummary,
-      relationshipContext,
-    });
 
-    const filesContext = await buildStudyFilesRuntimeContext({
-      agentDatabaseId: dmRoom.targetAgent.id,
-      maxInaccessibleFolders: 8,
-      maxVisibleEntries: 16,
-      userId: user.id,
-    });
-    const recentConversationContext = await buildRecentRoomConversationContext({
-      roomId: dmRoom.room.id,
-    });
-    const replyTargetContext = replyToMessageId
-      ? formatReplyTargetContext(
-          await prisma.message.findFirst({
-            where: {
-              id: replyToMessageId,
-              roomId: dmRoom.room.id,
+    if (audience === "non_owner_dm" && message.trim()) {
+      const taskReply = await handleInboundTaskReply({
+        agentDisplayName: dmRoom.targetAgent.displayName,
+        agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+        behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+        ownerDisplayName: dmRoom.targetAgent.user.displayName,
+        ownerTimezone: dmRoom.targetAgent.user.timezone,
+        ownerUsername: dmRoom.targetAgent.user.username,
+        personaSummary: dmRoom.targetAgent.personaSummary,
+        replyingDisplayName: user.displayName,
+        replyingTimezone: user.timezone,
+        replyingUserId: user.id,
+        replyingUsername: user.username,
+        replyMessage: message,
+        roomId: dmRoom.room.id,
+        userMessageId: createdUserMessage.id,
+      });
+
+      if (taskReply) {
+        const replyMessage = await prisma.message.create({
+          data: {
+            roomId: dmRoom.room.id,
+            role: "AGENT",
+            agentId: dmRoom.targetAgent.openclawAgentId,
+            content: taskReply.acknowledgement,
+            replyToMessageId: createdUserMessage.id,
+            taskId: taskReply.taskId,
+          },
+        });
+
+        await prisma.room.update({
+          where: {
+            id: dmRoom.room.id,
+          },
+          data: {},
+        });
+
+        return NextResponse.json({
+          reply: taskReply.acknowledgement,
+          replyMessage: {
+            id: replyMessage.id,
+            content: replyMessage.content,
+            createdAt: replyMessage.createdAt.toISOString(),
+          },
+          userMessage: {
+            attachments: body.attachments,
+            clientMessageId,
+            createdAt: createdUserMessage.createdAt.toISOString(),
+            id: createdUserMessage.id,
+          },
+          roomId: dmRoom.room.id,
+        });
+      }
+    }
+
+    const runtimeMode = cyWorldAgentRuntimeMode();
+    let filesContext = "";
+    let turnInstructions = "";
+
+    if (runtimeMode === "full") {
+      const activeHumans = await prisma.user.findMany({
+        where: {
+          status: "ACTIVE",
+        },
+        orderBy: {
+          username: "asc",
+        },
+        select: {
+          agent: {
+            select: {
+              displayName: true,
+              openclawAgentId: true,
             },
-            include: {
-              agent: {
-                select: {
-                  displayName: true,
+          },
+          username: true,
+        },
+      });
+      const relationshipContext =
+        audience === "non_owner_dm"
+          ? await getAgentRelationshipContext({
+              agentDatabaseId: dmRoom.targetAgent.id,
+              targetUserId: user.id,
+            })
+          : null;
+      const instructions = buildAgentRuntimeInstructions({
+        agentDisplayName: dmRoom.targetAgent.displayName,
+        audience,
+        availableAgents: activeHumans.flatMap((human) =>
+          human.agent
+            ? [
+                {
+                  displayName: human.agent.displayName,
+                  openclawAgentId: human.agent.openclawAgentId,
+                  ownerUsername: human.username,
+                },
+              ]
+            : [],
+        ),
+        availableHumanUsernames: activeHumans.map((human) => human.username),
+        behaviorConfig: dmRoom.targetAgent.soulConfigJson,
+        counterpartLabel:
+          audience === "direct_line"
+            ? `${user.displayName} (@${user.username})`
+            : `${user.displayName} (@${user.username}), who is not the owner of this agent`,
+        counterpartTimezone: user.timezone,
+        currentHumanDisplayName: user.displayName,
+        currentHumanUsername: user.username,
+        ownerDisplayName: dmRoom.targetAgent.user.displayName,
+        ownerTimezone: dmRoom.targetAgent.user.timezone,
+        ownerUsername: dmRoom.targetAgent.user.username,
+        personaSummary: dmRoom.targetAgent.personaSummary,
+        relationshipContext,
+      });
+
+      if (envFlagEnabled("CYWORLD_AGENT_INCLUDE_FILES_CONTEXT")) {
+        filesContext = await buildStudyFilesRuntimeContext({
+          agentDatabaseId: dmRoom.targetAgent.id,
+          maxInaccessibleFolders: 8,
+          maxVisibleEntries: 16,
+          userId: user.id,
+        });
+      }
+      const recentConversationContext = envFlagEnabled(
+        "CYWORLD_AGENT_INCLUDE_RECENT_CONTEXT",
+      )
+        ? await buildRecentRoomConversationContext({
+            roomId: dmRoom.room.id,
+          })
+        : "";
+      const replyTargetContext = replyToMessageId
+        ? formatReplyTargetContext(
+            await prisma.message.findFirst({
+              where: {
+                id: replyToMessageId,
+                roomId: dmRoom.room.id,
+              },
+              include: {
+                agent: {
+                  select: {
+                    displayName: true,
+                  },
+                },
+                user: {
+                  select: {
+                    displayName: true,
+                    username: true,
+                  },
                 },
               },
-              user: {
-                select: {
-                  displayName: true,
-                  username: true,
-                },
-              },
+            }),
+          )
+        : "";
+      const selectiveNoteContext = envFlagEnabled("CYWORLD_AGENT_INCLUDE_SELECTIVE_NOTES")
+        ? await buildSelectiveAgentNoteContext({
+            agentId: dmRoom.targetAgent.openclawAgentId,
+            counterpart: {
+              displayName: user.displayName,
+              id: user.id,
+              username: user.username,
             },
-          }),
-        )
-      : "";
-    const selectiveNoteContext = await buildSelectiveAgentNoteContext({
-      agentId: dmRoom.targetAgent.openclawAgentId,
-      counterpart: {
-        displayName: user.displayName,
-        id: user.id,
-        username: user.username,
-      },
-      ownerUsername: dmRoom.targetAgent.user.username,
-    });
-    const turnContext = await createAgentTurnContext({
-      agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-      currentHumanUserId: user.id,
-      objective: message,
-      requesterUserId: user.id,
-      sourceRoomId: dmRoom.room.id,
-      triggerType: "human_dm",
-    });
-    const turnInstructions = [
-      instructions,
-      formatAgentTurnContextInstruction(turnContext.id),
-      recentConversationContext,
-      replyTargetContext,
-      selectiveNoteContext,
-      filesContext,
-    ]
-      .filter((part): part is string => Boolean(part?.trim()))
-      .join("\n\n");
+            ownerUsername: dmRoom.targetAgent.user.username,
+          })
+        : "";
+      const turnContext = await createAgentTurnContext({
+        agentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+        currentHumanUserId: user.id,
+        objective: message,
+        requesterUserId: user.id,
+        sourceRoomId: dmRoom.room.id,
+        triggerType: "human_dm",
+      });
+      turnInstructions = [
+        instructions,
+        formatAgentTurnContextInstruction(turnContext.id),
+        recentConversationContext,
+        replyTargetContext,
+        selectiveNoteContext,
+        filesContext,
+      ]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join("\n\n");
+    }
 
     const googleWorkspaceWriteTypes = inferGoogleWorkspaceWriteRequestTypes({
       message,
       filesContext,
     });
-    const usePluginOwnerDmMode = shouldUsePluginOwnerDmMode({
-      audience,
-      hasGoogleWorkspaceWriteRequest: googleWorkspaceWriteTypes.size > 0,
-      hasImageAttachments: body.openClawImages.length > 0,
-    });
+    let waitingForExternalReply = false;
     const toolCalls: TrackedToolCall[] = [];
-    const runTurnWithTrackedTools = (turnMessage: string) =>
+    const runTurnWithTrackedTools = (turnMessage: string, objective = message) =>
       runAgentTurn({
         agentId: dmRoom.targetAgent.openclawAgentId,
         imageAttachments: body.openClawImages,
         instructions: turnInstructions,
         message: turnMessage,
         conversationKey: `room:${dmRoom.room.id}`,
-        ...(usePluginOwnerDmMode
-          ? {}
-          : {
-              tools: CYWORLD_AGENT_TOOLS,
-              onToolCall: async (call) => {
-                const resultText = await handleCyWorldAgentToolCall({
-                  call,
-                  currentHumanUserId: user.id,
-                  objective: message,
-                  requesterUserId: user.id,
-                  senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
-                  sourceRoomId: dmRoom.room.id,
-                  triggerType: "human_dm",
-                });
+        tools: CYWORLD_AGENT_TOOLS,
+        onToolCall: async (call) => {
+          if (waitingForExternalReply && !isReadOnlyCyWorldTool(call.name)) {
+            const resultText = JSON.stringify({
+              ok: false,
+              reason: "pending_external_reply",
+              guidance:
+                "A CyWorld message in this turn is already waiting for the recipient's reply. Do not perform additional side effects that depend on that reply. Tell the requester that you sent the request and will continue when the recipient replies.",
+            });
 
-                toolCalls.push({
-                  name: call.name,
-                  ok: parseToolResultOk(resultText),
-                  resultText,
-                });
+            toolCalls.push({
+              name: call.name,
+              ok: false,
+              resultText,
+            });
 
-                return resultText;
-              },
-            }),
+            return resultText;
+          }
+
+          const resultText = await handleCyWorldAgentToolCall({
+            call,
+            currentHumanUserId: user.id,
+            objective,
+            requesterUserId: user.id,
+            senderAgentOpenclawId: dmRoom.targetAgent.openclawAgentId,
+            sourceRoomId: dmRoom.room.id,
+            triggerType: "human_dm",
+          });
+
+          if (createsExternalReplyWait(call.name, call.argumentsJson, resultText)) {
+            waitingForExternalReply = true;
+          }
+
+          toolCalls.push({
+            name: call.name,
+            ok: parseToolResultOk(resultText),
+            resultText,
+          });
+
+          return resultText;
+        },
       });
 
-    let result = await runTurnWithTrackedTools(message);
-    let assistantText = result.assistantText;
+    let assistantText: string;
+    const result = await runTurnWithTrackedTools(message);
+    assistantText = result.assistantText;
 
     if (
       googleWorkspaceWriteTypes.size > 0 &&
       !hasSuccessfulGoogleWorkspaceWrite(toolCalls, googleWorkspaceWriteTypes)
     ) {
-      result = await runTurnWithTrackedTools(
+      const verificationResult = await runTurnWithTrackedTools(
         buildGoogleWorkspaceWriteVerificationPrompt({
           assistantText,
           fileTypes: googleWorkspaceWriteTypes,
           message,
         }),
       );
-      assistantText = result.assistantText;
+      assistantText = verificationResult.assistantText;
     }
 
     if (

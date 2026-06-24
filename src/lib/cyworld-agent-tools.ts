@@ -293,7 +293,7 @@ export const CYWORLD_AGENT_TOOLS: OpenClawFunctionTool[] = [
   {
     name: "study_send_dm",
     description:
-      "Send a CyWorld DM from this agent to another human participant. Use it when the conversation clearly asks this agent to contact, ask, tell, update, remind, or message a different CyWorld person, even if the user does not say 'DM'. Do not use it for ordinary replies to the current conversational partner or phrases such as 'tell me'.",
+      "Send a CyWorld DM from this agent to another human participant. Use it when the conversation clearly asks this agent to contact, ask, tell, update, remind, or message a different CyWorld person, even if the user does not say 'DM'. Make the sender role and purpose clear when it helps the recipient understand the message. Do not use it for ordinary replies to the current conversational partner or phrases such as 'tell me'.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -4007,6 +4007,13 @@ async function executeCyWorldAgentToolCall({
 
     return JSON.stringify({
       ...result,
+      ...(result.ok && expectReply
+        ? {
+            waitingForReply: true,
+            guidance:
+              "The message was sent and this task is now waiting for the recipient's reply. Do not claim the recipient has replied, confirmed, agreed, or that reply-dependent follow-up work is complete yet.",
+          }
+        : {}),
       recipientResolution,
       taskId: effectiveTaskId,
     });

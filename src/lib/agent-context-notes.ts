@@ -61,6 +61,8 @@ async function readOrCreateNote({
 function teamRoomTemplate(room: TeamRoomNoteTarget) {
   return `# Team Room Note
 
+Update this file only for durable room conventions, recurring team context, or stable collaboration patterns in this room.
+
 - **CyWorld Room ID:** ${room.id}
 - **Room Name:** ${room.name}
 - **Room Purpose:** ${room.purpose?.trim() || "No explicit purpose is set."}
@@ -77,6 +79,8 @@ function teamRoomTemplate(room: TeamRoomNoteTarget) {
 
 function personTemplate(person: PersonNoteTarget) {
   return `# Person Note
+
+Update this file only for durable context or interaction guidance about this specific non-owner person.
 
 - **CyWorld User ID:** ${person.id}
 - **Username:** @${person.username}

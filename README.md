@@ -115,9 +115,23 @@ INTERNAL_AGENT_ACTION_TOKEN="..."
 CYWORLD_TASK_REVIEW_LEASE_MINUTES="15"
 CYWORLD_OPENCLAW_TOOL_ROUND_CHECKPOINT="10"
 CYWORLD_OPENCLAW_EMERGENCY_TOOL_ROUND_LIMIT="100"
-# Experimental: owner DM turns omit explicit CyWorld tool injection so OpenClaw
-# can combine native workspace tools with installed study_console plugin tools.
-CYWORLD_OPENCLAW_TOOL_MODE="direct"
+# Optional diagnostic mode. Use "none" to omit CyWorld runtime instructions
+# while keeping direct CyWorld tools available.
+CYWORLD_AGENT_RUNTIME_MODE="full"
+# Optional diagnostic flags for runtime full. Defaults are "1". Disable one at
+# a time when isolating whether conversation flow, selected notes, or Drive
+# context is competing with durable OpenClaw workspace files.
+CYWORLD_AGENT_INCLUDE_RECENT_CONTEXT="1"
+CYWORLD_AGENT_INCLUDE_SELECTIVE_NOTES="1"
+CYWORLD_AGENT_INCLUDE_FILES_CONTEXT="1"
+# Conversation sessions automatically include a short hash of USER.md,
+# IDENTITY.md, SOUL.md, and HEARTBEAT.md so preference/identity edits start a
+# fresh OpenClaw response session. The app sends OpenClaw a sanitized
+# cyworld-... key rather than a room:... key to avoid reserved session prefixes.
+# Set this to "1" to include AGENTS.md too.
+CYWORLD_AGENT_SESSION_INCLUDE_AGENTS_MD="0"
+# Optional debug logging for the sanitized OpenClaw request user key.
+CYWORLD_OPENCLAW_SESSION_DEBUG="0"
 ```
 
 This keeps local web development fast while still using the real Hetzner-hosted agent state.

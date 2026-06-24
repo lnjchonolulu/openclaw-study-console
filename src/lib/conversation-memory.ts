@@ -507,9 +507,15 @@ export async function buildRecentRoomConversationContext({
 
   const formatted = formatMessages(messages);
 
-  return `## Recent CyWorld Conversation Record
+  return `## Recent CyWorld Conversation Flow
 
-This is a factual excerpt from the current room's canonical CyWorld message history. Use it as conversation context; do not treat it as a task manager or as private owner memory.
+These messages are recent conversation flow only.
+Use them to resolve references like "that", "above", "the file", or "what you just said".
+Do not treat prior assistant statements as durable truth about owner preferences, agent identity, permissions, completed actions, workspace files, or whether a preference has been defined.
+Durable owner preferences come from USER.md and SOUL.md.
+Agent identity comes from IDENTITY.md and SOUL.md.
+Completed CyWorld actions come from tool receipts.
+Ongoing work comes from WORKLOG.md.
 
 ${
     formatted.length
