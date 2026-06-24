@@ -22,6 +22,12 @@ type AgentNextTaskAction =
       message: string;
     }
   | {
+      action: "report_and_wait";
+      destination?: AgentReportDestination;
+      message: string;
+      reason?: string;
+    }
+  | {
       action: "ask_followup";
       message: string;
     }
@@ -166,6 +172,15 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
         destination:
           action === "report_to_requester" ? "requester_dm" : destination,
         message,
+      };
+    }
+
+    if (action === "report_and_wait" && message) {
+      return {
+        action,
+        destination,
+        message,
+        reason,
       };
     }
 
@@ -1049,12 +1064,14 @@ Valid JSON shapes:
 {"action":"report_result","message":"natural report message","destination":"source_room"}
 {"action":"report_result","message":"natural report message","destination":"requester_dm"}
 {"action":"report_result","message":"natural report message","destination":"owner_dm"}
+{"action":"report_and_wait","message":"natural interim update","reason":"what future input is still expected"}
 {"action":"ask_followup","message":"exact follow-up DM to send to @${replyingUsername}"}
 {"action":"continue_work","instruction":"what work should be continued next"}
-{"action":"wait","reason":"why no action should be taken yet"}
 {"action":"complete_no_message","reason":"why the task is complete without another message"}
 
+Plain wait is not a valid action after an inbound reply. If the task is still pending, either report_and_wait, ask_followup, or continue_work.
 Choose report_result when the reply answers the request sufficiently, including when it says the requested condition is not met, gives an alternative, or blocks the original plan.
+Choose report_and_wait when the reply is meaningful and should be reported, but the task remains genuinely pending because the replier explicitly says a future answer, time, or external input is still coming.
 Only set destination when the task or conversation explicitly indicates where the result should be reported.
 If destination is omitted, CyWorld will report to the original conversation and fall back to your owner DM only if that room is unavailable.
 The original conversation is ${
@@ -1065,7 +1082,6 @@ The original conversation is ${
 The requester is @${task.requester.username}; your owner is @${ownerUsername}.
 Choose ask_followup when the reply is ambiguous or insufficient and a follow-up would help.
 Choose continue_work when the reply unlocks more work that you should now perform with CyWorld tools or workspace reasoning.
-Choose wait only when the task should remain genuinely pending because a future reply, time, or external input is still expected and no useful message or action should happen now.
 Choose complete_no_message when no further human-facing message or action is useful and no future input is needed.`,
     message: `Task objective:
 ${task.objective}
@@ -1079,7 +1095,14 @@ ${replyMessage}
 Decide the next action.`,
   });
 
-  const nextAction = parseAgentNextTaskAction(decision.assistantText);
+  const parsedNextAction = parseAgentNextTaskAction(decision.assistantText);
+  const nextAction: AgentNextTaskAction =
+    parsedNextAction.action === "wait"
+      ? {
+          action: "report_result",
+          message: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+        }
+      : parsedNextAction;
 
   await prisma.agentTaskEvent.create({
     data: {
@@ -1243,6 +1266,37 @@ Continue the task now.`,
     };
   }
 
+  if (nextAction.action === "report_and_wait") {
+    const delivery = await deliverAgentReport({
+      requestedDestination: nextAction.destination,
+      requesterUsername: task.requester.username,
+      sourceRoomId: task.sourceRoomId,
+      message: nextAction.message,
+      agentOpenclawId,
+      taskId: task.id,
+    });
+
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        resultSummary: nextAction.message,
+        nextReviewAt: null,
+        reviewLeaseUntil: null,
+        status: delivery.ok ? "WAITING" : "FAILED",
+      },
+    });
+
+    return {
+      acknowledgement: delivery.ok
+        ? "Thanks. I passed the update along and will keep waiting."
+        : `I got your reply, but I could not report it back: ${delivery.reason}.`,
+      nextAction,
+      taskId: task.id,
+    };
+  }
+
   if (nextAction.action === "ask_followup") {
     const delivery = await sendAgentDm({
       message: nextAction.message,
@@ -1314,25 +1368,38 @@ Continue the task now.`,
         status: "COMPLETED",
       },
     });
-  } else {
-    await prisma.agentTask.update({
-      where: {
-        id: task.id,
-      },
-      data: {
-        nextReviewAt: null,
-        resultSummary: nextAction.reason ?? null,
-        reviewLeaseUntil: null,
-        status: "WAITING",
-      },
-    });
+
+    return {
+      acknowledgement: "Thanks. That completes the task.",
+      nextAction,
+      taskId: task.id,
+    };
   }
 
+  const delivery = await deliverAgentReport({
+    agentOpenclawId,
+    message: `${replyingDisplayName} (@${replyingUsername}) replied: ${replyMessage}`,
+    requesterUsername: task.requester.username,
+    sourceRoomId: task.sourceRoomId,
+    taskId: task.id,
+  });
+
+  await prisma.agentTask.update({
+    where: {
+      id: task.id,
+    },
+    data: {
+      nextReviewAt: null,
+      resultSummary: replyMessage,
+      reviewLeaseUntil: null,
+      status: delivery.ok ? "COMPLETED" : "FAILED",
+    },
+  });
+
   return {
-    acknowledgement:
-      nextAction.action === "complete_no_message"
-        ? "Thanks. That completes the task."
-        : "Thanks. I'll keep that in mind for now.",
+    acknowledgement: delivery.ok
+      ? "Thanks. I passed the result along."
+      : `I got your reply, but I could not report it back: ${delivery.reason}.`,
     nextAction,
     taskId: task.id,
   };
