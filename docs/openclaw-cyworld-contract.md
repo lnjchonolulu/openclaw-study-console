@@ -431,6 +431,12 @@ waiting. If the agent wants a specific future check, it should explicitly
 schedule a wakeup. The wakeup is a future judgment opportunity, not an automatic
 DM.
 
+Agents should ask CyWorld to schedule wakeups only when the task context
+includes a concrete future time or date to reconsider the task. Vague
+commitments such as "later" or "when ready" should remain ordinary waiting
+tasks, optionally noted in `WORKLOG.md`, and be surfaced by future replies,
+heartbeat, or pending-task review rather than by invented reminder schedules.
+
 ## Follow-Up Reporting
 
 Task progress should be reported to the right place.

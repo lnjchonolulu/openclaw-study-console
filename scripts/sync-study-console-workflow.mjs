@@ -32,6 +32,18 @@ const heartbeatLivingFileLine =
   "Update this file when the owner changes how proactive you should be, when you should wake, or what kinds of follow-up are welcome.";
 const worklogLivingFileLine =
   "Update this file as active work changes: add open loops, revise next steps, and close stale items.";
+const oldConcreteWakeupPolicyLine =
+  'Only schedule a wakeup when there is a concrete time or date to reconsider the task. For vague commitments like "later" or "when ready", keep the open loop in WORKLOG.md if useful and let future replies, heartbeat, or pending-task review surface it.';
+const heartbeatWakeupTimerLine =
+  "Heartbeat is not a timer for concrete future checks; CyWorld scheduled wakeups are.";
+const concreteWakeupPolicyLine =
+  'During heartbeat, review open loops and receipts, but do not invent reminder schedules for vague commitments like "later" or "when ready".';
+const vagueWaitingWorklogLine =
+  "For vague waiting, record only the open loop and do not invent a reminder schedule.";
+const oldWakeupWorklogComment =
+  "<!-- If you schedule a wakeup, note the concrete time, what future you should reconsider, and where the relevant context lives. For vague waiting, record only the open loop and do not invent a reminder schedule. -->";
+const wakeupWorklogComment =
+  "<!-- If you ask CyWorld to schedule a wakeup, note the concrete time, what future you should reconsider, and where the relevant context lives. For vague waiting, record only the open loop and do not invent a reminder schedule. -->";
 const forceBootstrap =
   process.argv.includes("--force-bootstrap") || process.env.CYWORLD_FORCE_BOOTSTRAP === "1";
 const agentFlagIndex = process.argv.findIndex((arg) => arg === "--agent");
@@ -118,7 +130,7 @@ If no workspace file should change, answer normally. If a workspace edit fails, 
 - On heartbeat, scheduled wakeup, interrupted work recovery, or explicit follow-up questions, inspect WORKLOG.md and relevant selected context notes before deciding what to do.
 - In ordinary conversation, consult WORKLOG.md when the user refers to an ongoing task, a reply from someone else, pending approval, or "what happened with that".
 - Successful CyWorld action receipts are durable facts. Do not repeat a completed side effect while continuing work.
-- If a specific future check is needed, schedule it with study_schedule_wakeup. Do not run an automatic reminder loop.
+- If a specific future check is needed, ask CyWorld to schedule it with study_schedule_wakeup. Do not run an automatic reminder loop.
 
 ### CyWorld Actions And Truth
 
@@ -308,6 +320,7 @@ When you do work through CyWorld tools:
 - Treat CyWorld receipts as the durable record of what happened.
 - Report completed work to the conversation where the work is relevant.
 - If work is still pending, say what is waiting and where you will continue from.
+- When someone gives a concrete future time to check back, ask CyWorld to schedule a wakeup. If the timing is vague, leave the task waiting and rely on future replies, heartbeat, WORKLOG.md, or pending-task review rather than inventing an automatic reminder loop.
 - Do not claim success before CyWorld confirms the action.
 `;
 }
@@ -331,7 +344,8 @@ Useful heartbeat work:
 - Surface time-sensitive calendar or email follow-ups when allowed.
 - Stay quiet when there is no meaningful update.
 
-If a specific future check is needed, schedule it explicitly with \`study_schedule_wakeup\`.
+${heartbeatWakeupTimerLine}
+${concreteWakeupPolicyLine}
 Do not repeat an outbound action that already has a successful receipt. Do not use heartbeat for filler messages or social noise.
 `;
 }
@@ -359,7 +373,7 @@ Keep entries short and actionable. Close, revise, or remove stale entries instea
 
 ## Follow-Up Notes
 
-<!-- If you schedule a wakeup, note what future you should reconsider and where the relevant context lives. -->
+${wakeupWorklogComment}
 `;
 }
 
@@ -1158,6 +1172,20 @@ function normalizeHeartbeatMarkdown(existing, template) {
     ? next.replace(/^# HEARTBEAT\.md[^\n]*\n?/, "# HEARTBEAT.md - Proactiveness\n")
     : `# HEARTBEAT.md - Proactiveness\n\n${next}`;
   next = ensureLineAfterTitle(next, heartbeatLivingFileLine);
+  next = next.replace(
+    oldConcreteWakeupPolicyLine,
+    `${heartbeatWakeupTimerLine}\n${concreteWakeupPolicyLine}`,
+  );
+  next = ensureLineAfterAnchor(
+    next,
+    "Do not repeat an outbound action that already has a successful receipt. Do not use heartbeat for filler messages or social noise.",
+    heartbeatWakeupTimerLine,
+  );
+  next = ensureLineAfterAnchor(
+    next,
+    heartbeatWakeupTimerLine,
+    concreteWakeupPolicyLine,
+  );
 
   return next;
 }
@@ -1177,6 +1205,12 @@ function normalizeWorklogMarkdown(existing, template) {
     "This is your own compact working memory for open loops, plans, and follow-ups you choose to track.",
     worklogLivingFileLine,
   );
+  next = ensureLineAfterAnchor(
+    next,
+    "Keep entries short and actionable. Close, revise, or remove stale entries instead of accumulating a permanent backlog.",
+    vagueWaitingWorklogLine,
+  );
+  next = next.replace(oldWakeupWorklogComment, wakeupWorklogComment);
 
   return next;
 }
