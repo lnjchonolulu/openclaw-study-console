@@ -17,30 +17,35 @@ import { prisma } from "@/lib/prisma";
 type TaskDeliveryKind = "send_dm" | "schedule_dm";
 type AgentNextTaskAction =
   | {
-      action: "report_result";
-      destination?: AgentReportDestination;
-      message: string;
-    }
-  | {
-      action: "report_and_wait";
+      action: "report_to_requester";
       destination?: AgentReportDestination;
       message: string;
       reason?: string;
     }
   | {
-      action: "ask_followup";
+      action: "report_progress_and_wait";
+      destination?: AgentReportDestination;
+      message: string;
+      reason?: string;
+    }
+  | {
+      action: "respond_to_event_source";
       message: string;
     }
   | {
-      action: "continue_work";
+      action: "continue_original_task";
       instruction: string;
     }
   | {
-      action: "wait";
+      action: "wait_for_next_event";
       reason?: string;
     }
   | {
-      action: "complete_no_message";
+      action: "complete_silently";
+      reason?: string;
+    }
+  | {
+      action: "invalid_decision";
       reason?: string;
     };
 
@@ -53,6 +58,7 @@ type WaitingTaskSnapshot = {
   task: {
     events: {
       createdAt: Date;
+      payload?: Prisma.JsonValue;
       summary: string;
       type: string;
     }[];
@@ -126,6 +132,33 @@ function cleanComposedMessage(value: string) {
     .trim();
 }
 
+function compactJsonForPrompt(value: Prisma.JsonValue | undefined, maxLength = 1200) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  try {
+    const json = JSON.stringify(value);
+    return json.length > maxLength ? `${json.slice(0, maxLength)}...` : json;
+  } catch {
+    return "";
+  }
+}
+
+function objectiveSuggestsPostReplyWork(objective: string) {
+  const normalized = objective.toLowerCase();
+  const hasCondition =
+    /\b(if|when|once|after|then)\b/.test(normalized) ||
+    /(하면|라면|으면|면|후에|다음|받으면|주면|공유하면)/.test(objective);
+  const hasAction =
+    /\b(send|email|mail|forward|share|upload|write|create|schedule|update|reply|deliver)\b/.test(
+      normalized,
+    ) ||
+    /(보내|이메일|메일|전달|공유|업로드|작성|만들|생성|예약|수정|답장)/.test(objective);
+
+  return hasCondition && hasAction;
+}
+
 function extractJsonObject(value: string) {
   const trimmed = value.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -145,7 +178,7 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
 
   if (!jsonObject) {
     return {
-      action: "wait",
+      action: "invalid_decision",
       reason: "The agent did not return a structured next action.",
     };
   }
@@ -153,9 +186,12 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
   try {
     const parsed = JSON.parse(jsonObject) as {
       action?: unknown;
+      deliveryTarget?: unknown;
       destination?: unknown;
       instruction?: unknown;
       message?: unknown;
+      reply?: unknown;
+      report?: unknown;
       reason?: unknown;
     };
     const action = typeof parsed.action === "string" ? parsed.action : "";
@@ -164,7 +200,18 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
         ? cleanComposedMessage(parsed.instruction)
         : "";
     const message = typeof parsed.message === "string" ? cleanComposedMessage(parsed.message) : "";
+    const reply =
+      typeof parsed.reply === "string" ? cleanComposedMessage(parsed.reply) : "";
+    const report =
+      typeof parsed.report === "string" ? cleanComposedMessage(parsed.report) : "";
     const reason = typeof parsed.reason === "string" ? parsed.reason : undefined;
+    const deliveryTarget =
+      parsed.deliveryTarget === "replier" ||
+      parsed.deliveryTarget === "requester" ||
+      parsed.deliveryTarget === "source_room" ||
+      parsed.deliveryTarget === "owner"
+        ? parsed.deliveryTarget
+        : undefined;
 
     const destination =
       parsed.destination === "source_room" ||
@@ -173,34 +220,56 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
         ? parsed.destination
         : undefined;
 
-    if ((action === "report_result" || action === "report_to_requester") && message) {
+    if (
+      (
+        action === "ask_followup" ||
+        action === "send_reply" ||
+        action === "respond_to_event_source" ||
+        deliveryTarget === "replier"
+      ) &&
+      (reply || message || report)
+    ) {
       return {
-        action: "report_result",
-        destination:
-          action === "report_to_requester" ? "requester_dm" : destination,
-        message,
+        action: "respond_to_event_source",
+        message: reply || message || report,
       };
     }
 
-    if (action === "report_and_wait" && message) {
+    if (action === "report_result" || action === "report_to_requester") {
       return {
-        action,
-        destination,
-        message,
+        action: "report_to_requester",
+        destination:
+          deliveryTarget === "requester" || action === "report_to_requester"
+            ? "requester_dm"
+            : deliveryTarget === "owner"
+              ? "owner_dm"
+              : deliveryTarget === "source_room"
+                ? "source_room"
+                : destination,
+        message: report || message || reason || "",
         reason,
       };
     }
 
-    if (action === "ask_followup" && message) {
+    if (action === "report_and_wait" || action === "report_progress_and_wait") {
       return {
-        action,
-        message,
+        action: "report_progress_and_wait",
+        destination:
+          deliveryTarget === "requester"
+            ? "requester_dm"
+            : deliveryTarget === "owner"
+              ? "owner_dm"
+              : deliveryTarget === "source_room"
+                ? "source_room"
+                : destination,
+        message: report || message || reason || "",
+        reason,
       };
     }
 
-    if (action === "continue_work") {
+    if (action === "continue_work" || action === "continue_original_task") {
       return {
-        action,
+        action: "continue_original_task",
         instruction:
           instruction ||
           reason ||
@@ -208,20 +277,27 @@ function parseAgentNextTaskAction(value: string): AgentNextTaskAction {
       };
     }
 
-    if (action === "complete_no_message") {
+    if (action === "wait" || action === "wait_for_next_event") {
       return {
-        action,
+        action: "wait_for_next_event",
+        reason,
+      };
+    }
+
+    if (action === "complete_no_message" || action === "complete_silently") {
+      return {
+        action: "complete_silently",
         reason,
       };
     }
 
     return {
-      action: "wait",
+      action: "invalid_decision",
       reason: reason ?? "The agent chose to wait or returned an incomplete action.",
     };
   } catch {
     return {
-      action: "wait",
+      action: "invalid_decision",
       reason: "The agent returned malformed JSON.",
     };
   }
@@ -459,6 +535,7 @@ async function resolveInboundTaskReply({
           | {
               events: {
                 createdAt: Date;
+                payload?: Prisma.JsonValue;
                 summary: string;
                 type: string;
               }[];
@@ -546,6 +623,7 @@ async function resolveInboundTaskReply({
       task: {
         events: message.task.events.map((event) => ({
           createdAt: event.createdAt,
+          payload: event.payload,
           summary: event.summary,
           type: event.type,
         })),
@@ -775,11 +853,13 @@ You are composing a CyWorld outbound DM.
 - You are writing as ${input.agentDisplayName}, not as ${input.requesterDisplayName}.
 - Return only the exact message body that should be delivered to @${input.targetUsername}.
 - Do not impersonate the requester. Never write "${input.requesterDisplayName} here", "this is ${input.requesterDisplayName}", or similar unless the requester gave that exact quoted text.
-- If context is needed, say that ${input.requesterDisplayName} asked you to check or ask something, while keeping ${input.agentDisplayName} as the speaker.
+- When contacting someone who is not your owner on a delegated request, normally include the real requester and enough request context for the recipient to understand why you are asking. Keep it conversational; do not use a fixed template.
+- If the recipient needs context to understand why you are contacting them, state the real requester and request context while keeping ${input.agentDisplayName} as the speaker.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
 - Do not wrap the message in quotes or markdown fences.
 - Make the message natural, concise, and appropriate for the relationship.
-- Preserve the requester's intent, but do not mechanically copy their wording unless they gave exact quoted text.`,
+- Preserve the requester's intent, but do not mechanically copy their wording unless they gave exact quoted text.
+- If the requester did not provide a reason, do not make one up. Ask only for what was requested.`,
     message: `Requester: ${input.requesterDisplayName} (@${input.requesterUsername})
 Recipient: @${input.targetUsername}
 Original request:
@@ -1009,6 +1089,7 @@ export async function handleInboundTaskReply({
             ? {
                 events: inboundMessage.replyToMessage.task.events.map((event) => ({
                   createdAt: event.createdAt,
+                  payload: event.payload,
                   summary: event.summary,
                   type: event.type,
                 })),
@@ -1121,7 +1202,12 @@ export async function handleInboundTaskReply({
   });
 
   const eventLog = task.events
-    .map((event) => `- ${event.type}: ${event.summary}`)
+    .map((event) => {
+      const payload = compactJsonForPrompt(event.payload);
+      return `- ${event.type}: ${event.summary}${
+        payload ? `\n  payload: ${payload}` : ""
+      }`;
+    })
     .join("\n");
 
   const decision = await runAgentTurn({
@@ -1129,39 +1215,43 @@ export async function handleInboundTaskReply({
     conversationKey: `task:${task.id}:decide-next-action`,
     instructions: `${instructions}
 
-You are deciding the next action in a CyWorld task loop.
-- A participant has replied to something you asked on behalf of the requester.
-- Decide autonomously what should happen next.
+You are deciding the next transition in a CyWorld task loop.
+- The task received a new event. In this handler, the event is a DM reply from @${replyingUsername}.
+- Decide the next task transition. Do not perform the task here.
 - Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
 - The app backend will execute your selected CyWorld action.
+- Do not try to perform follow-up work in this decision. Only choose the next action JSON.
 - Return only JSON. No markdown. No extra text.
 
 Valid JSON shapes:
-{"action":"report_result","message":"natural report message"}
-{"action":"report_result","message":"natural report message","destination":"source_room"}
-{"action":"report_result","message":"natural report message","destination":"requester_dm"}
-{"action":"report_result","message":"natural report message","destination":"owner_dm"}
-{"action":"report_and_wait","message":"natural interim update","reason":"what future input is still expected"}
-{"action":"ask_followup","message":"exact follow-up DM to send to @${replyingUsername}"}
-{"action":"continue_work","instruction":"what work should be continued next"}
-{"action":"complete_no_message","reason":"why the task is complete without another message"}
+{"action":"respond_to_event_source","reply":"exact response to send to the event source"}
+{"action":"continue_original_task","instruction":"what work should continue using the new event"}
+{"action":"report_to_requester","deliveryTarget":"source_room","reason":"why this should be reported to the original conversation"}
+{"action":"report_to_requester","deliveryTarget":"requester","reason":"why this should be reported to @${task.requester.username}"}
+{"action":"report_to_requester","deliveryTarget":"owner","reason":"why this should be reported to @${ownerUsername}"}
+{"action":"report_progress_and_wait","deliveryTarget":"source_room","reason":"what should be reported and what future event is still expected"}
+{"action":"wait_for_next_event","reason":"why no human-facing message is needed yet"}
+{"action":"complete_silently","reason":"why the task is complete without another message"}
 
-Plain wait is not a valid action after an inbound reply. If the task is still pending, either report_and_wait, ask_followup, or continue_work.
-Choose report_result when the reply answers the request sufficiently, including when it says the requested condition is not met, gives an alternative, or blocks the original plan.
-Choose report_and_wait when the reply is meaningful and should be reported, but the task remains genuinely pending because the replier explicitly says a future answer, time, or external input is still coming.
-Only set destination when the task or conversation explicitly indicates where the result should be reported.
-If destination is omitted, CyWorld will report to the original conversation and fall back to your owner DM only if that room is unavailable.
+Transition priority:
+1. Choose respond_to_event_source when the event source asks a question or requests clarification and you can answer from the task context, such as who asked, what was requested, why you contacted them, or what you mean. For this DM event, the event source is @${replyingUsername}. Do not send context questions back to the requester when the answer is already in the task context.
+2. Choose continue_original_task when the new event unlocks remaining work from the original objective, such as sending email, writing a file, updating Google Workspace, scheduling, or other tool/workspace work.
+3. Choose continue_original_task when the event gives a concrete future time or date when this task should be checked again; the continuation can schedule a wakeup and report progress. Choose report_progress_and_wait when the requester/source conversation should be updated now, but the task is still waiting for a future event without a concrete check time. This includes vague replies like "not yet", "later", or "I'll send it when ready". Do not mark this kind of task complete.
+4. Choose report_to_requester when no remaining work is unlocked or needed and the requester/source conversation should receive the outcome.
+5. Choose wait_for_next_event when no human-facing message is useful and the task should remain waiting.
+6. Choose complete_silently when the task is complete and no human-facing message is useful.
+
+For report_to_requester and report_progress_and_wait, decide the delivery target and reason. CyWorld will compose the final report for that audience.
 The original conversation is ${
       task.sourceRoom
         ? `${task.sourceRoom.name} (${task.sourceRoom.type})`
         : "not available"
     }.
 The requester is @${task.requester.username}; your owner is @${ownerUsername}.
-Choose ask_followup when the reply is ambiguous or insufficient and a follow-up to @${replyingUsername} would help clarify the reply.
-Do not negotiate a changed plan with @${replyingUsername} unless the original objective authorized you to negotiate. If the reply proposes a different constraint, condition, or alternative that the requester must decide on, choose report_result instead.
-Choose continue_work when the reply unlocks more work that you should now perform with CyWorld tools or workspace reasoning.
-If the original objective asked you to do another action after the reply confirms, satisfies, or supplies the needed information, choose continue_work rather than only reporting the reply.
-Choose complete_no_message when no further human-facing message or action is useful and no future input is needed.`,
+If @${replyingUsername} asks who is asking, the requester is @${task.requester.username}. If they ask why you contacted them, use the original objective and prior outbound message as the reason. Only report back to the requester when answering @${replyingUsername} requires new information, permission, or a decision that is not present in the task context.
+Do not negotiate a changed plan with @${replyingUsername} unless the original objective authorized you to negotiate. If the event proposes a different constraint, condition, or alternative that the requester must decide on, choose report_to_requester.
+If the original objective asked you to do another action after the event confirms, satisfies, or supplies the needed information, choose continue_original_task rather than only reporting the event.
+If you are unsure whether a required follow-up tool is available, choose continue_original_task and let the continuation step try the tool or report the limitation.`,
     message: `Task objective:
 ${task.objective}
 
@@ -1176,11 +1266,17 @@ Decide the next action.`,
 
   const parsedNextAction = parseAgentNextTaskAction(decision.assistantText);
   const nextAction: AgentNextTaskAction =
-    parsedNextAction.action === "wait"
-      ? {
-          action: "report_result",
-          message: `${replyingDisplayName} replied: "${replyMessage}"`,
-        }
+    parsedNextAction.action === "invalid_decision"
+      ? objectiveSuggestsPostReplyWork(task.objective)
+        ? {
+            action: "continue_original_task",
+            instruction:
+              "Continue the original task using the latest reply. Complete any requested follow-up action with CyWorld tools, and report honestly if the action is unavailable or fails.",
+          }
+        : {
+            action: "report_to_requester",
+            message: `${replyingDisplayName} replied: "${replyMessage}"`,
+          }
       : parsedNextAction;
 
   await prisma.agentTaskEvent.create({
@@ -1195,7 +1291,65 @@ Decide the next action.`,
     },
   });
 
-  if (nextAction.action === "continue_work") {
+  const composeReportForDelivery = async ({
+    action,
+    draft,
+    requestedDestination,
+    reason,
+  }: {
+    action: "report_to_requester" | "report_progress_and_wait";
+    draft: string;
+    requestedDestination?: AgentReportDestination;
+    reason?: string;
+  }) => {
+    const deliveryTarget =
+      requestedDestination === "requester_dm"
+        ? `requester @${task.requester.username}`
+        : requestedDestination === "owner_dm"
+          ? `owner @${ownerUsername}`
+          : task.sourceRoom
+            ? `original conversation "${task.sourceRoom.name}" (${task.sourceRoom.type})`
+            : `requester @${task.requester.username}`;
+
+    const report = await runAgentTurn({
+      agentId: agentOpenclawId,
+      conversationKey: `task:${task.id}:compose-${action}-report`,
+      instructions: `${instructions}
+
+Compose the human-facing CyWorld report for this task.
+- The report will be delivered to the ${deliveryTarget}.
+- Write one natural message for that audience.
+- The audience may not have seen the latest reply, so include the context needed for the update to make sense.
+- Do not use a rigid transcript/envelope template unless that is the most natural way to answer.
+- Do not address @${replyingUsername} or ask @${replyingUsername} to take action; this report is not being delivered to them.
+- Do not claim any follow-up side effect happened, such as sending email, writing files, updating Google Workspace, scheduling, or sending another message, unless the prior task events include a matching successful tool receipt.
+- If a follow-up action was requested but no matching successful receipt appears, say what was received and what still needs to happen instead of claiming completion.
+- Do not mention OpenClaw, gateway pairing, sessions_send, cron, tools, or implementation details.
+- Return only the message body.`,
+      message: `Task objective:
+${task.objective}
+
+Prior task events:
+${eventLog || "(none)"}
+
+Latest reply from ${replyingDisplayName} (@${replyingUsername}):
+${replyMessage}
+
+Selected action: ${action}
+Decision reason:
+${reason || "(none)"}
+
+Decision draft, if any:
+${draft || "(none)"}
+
+Write the report now.`,
+    });
+
+    const composed = cleanComposedMessage(report.assistantText);
+    return composed || draft || `${replyingDisplayName} replied: "${replyMessage}"`;
+  };
+
+  if (nextAction.action === "continue_original_task") {
     const continuationToolCalls: ContinuationToolCallSummary[] = [];
     const continuation = await runAgentTurn({
       agentId: agentOpenclawId,
@@ -1205,6 +1359,7 @@ Decide the next action.`,
 Continue this CyWorld task from the latest reply.
 - Use CyWorld tools when the next step requires app delivery, calendar, Drive, Gmail, Google Workspace, image, wakeup, or handoff actions.
 - If you need to contact someone and wait for their reply, set expectReply when sending the message.
+- If the latest reply gives a concrete future time or date to check back, use study_schedule_wakeup. Do not schedule a wakeup for vague future commitments without a concrete check time.
 - Use your final response to summarize progress, completion, or blockers for the original requester. CyWorld will deliver that response to the original conversation when appropriate.
 - Do not claim that a CyWorld action succeeded unless the tool result confirms it.`,
       message: `Original task objective:
@@ -1249,12 +1404,15 @@ Continue the task now.`,
         call.expectsReply &&
         (call.name === "study_send_dm" || call.name === "study_schedule_dm"),
     );
+    const waitingForWakeup = continuationToolCalls.some(
+      (call) => call.ok && call.name === "study_schedule_wakeup",
+    );
     const allToolCallsFailed =
       continuationToolCalls.length > 0 &&
       continuationToolCalls.every((call) => !call.ok);
     const nextStatus = allToolCallsFailed
       ? "FAILED"
-      : waitingForReply
+      : waitingForReply || waitingForWakeup
         ? "WAITING"
         : "COMPLETED";
     const continuationReport = continuation.assistantText.trim()
@@ -1308,12 +1466,18 @@ Continue the task now.`,
     };
   }
 
-  if (nextAction.action === "report_result") {
+  if (nextAction.action === "report_to_requester") {
+    const reportMessage = await composeReportForDelivery({
+      action: "report_to_requester",
+      draft: nextAction.message,
+      reason: nextAction.reason,
+      requestedDestination: nextAction.destination,
+    });
     const delivery = await deliverAgentReport({
       requestedDestination: nextAction.destination,
       requesterUsername: task.requester.username,
       sourceRoomId: task.sourceRoomId,
-      message: nextAction.message,
+      message: reportMessage,
       agentOpenclawId,
       taskId: task.id,
     });
@@ -1323,7 +1487,7 @@ Continue the task now.`,
         id: task.id,
       },
       data: {
-        resultSummary: nextAction.message,
+        resultSummary: reportMessage,
         nextReviewAt: null,
         reviewLeaseUntil: null,
         status: delivery.ok ? "COMPLETED" : "FAILED",
@@ -1339,12 +1503,18 @@ Continue the task now.`,
     };
   }
 
-  if (nextAction.action === "report_and_wait") {
+  if (nextAction.action === "report_progress_and_wait") {
+    const reportMessage = await composeReportForDelivery({
+      action: "report_progress_and_wait",
+      draft: nextAction.message,
+      reason: nextAction.reason,
+      requestedDestination: nextAction.destination,
+    });
     const delivery = await deliverAgentReport({
       requestedDestination: nextAction.destination,
       requesterUsername: task.requester.username,
       sourceRoomId: task.sourceRoomId,
-      message: nextAction.message,
+      message: reportMessage,
       agentOpenclawId,
       taskId: task.id,
     });
@@ -1354,7 +1524,7 @@ Continue the task now.`,
         id: task.id,
       },
       data: {
-        resultSummary: nextAction.message,
+        resultSummary: reportMessage,
         nextReviewAt: null,
         reviewLeaseUntil: null,
         status: delivery.ok ? "WAITING" : "FAILED",
@@ -1370,7 +1540,7 @@ Continue the task now.`,
     };
   }
 
-  if (nextAction.action === "ask_followup") {
+  if (nextAction.action === "respond_to_event_source") {
     const delivery = await sendAgentDm({
       message: nextAction.message,
       replyToMessageId: userMessageId,
@@ -1429,7 +1599,27 @@ Continue the task now.`,
     };
   }
 
-  if (nextAction.action === "complete_no_message") {
+  if (nextAction.action === "wait_for_next_event") {
+    await prisma.agentTask.update({
+      where: {
+        id: task.id,
+      },
+      data: {
+        nextReviewAt: null,
+        resultSummary: nextAction.reason ?? null,
+        reviewLeaseUntil: null,
+        status: "WAITING",
+      },
+    });
+
+    return {
+      acknowledgement: "",
+      nextAction,
+      taskId: task.id,
+    };
+  }
+
+  if (nextAction.action === "complete_silently") {
     await prisma.agentTask.update({
       where: {
         id: task.id,
